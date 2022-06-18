@@ -1,0 +1,6 @@
+linux-*
+kernel_root
+io/fs.qcow2
+.venv
+Dockerfile*
+.zshrc

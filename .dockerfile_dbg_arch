@@ -1,0 +1,25 @@
+FROM docker.io/archlinux
+LABEL maintainer="Christopher Krah <admin@0x434b.dev>"
+
+ENV DEBIAN_FRONTEND noninteractive
+
+# Get essentials
+RUN pacman -Syu --noconfirm && \
+    pacman -S --noconfirm neovim base-devel git pwndbg python-pwntools sudo vim zsh
+
+ENV USER_UID=1000
+ENV HOST_GID=1000
+ENV USER=dbg
+ENV SHELL="/bin/zsh"
+
+RUN groupadd -g $HOST_GID $USER && \
+    useradd -u $USER_UID -g $HOST_GID -s /bin/zsh -m -p $(openssl passwd -1 dbg) dbg && \
+    usermod -aG wheel dbg
+
+WORKDIR /home/dbg
+COPY ./io/sccripts/.gdbinit .
+USER $USER
+RUN sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+
+WORKDIR /project
+CMD ["/bin/zsh"]

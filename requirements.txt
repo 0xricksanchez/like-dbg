@@ -1,0 +1,5 @@
+loguru
+black
+docker 
+tqdm
+requests
