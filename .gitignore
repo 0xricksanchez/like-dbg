@@ -1,6 +1,9 @@
 linux-*
 kernel_root
-io/fs.qcow2
+io/rootfs*
+.gdb_history
 .venv
 Dockerfile*
 .zshrc
+.git
+.ssh

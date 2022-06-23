@@ -1,0 +1,32 @@
+FROM debian:bullseye-slim
+LABEL maintainer="Christopher Krah <admin@0x434b.dev>"
+
+ENV DEBIAN_FRONTEND noninteractive
+
+# Get essentials
+RUN apt update && \
+    apt upgrade -y && \
+    apt install -y libc-dev git python3 python3-pip python3-dev libssl-dev libffi-dev build-essential sudo neovim gdb-multiarch ltrace strace ca-certificates curl wget zsh && \
+    python3 -m pip install --upgrade pip && \
+    python3 -m pip install --upgrade pwntools
+
+ENV USER_UID=1000
+ENV HOST_GID=1000
+ENV USER=dbg
+ENV SHELL="/bin/bash"
+
+RUN groupadd -g $HOST_GID $USER && \
+    useradd -u $USER_UID -g $HOST_GID -s $SHELL -m -p $(openssl passwd -1 $USER) $USER && \
+    usermod -aG sudo $USER && \
+    echo "$USER ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/$USER && \
+    chmod 0440 /etc/sudoers.d/$USER
+
+WORKDIR /home/dbg
+USER $USER
+COPY io/scripts/.gdbinit .
+COPY io/scripts/debugger.sh .
+RUN sudo chown $USER:$USER .gdbinit debugger.sh && \
+    sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" && \
+    git clone --depth=1 https://github.com/pwndbg/pwndbg && cd pwndbg && chmod +x setup.sh && echo y | ./setup.sh && cd ../
+
+WORKDIR /io

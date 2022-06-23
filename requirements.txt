@@ -1,4 +1,5 @@
 loguru
+fabric
 black
 docker 
 tqdm

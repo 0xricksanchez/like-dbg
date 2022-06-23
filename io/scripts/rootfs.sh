@@ -1,15 +1,142 @@
 #!/usr/bin/env bash
+# Modified version of the syzkaller script:
+#   https://raw.githubusercontent.com/google/syzkaller/master/tools/create-image.sh
+set -eux
 
-IMG=fs.qcow2
-MNT='/tmp/rootfs'
+pushd /io
 
-cd /io && \
-ROOT_PASSWD=$(openssl passwd -1 root) && \
-qemu-img create $IMG 5g && \
-mkfs.ext2 $IMG && \
-mkdir $MNT && \
-mount -o loop $IMG $MNT && \
-debootstrap --arch amd64 --include=build-essential,vim,openssh-server,make,sudo bullseye $MNT && \
-sed -i -e "s#root:\*#root:${ROOT_PASSWD_HASH}#" $MNT/etc/shadow && \
-umount $MNT && \
-rmdir $MNT && chmod 777 $IMG 
+MNT=rootfs
+SEEK=5120
+PKGS="build-essential,vim,openssh-server,make,sudo,curl,tar,gcc,libc6-dev,time,strace,less,psmisc,selinux-utils,policycoreutils,checkpolicy,selinux-policy-default,firmware-atheros"
+ARCH=$(uname -m)
+DIST=bullseye
+ROOTFS_NAME=rootfs
+
+
+while true; do
+    if [ $# -eq 0 ];then
+	echo $#
+	break
+    fi
+    case "$1" in
+        -a | --arch)
+            # Sets the architecture
+    	    ARCH=$2
+            shift 2
+            ;;
+        -d | --distribution)
+            # Sets the debian distribution, which defaults to bullseye right now
+    	    DIST=$2
+            shift 2
+            ;;
+        -s | --seek)
+            # Sets the size of the file system, default 5G
+	        SEEK=$(($2 - 1))
+            shift 2
+            ;;
+        -n | --name)
+            # Sets the name of the rootfs
+            ROOTFS_NAME=$2
+            shift 2
+            ;;
+        -*)
+            echo "Error: Unknown option: $1" >&2
+            exit 1
+            ;;
+        *)  # No more options
+            break
+            ;;
+    esac
+done
+
+# Handle cases where qemu and Debian use different arch names
+case "$ARCH" in
+    ppc64le)
+        DEBARCH=ppc64el
+        ;;
+    aarch64)
+        DEBARCH=arm64
+        ;;
+    arm)
+        DEBARCH=armel
+        ;;
+    x86_64)
+        DEBARCH=amd64
+        ;;
+    *)
+        DEBARCH=$ARCH
+        ;;
+esac
+
+# Foreign architecture
+FOREIGN=false
+if [ $ARCH != $(uname -m) ]; then
+    # i386 on an x86_64 host is exempted, as we can run i386 binaries natively
+    if [ $ARCH != "i386" -o $(uname -m) != "x86_64" ]; then
+        FOREIGN=true
+    fi
+fi
+
+if [ $FOREIGN = "true" ]; then
+    # Check for according qemu static binary
+    if ! which qemu-$ARCH-static; then
+        echo "Please install qemu static binary for architecture $ARCH (package 'qemu-user-static' on Debian/Ubuntu/Fedora)"
+        exit 1
+    fi
+    # Check for according binfmt entry
+    if [ ! -r /proc/sys/fs/binfmt_misc/qemu-$ARCH ]; then
+        echo "binfmt entry /proc/sys/fs/binfmt_misc/qemu-$ARCH does not exist"
+        exit 1
+    fi
+fi
+
+# Clean system
+sudo rm -rf $MNT
+sudo mkdir -p $MNT
+sudo chmod 0755 $MNT
+
+
+# 1. debootstrap stage
+DEBOOTSTRAP_PARAMS="--arch=$DEBARCH --include=$PKGS --components=main,contrib,non-free $DIST $MNT"
+if [ $FOREIGN = "true" ]; then
+    DEBOOTSTRAP_PARAMS="--foreign $DEBOOTSTRAP_PARAMS"
+fi
+
+# riscv64 is hosted in the debian-ports repository
+# debian-ports doesn't include non-free, so we exclude firmware-atheros
+if [ $DEBARCH == "riscv64" ]; then
+    DEBOOTSTRAP_PARAMS="--keyring /usr/share/keyrings/debian-ports-archive-keyring.gpg --exclude firmware-atheros $DEBOOTSTRAP_PARAMS http://deb.debian.org/debian-ports"
+fi
+sudo debootstrap $DEBOOTSTRAP_PARAMS
+
+# 2. debootstrap stage: only necessary if target != host architecture
+if [ $FOREIGN = "true" ]; then
+    sudo cp $(which qemu-$ARCH-static) $MNT/$(which qemu-$ARCH-static)
+    sudo chroot $MNT /bin/bash -c "/debootstrap/debootstrap --second-stage"
+fi
+
+# Set some defaults and enable promtless ssh to the machine for root.
+sudo sed -i '/^root/ { s/:x:/::/ }' $MNT/etc/passwd
+echo 'T0:23:respawn:/sbin/getty -L ttyS0 115200 vt100' | sudo tee -a $MNT/etc/inittab
+printf '\nauto eth0\niface eth0 inet dhcp\n' | sudo tee -a $MNT/etc/network/interfaces
+echo '/dev/root / ext4 defaults 0 0' | sudo tee -a $MNT/etc/fstab
+echo 'debugfs /sys/kernel/debug debugfs defaults 0 0' | sudo tee -a $MNT/etc/fstab
+echo 'securityfs /sys/kernel/security securityfs defaults 0 0' | sudo tee -a $MNT/etc/fstab
+echo 'configfs /sys/kernel/config/ configfs defaults 0 0' | sudo tee -a $MNT/etc/fstab
+echo 'binfmt_misc /proc/sys/fs/binfmt_misc binfmt_misc defaults 0 0' | sudo tee -a $MNT/etc/fstab
+echo -en "127.0.0.1\tlocalhost\n" | sudo tee $MNT/etc/hosts
+echo "nameserver 8.8.8.8" | sudo tee -a $MNT/etc/resolve.conf
+echo "" | sudo tee $MNT/etc/hostname
+ssh-keygen -f $ROOTFS_NAME.id_rsa -t rsa -N ''
+sudo mkdir -p $MNT/root/.ssh/
+cat $ROOTFS_NAME.id_rsa.pub | sudo tee $MNT/root/.ssh/authorized_keys
+
+# Build disk image
+dd if=/dev/zero of=$ROOTFS_NAME.img bs=1M seek=$SEEK count=1
+sudo mkfs.ext4 -F $ROOTFS_NAME.img
+sudo mkdir -p /mnt/$MNT
+sudo mount -o loop $ROOTFS_NAME.img /mnt/$MNT
+sudo cp -a $MNT/. /mnt/$MNT/.
+sudo umount /mnt/$MNT
+sudo rm -rf $MNT
+chmod 777 $ROOTFS_NAME*
