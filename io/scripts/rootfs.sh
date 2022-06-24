@@ -132,10 +132,10 @@ sudo mkdir -p $MNT/root/.ssh/
 cat $ROOTFS_NAME.id_rsa.pub | sudo tee $MNT/root/.ssh/authorized_keys
 
 # Build disk image
-dd if=/dev/zero of=$ROOTFS_NAME.img bs=1M seek=$SEEK count=1
-sudo mkfs.ext4 -F $ROOTFS_NAME.img
+dd if=/dev/zero of=$ROOTFS_NAME bs=1M seek=$SEEK count=1
+sudo mkfs.ext4 -F $ROOTFS_NAME
 sudo mkdir -p /mnt/$MNT
-sudo mount -o loop $ROOTFS_NAME.img /mnt/$MNT
+sudo mount -o loop $ROOTFS_NAME /mnt/$MNT
 sudo cp -a $MNT/. /mnt/$MNT/.
 sudo umount /mnt/$MNT
 sudo rm -rf $MNT

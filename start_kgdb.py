@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 
 import requests
+import configparser
 import shutil
 import tarfile
-from typing import Optional
+from typing import List
 import re
 import tqdm
 from loguru import logger
@@ -13,11 +14,28 @@ from contextlib import contextmanager
 import urllib.request
 from pathlib import Path
 import subprocess as sp
+import docker
+from fabric import Connection
 
-LINUX_COMMIT_URI = "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/"
-LINUX_SNAP_BASE_URI = "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/snapshot/linux-"
-LINUX_ROOT_DIR = Path("./kernel_root")
+config = Path.cwd() / 'config.ini'
 
+# +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
+# | MISC QOL functions                                                                                  |
+# +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
+def cfg_setter(obj, sections: List[str]) -> None:
+    cfg = configparser.ConfigParser()
+    cfg.read(config)
+    for sect in sections:
+        for key in cfg[sect]:
+            tmp = cfg[sect][key]
+            val = tmp if tmp not in ['yes', 'no'] else cfg[sect].getboolean(key)
+            setattr(obj, key, val)
+
+def tmux(cmd: str) -> None:
+    sp.run(f"tmux {cmd}", shell=True)
+
+def tmux_shell(cmd: str) -> None:
+    tmux(f"send-keys '{cmd}' 'C-m'")
 
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
 # | TQDM WGET WITH PROGRESS BAR                                                                         |
@@ -33,19 +51,18 @@ class DLProgressBarTQDM(tqdm):
 # | KERNEL DOWNLOADER                                                                                   |
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
 class KernelDownloader:
-    def __init__(self, commit: Optional[str], tag: Optional[str]) -> None:
-        self.tag = tag
-        self.commit = commit if commit else self.resolve_latest()
+    def __init__(self) -> None:
+        cfg_setter(self, ['kernel_dl'])
+        self.commit = self.commit if self.commit and not self.tag else self.resolve_latest()
         self.choice = self.tag if self.tag else self.commit
-        logger.debug(f"Will continue with Kernel {self.choice}")
-        self.dl_uri = f"{LINUX_SNAP_BASE_URI}{self.choice}.tar.gz"
+        logger.info(f"Using kernel with (tag/commit) {self.choice}")
+        self.dl_uri = f"{self.snap_uri}{self.choice}.tar.gz"
         self.archive = Path(f"linux-{self.choice}.tar.gz")
         logger.debug(f"Kernel snap: {self.dl_uri}")
 
-    @staticmethod
-    def resolve_latest() -> str:
+    def resolve_latest(self) -> str:
         commit_re = rb"commit\/\?id=[0-9a-z]*"
-        r = requests.get(LINUX_COMMIT_URI)
+        r = requests.get(self.commit_uri)
         search_res = re.search(commit_re, r.content)
         if search_res.group():
             commit = search_res.group().split(b"=")[1].decode()
@@ -57,7 +74,7 @@ class KernelDownloader:
 
     def is_present(self) -> bool:
         if Path(self.archive).exists():
-            logger.info("Kernel archive already exists locally. Skipping download")
+            logger.info("Kernel archive already exists locally. Skipping download...")
             return True
         else:
             return False
@@ -78,14 +95,16 @@ class KernelDownloader:
 # | KERNEL UNPACKER                                                                                     |
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
 class KernelUnpacker:
-    def __init__(self, inp: Path) -> None:
-        self.archive = inp
+    def __init__(self, p: Path) -> None:
+        cfg_setter(self, ['kernel_general'])
+        self.kernel_root = Path(self.kernel_root)
+        self.archive = p
         self.ex_name = Path(self.archive.name.split(".")[0])
         self.dst_content = None
 
     def _is_dest_empty(self) -> bool:
-        if LINUX_ROOT_DIR.exists():
-            self.content = [x for x in LINUX_ROOT_DIR.iterdir()]
+        if self.kernel_root.exists():
+            self.content = [x.name for x in self.kernel_root.iterdir()]
             if self.content:
                 return False
             else:
@@ -109,7 +128,7 @@ class KernelUnpacker:
             logger.info("Reusing existing kernel...")
             return 1
         else:
-            self._purge()
+            self._purge(self.kernel_root)
             self._unpack_targz()
             return 0
 
@@ -123,19 +142,19 @@ class KernelUnpacker:
             members = t.getmembers()
             for member in tqdm(iterable=members, total=len(members)):
                 t.extract(member)
-        self.ex_name.rename(LINUX_ROOT_DIR)
+        self.ex_name.rename(self.kernel_root)
 
     @staticmethod
-    def _purge() -> None:
+    def _purge(p: Path) -> None:
         logger.info("Purging unclean kernel build environment...")
-        shutil.rmtree(LINUX_ROOT_DIR)
+        shutil.rmtree(p, ignore_errors=True)
 
     def run(self) -> int:
         if not self._is_dest_empty():
             if self._is_vmlinux():
                 if self._reuse_existing_vmlinux():
-                    return 0
-        self._purge()
+                    return 1
+        self._purge(self.kernel_root)
         self._unpack_targz()
         return 0
 
@@ -144,6 +163,9 @@ class KernelUnpacker:
 # | KERNEL BUILDER                                                                                     |
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
 class KernelBuilder:
+    def __init__(self) -> None:
+        cfg_setter(self, ['kernel_general', 'kernel_builder', 'general'])
+
     @staticmethod
     @contextmanager
     def build_context(location: Path):
@@ -170,18 +192,18 @@ class KernelBuilder:
         self._run_generic("make mrproper")
 
     def _build_arch(self):
-        # TODO add non amd64 builds
-        self._run_generic("make x86_64_defconfig")
+        # TODO check how we need to sanitize the [general] config arch field to reflect the make options
+        # All i know is it works if arch is x86_64
+        self._run_generic(f"make {self.arch}_defconfig")
 
     def _build_kvm_guest(self):
         self._run_generic("make kvm_guest.config")
 
-    def _configure_kernel(self, kernel_config: str):
-        match kernel_config:
-            case "syzkaller":
-                self._configure_syzkaller()
-            case _:
-                self._configure_generic()
+    def _configure_kernel(self):
+        if self.mode == 'syzkaller':
+            self._configure_syzkaller()
+        else:
+            self._configure_generic()
 
     def _configure_generic(self):
         self._run_generic(
@@ -231,110 +253,167 @@ class KernelBuilder:
 
     def run(self):
         logger.info("Building kernel. This may take a while...")
-        with self.build_context(LINUX_ROOT_DIR):
+        with self.build_context(self.kernel_root):
             self._build_mrproper()
             self._build_arch()
             self._build_kvm_guest()
-            self._configure_kernel("generic")
+            self._configure_kernel()
             self._make()
         logger.info("Successfully build the kernel")
 
 
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
-# | ROOTFS BUILDER                                                                                      |
+# | DOCKER RUNNER                                                                                       |
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
-
-import docker
-from fabric import Connection
-
-# TODO remove hardcoded values into a config file that is being parsed
-ROOTFS = Path("./io/rootfs.img")
-SSHDIR = Path(".ssh")
-
-# TODO Make all them others inherit from this thing
 class DockerRunner:
-    pass
-
-
-class RootfsBuilder:
-    def __init__(self):
-        self.dockerfile_base = Path.cwd()
+    def __init__(self) -> None:
+        self.dockerfile_ctx = Path.cwd()
+        self.dockerfile_path = ""
         self.client = docker.from_env()
         self.image = None
-        self.guarantee_ssh()
-        self.ssh_conn = None
-        self.rootfs_name = ROOTFS.name
+        self.tag = None
 
-    @staticmethod
-    def guarantee_ssh():
-        if SSHDIR.exists() and os.listdir(SSHDIR):
-            logger.debug("Assuming ssh keys are present...")
+    def build_image_hl(self):
+        image = self.client.images.build(
+            path=str(self.dockerfile_ctx),
+            dockerfile=self.dockerfile_path,
+            tag=self.tag
+        )[0]
+        return image
+
+    def build_image(self):
+        for log_entry in self.cli.build(
+            path=str(self.dockerfile_ctx),
+            dockerfile=self.dockerfile_path,
+            tag=self.tag,
+            decode=True):
+            v = next(iter(log_entry.values()))
+            if isinstance(v ,str):
+                v.strip()
+                if v:
+                    logger.debug(v)
+
+    def get_image(self):
+        try:
+            image = self.client.images.get(self.tag)
+            return image
+        except docker.errors.ImageNotFound:
+            return None
+
+    def run(self):
+        if not self.image:
+            logger.info(f"Building fresh image for {type(self).__name__}")
+            self.build_image()
+            self.image = self.get_image()
+        self.run_container()
+
+    def run_container(self):
+        pass
+
+
+# +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
+# | ROOTFS BUILDER                                                                                      |
+# +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
+class RootFSBuilder(DockerRunner):
+    def __init__(self):
+        super().__init__()
+        cfg_setter(self, ['rootfs_general', 'rootfs_builder', 'general'])
+        self.cli = docker.APIClient(base_url=self.docker_sock)
+        self.ssh_conn = None
+        self.guarantee_ssh()
+        self.rootfs_path = "/" + self.rootfs_dir + self.rootfs_base + self.arch + self.rootfs_ftype
+        self.dockerfile_path = self.dockerfile_ctx / self.dockerfile
+
+    def guarantee_ssh(self):
+        if Path(self.ssh_dir).exists() and os.listdir(self.ssh_dir):
+            pass
+            # logger.debug(f"Trying to reuse local ssh keys from {self.ssh_dir}...")
         else:
-            logger.debug("Generating new ssh key pair...")
-            SSHDIR.mkdir()
-            sp.run(f'ssh-keygen -f {SSHDIR / "like.id_rsa"} -t rsa -N ""', shell=True)
+            # logger.debug("Generating new ssh key pair...")
+            Path(self.ssh_dir).mkdir()
+            sp.run(f'ssh-keygen -f {self.ssh_dir / "like.id_rsa"} -t rsa -N ""', shell=True)
 
     def _init_ssh(self):
         # TODO remove hardcoded values in favor of a config
         # TODO do we even want this
         self.ssh_conn = Connection("dbg@localhost:2222", connect_kwargs={"key_filename": ".ssh/like.id_rsa"})
 
-    def _build_rootfs(self) -> None:
-        logger.info("Building fresh rootfs")
-        ret = self.client.images.build(path=str(self.dockerfile_base), dockerfile=self.dockerfile_base / ".dockerfile_rootfs", tag="rootfs")
-        self.image = ret[0]
-        logger.debug(f"Image: {self.image}")
-        command = f"/home/dbg/rootfs.sh -n {self.rootfs_name}"
+    def run_container(self):
+        command = f"/home/dbg/rootfs.sh -n {self.rootfs_path}"
         container = self.client.containers.run(
-            self.image, volumes=[f"{Path.cwd() / 'io'}:/io"], privileged=True, detach=True, ports={"22/tcp": 2222}, command=command
+            self.image,
+            volumes=[f"{Path.cwd() / 'io'}:/io"], 
+            remove=True,
+            detach=True,
+            privileged=True,
+            ports={"22/tcp": self.ssh_fwd_port},
+            command=command
         )
         gen = container.logs(stream=True, follow=True)
-        [logger.debug(log.strip()) for log in gen]
+        [logger.debug(log.strip().decode()) for log in gen]
 
-    def run(self) -> None:
-        if ROOTFS.exists():
+    def check_existing(self):
+        if Path(self.rootfs_path).exists():
             choice = "y"
-            logger.info("Found a rootfs locally. Re-use it? [Y/n]")
+            logger.info(f"Found {self.rootfs_path}. Re-use it? [Y/n]")
             tmp = input().lower()
             if tmp != "":
                 choice = tmp
             if choice in ["y", "yes"]:
                 logger.info("Reusing existing rootfs...")
+                return self.rootfs_path
             else:
-                self._build_rootfs()
+                self.image = self.get_image()
         else:
-            self._build_rootfs()
-
-
-"""
-qemu-system-x86_64 \
-	-m 2G \
-	-smp 2 \
-	-kernel $KERNEL/arch/x86/boot/bzImage \
-	-append "console=ttyS0 root=/dev/sda earlyprintk=serial net.ifnames=0" \
-	-drive file=$IMAGE/stretch.img,format=raw \
-	-net user,host=10.0.2.10,hostfwd=tcp:127.0.0.1:10021-:22 \
-	-net nic,model=e1000 \
-	-enable-kvm \
-	-nographic \
-	-pidfile vm.pid \
-	2>&1 | tee vm.log
-"""
-
-
-class Debuggee:
-    def __init__(self, kernel_root: Path, image: Path, arch: str, memory: int, smp: int, kvm: bool, dbg: bool, kaslr: bool):
-        self.kernel_root = kernel_root
-        self.img = image
-        self.arch = arch
-        self.mem = memory
-        self.smp = smp
-        self.kvm = kvm
-        self.dbg = dbg
-        self.kaslr = kaslr
+            self.image = self.get_image()
 
     def run(self):
-        cmd = f"qemu-system-{self.arch} -m {self.mem} -smp {self.smp} -kernel {self.kernel_root}/arch/{self.arch}/boot/bzImage"
+        self.check_existing()
+        super().run()
+
+# +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
+# | DEBUGGER                                                                                            |
+# +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
+class Debugger(DockerRunner):
+    def __init__(self, arch: str, p: Path):
+        super().__init__()
+        cfg_setter(self, ['general'])
+        self.cli = docker.APIClient(base_url=self.docker_sock)
+        self.mnt = Path("/io")
+        self.arch = arch
+        self.project_root = p
+        self.tag = "debugger"
+
+    def build_container(self):
+        logger.info("Building debug container...")
+
+        self.image = self.client.images.build(
+            path=str(self.dockerfile_ctx), dockerfile=self.dockerfile_ctx / ".dockerfile_dbg", tag=self.tag
+        )[0]
+        self.tag = self.image.tags[0]
+        logger.debug(f"Image: {self.image}")
+
+    def run_container(self):
+        entrypoint = f"/home/dbg/debugger.sh -a {self.arch} -p {self.mnt}"
+        runner = f'docker run -it --security-opt seccomp=unconfined --cap-add=SYS_PTRACE -v {Path.cwd() / self.project_root}:/io --net="host" {self.tag} {entrypoint}'
+        tmux_shell(runner)
+
+    def run(self):
+        self.get_image()
+        super().run() # TODO continue here
+
+
+# +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
+# | DEBUGGEE                                                                                            |
+# +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
+class Debuggee:
+    def __init__(self):
+        cfg_setter(self, ['debuggee', 'general', 'kernel_general', 'rootfs_general'])
+        self.img = self.rootfs_dir + self.rootfs_base + self.arch + self.rootfs_ftype
+
+
+    def run(self):
+        cmd = f"qemu-system-{self.arch} -m {self.memory} -smp {self.smp} -kernel {self.kernel_root}/arch/{self.arch}/boot/bzImage"
         cmd += " -append \"console=ttyS0 root=/dev/sda earlyprintk=serial net.ifnames=0" 
         if self.kaslr:
             cmd += "\""
@@ -348,82 +427,29 @@ class Debuggee:
         tmux_shell(cmd)
 
 
-class Debugger:
-    def __init__(self, arch: str, p: Path):
-        self.mnt = Path("/io")
-        self.arch = arch
-        self.project_root = p
-        self.dockerfile_base = Path.cwd()
-        self.client = docker.from_env()
-        self.image = None
-        self.tag = "debugger"
-
-    def _build_container(self):
-        logger.info("Building debug container...")
-
-        self.image = self.client.images.build(
-            path=str(self.dockerfile_base), dockerfile=self.dockerfile_base / ".dockerfile_dbg", tag=self.tag
-        )[0]
-        self.tag = self.image.tags[0]
-        logger.debug(f"Image: {self.image}")
-
-    def _run_container(self):
-        entrypoint = f"/home/dbg/debugger.sh -a {self.arch} -p {self.mnt}"
-        runner = f'docker run -it --security-opt seccomp=unconfined --cap-add=SYS_PTRACE -v {Path.cwd() / self.project_root}:/io --net="host" {self.tag} {entrypoint}'
-        logger.debug(runner)
-
-        # self.client.containers.run(
-        #        self.image, volumes=[f"{Path.cwd()}:/io"],  detach=True, command=cmd, network_mode="host"
-        # )
-
-        tmux_shell(runner)
-
-    def _runner(self):
-        try:
-            img = self.client.images.get(self.tag)
-            self.tag = img.tags[0]
-        except docker.errors.ImageNotFound:
-            logger.debug("Did not find debugger")
-            self._build_container()
-        finally:
-            self._run_container()
-
-    def run(self):
-        self._runner()
-
-
-def tmux(cmd: str) -> None:
-    sp.run(f"tmux {cmd}", shell=True)
-    # os.system(f"tmux {cmd}")
-
-
-def tmux_shell(cmd: str) -> None:
-    tmux(f"send-keys '{cmd}' 'C-m'")
-
 
 def main():
-    # karchive = KernelDownloader(None, '5.15').run()
-    # karchive = KernelDownloader('47700948a4abb4a5ae13ef943ff682a7f327547a', None).run()
-    # KernelUnpacker(karchive).run()
-    # KernelBuilder().run()
-    # RootfsBuilder().run()
+    karchive = KernelDownloader().run()
+    if not KernelUnpacker(karchive).run():
+        KernelBuilder().run()
+    RootFSBuilder().run()
 
     # By now we should be in a tmux window
     # Run pwndbg container
-    tmux_shell("tmux source-file .tmux.conf")
-    tmux("selectp -t 0")
-    tmux('rename-window "LIKE-DBG"')
-    tmux("splitw -h -p 50")
-    tmux("selectp -t 1")
-    tmux("splitw -v -p 50")
+    #tmux_shell("tmux source-file .tmux.conf")
+    #tmux("selectp -t 0")
+    #tmux('rename-window "LIKE-DBG"')
+    #tmux("splitw -h -p 50")
+    #tmux("selectp -t 1")
+    #tmux("splitw -v -p 50")
 
     # Then attach debugger
-    tmux("selectp -t 0")
-    Debugger("i386:x86-64:intel", Path("kernel_root")).run()
+    #tmux("selectp -t 0")
+    #Debugger("i386:x86-64:intel", Path("kernel_root")).run()
 
     # Start kernel first
-    tmux("selectp -t 1")
-    Debuggee(Path("kernel_root"), Path("io/rootfs.img"), "x86_64", 4096, 2, True, True, False).run()
+    #tmux("selectp -t 1")
+    #Debuggee().run()
 
 if __name__ == "__main__":
     main()

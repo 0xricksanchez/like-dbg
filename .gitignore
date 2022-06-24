@@ -1,6 +1,7 @@
 linux-*
 kernel_root
 io/rootfs*
+io/filesystem*
 .gdb_history
 .venv
 Dockerfile*

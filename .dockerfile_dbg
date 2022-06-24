@@ -4,11 +4,32 @@ LABEL maintainer="Christopher Krah <admin@0x434b.dev>"
 ENV DEBIAN_FRONTEND noninteractive
 
 # Get essentials
-RUN apt update && \
+RUN dpkg --add-architecture i386 && \
+    apt update && \
     apt upgrade -y && \
-    apt install -y libc-dev git python3 python3-pip python3-dev libssl-dev libffi-dev build-essential sudo neovim gdb-multiarch ltrace strace ca-certificates curl wget zsh && \
+    apt install -y libc-dev \
+        git \
+        python3 \
+        python3-pip \
+        python3-dev \
+        libssl-dev \ 
+        libffi-dev \
+        build-essential \
+        sudo \
+        neovim \
+        gdb-multiarch \
+        ltrace \
+        strace \
+        ca-certificates \
+        curl \
+        wget \
+        zsh \
+        libc6-dev \
+        libc6-dbg \
+        libc6-dbg:i386 && \
     python3 -m pip install --upgrade pip && \
-    python3 -m pip install --upgrade pwntools
+    python3 -m pip install --upgrade pwntools && \
+    apt-get clean
 
 ENV USER_UID=1000
 ENV HOST_GID=1000

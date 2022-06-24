@@ -24,6 +24,6 @@ RUN mkdir .ssh && \
 
 COPY .ssh/like.id_rsa.pub .ssh/authorized_keys
 COPY io/scripts/rootfs.sh .
-RUN /usr/sbin/sshd -D
+RUN /usr/sbin/sshd 
 
 EXPOSE 22
