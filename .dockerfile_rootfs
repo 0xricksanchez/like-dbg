@@ -2,6 +2,7 @@ FROM debian:bullseye-slim
 LABEL maintainer="Christopher Krah <admin@0x434b.dev>"
 
 ENV DEBIAN_FRONTEND noninteractive
+WORKDIR /tmp
 
 # Get essentials
 RUN apt update && apt upgrade -y && \

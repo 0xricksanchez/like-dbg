@@ -1,7 +1,16 @@
 #!/usr/bin/env bash
 # Modified version of the syzkaller script:
 #   https://raw.githubusercontent.com/google/syzkaller/master/tools/create-image.sh
-set -eux
+# Should prolly exchange this in favor of buildroot soon
+# https://raw.githubusercontent.com/google/syzkaller/master/tools/create-buildroot-image.sh
+# -e exit on error
+# -u Write to stderr when trying to expand a variable that does not exist
+# -x Write to stderr for tracing 
+#set -x
+
+wget https://raw.githubusercontent.com/qemu/qemu/master/scripts/qemu-binfmt-conf.sh && \
+chmod 777 qemu-binfmt-conf.sh && \
+./qemu-binfmt-conf.sh 2>&1 > /dev/null
 
 pushd /io
 
@@ -109,9 +118,10 @@ if [ $DEBARCH == "riscv64" ]; then
 fi
 sudo debootstrap $DEBOOTSTRAP_PARAMS
 
+
 # 2. debootstrap stage: only necessary if target != host architecture
 if [ $FOREIGN = "true" ]; then
-    sudo cp $(which qemu-$ARCH-static) $MNT/$(which qemu-$ARCH-static)
+    sudo cp $(which qemu-$ARCH-static) $MNT$(which qemu-$ARCH-static)
     sudo chroot $MNT /bin/bash -c "/debootstrap/debootstrap --second-stage"
 fi
 

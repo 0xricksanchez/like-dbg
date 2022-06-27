@@ -1,23 +1,25 @@
 #!/usr/bin/env python3
 
-import requests
 import configparser
-import shutil
-import tarfile
-from typing import List
+import os
 import re
+import shutil
+import subprocess as sp
+import tarfile
+import urllib.request
+from contextlib import contextmanager
+from pathlib import Path
+from typing import List
+
+import docker
+import requests
 import tqdm
+from fabric import Connection
 from loguru import logger
 from tqdm import tqdm
-import os
-from contextlib import contextmanager
-import urllib.request
-from pathlib import Path
-import subprocess as sp
-import docker
-from fabric import Connection
 
 config = Path.cwd() / 'config.ini'
+
 
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
 # | MISC QOL functions                                                                                  |
@@ -31,11 +33,33 @@ def cfg_setter(obj, sections: List[str]) -> None:
             val = tmp if tmp not in ['yes', 'no'] else cfg[sect].getboolean(key)
             setattr(obj, key, val)
 
+
+def is_reuse(p: str) -> bool:
+    choice = "y"
+    logger.info(f"Found {p}. Re-use it? [Y/n]")
+    tmp = input().lower()
+    if tmp != "":
+        choice = tmp
+    if choice in ["y", "yes"]:
+        logger.debug(f"Reusing existing {p}...")
+        return True
+    else:
+        return False
+
+def adjust_arch(arch):
+    match arch:
+        case 'arm64':
+            return 'aarch64'
+        case _:
+            return arch
+
 def tmux(cmd: str) -> None:
-    sp.run(f"tmux {cmd}", shell=True)
+    sp.run(f"tmux {cmd} > /dev/null", shell=True)
+
 
 def tmux_shell(cmd: str) -> None:
     tmux(f"send-keys '{cmd}' 'C-m'")
+
 
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
 # | TQDM WGET WITH PROGRESS BAR                                                                         |
@@ -119,18 +143,11 @@ class KernelUnpacker:
             return 0
 
     def _reuse_existing_vmlinux(self) -> int:
-        choice = "y"
-        logger.info('Found "vmlinux" locally. Re-use it? [Y/n]')
-        tmp = input().lower()
-        if tmp != "":
-            choice = tmp
-        if choice in ["y", "yes"]:
-            logger.info("Reusing existing kernel...")
-            return 1
-        else:
+        if not is_reuse("vmlinux"):
             self._purge(self.kernel_root)
             self._unpack_targz()
             return 0
+        return 1
 
     def _unpack_targz(self) -> None:
         if not tarfile.is_tarfile(self.archive):
@@ -165,6 +182,7 @@ class KernelUnpacker:
 class KernelBuilder:
     def __init__(self) -> None:
         cfg_setter(self, ['kernel_general', 'kernel_builder', 'general'])
+        self.compiler = 'gcc' if not self.compiler else self.compiler
 
     @staticmethod
     @contextmanager
@@ -189,15 +207,18 @@ class KernelBuilder:
         return ret.returncode
 
     def _build_mrproper(self):
-        self._run_generic("make mrproper")
+        self._run_generic(f"CC={self.compiler} ARCH={self.arch} make mrproper")
 
     def _build_arch(self):
         # TODO check how we need to sanitize the [general] config arch field to reflect the make options
         # All i know is it works if arch is x86_64
-        self._run_generic(f"make {self.arch}_defconfig")
+        if self.arch == 'x86_64':
+            self._run_generic(f"CC={self.compiler} LLVM=1 make {self.arch}_defconfig")
+        else:
+            self._run_generic(f"CC={self.compiler} LLVM=1 ARCH={self.arch} make defconfig")
 
     def _build_kvm_guest(self):
-        self._run_generic("make kvm_guest.config")
+        self._run_generic(f"CC={self.compiler} LLVM=1 ARCH={self.arch} make kvm_guest.config")
 
     def _configure_kernel(self):
         if self.mode == 'syzkaller':
@@ -219,7 +240,9 @@ class KernelBuilder:
             -d DEBUG_INFO_REDUCED \
             -d DEBUG_INFO_COMPRESSED \
             -d DEBUG_INFO_SPLIT \
-            -d RANDOMIZE_BASE"
+            -d RANDOMIZE_BASE \
+            -d DEBUG_EFI \
+            -d DEBUG_INFO_BTF"
         )
 
     def _configure_syzkaller(self):
@@ -248,8 +271,8 @@ class KernelBuilder:
         )
 
     def _make(self):
-        self._run_generic("make -j$(nproc) all")
-        self._run_generic("make -j$(nproc) modules")
+        self._run_generic(f"CC={self.compiler} ARCH={self.arch} LLVM=1 make -j$(nproc) all")
+        self._run_generic(f"CC={self.compiler} ARCH={self.arch} LLVM=1 make -j$(nproc) modules")
 
     def run(self):
         logger.info("Building kernel. This may take a while...")
@@ -268,7 +291,6 @@ class KernelBuilder:
 class DockerRunner:
     def __init__(self) -> None:
         self.dockerfile_ctx = Path.cwd()
-        self.dockerfile_path = ""
         self.client = docker.from_env()
         self.image = None
         self.tag = None
@@ -282,14 +304,15 @@ class DockerRunner:
         return image
 
     def build_image(self):
+        logger.debug(self.__dict__)
         for log_entry in self.cli.build(
-            path=str(self.dockerfile_ctx),
-            dockerfile=self.dockerfile_path,
-            tag=self.tag,
-            decode=True):
+                path=str(self.dockerfile_ctx),
+                dockerfile=self.dockerfile,
+                tag=self.tag,
+                decode=True):
             v = next(iter(log_entry.values()))
-            if isinstance(v ,str):
-                v.strip()
+            if isinstance(v, str):
+                v = ' '.join(v.strip().split())
                 if v:
                     logger.debug(v)
 
@@ -321,10 +344,10 @@ class RootFSBuilder(DockerRunner):
         self.cli = docker.APIClient(base_url=self.docker_sock)
         self.ssh_conn = None
         self.guarantee_ssh()
-        self.rootfs_path = "/" + self.rootfs_dir + self.rootfs_base + self.arch + self.rootfs_ftype
-        self.dockerfile_path = self.dockerfile_ctx / self.dockerfile
+        self.rootfs_path = self.rootfs_dir + self.rootfs_base + self.arch + self.rootfs_ftype
+        # self.dockerfile_path = self.dockerfile_ctx / self.dockerfile
 
-    def guarantee_ssh(self):
+    def guarantee_ssh(self) -> None:
         if Path(self.ssh_dir).exists() and os.listdir(self.ssh_dir):
             pass
             # logger.debug(f"Trying to reuse local ssh keys from {self.ssh_dir}...")
@@ -339,11 +362,11 @@ class RootFSBuilder(DockerRunner):
         self.ssh_conn = Connection("dbg@localhost:2222", connect_kwargs={"key_filename": ".ssh/like.id_rsa"})
 
     def run_container(self):
-        command = f"/home/dbg/rootfs.sh -n {self.rootfs_path}"
+        qemu_arch = adjust_arch(self.arch)
+        command = f"/home/dbg/rootfs.sh -n /{self.rootfs_path} -a {qemu_arch}"
         container = self.client.containers.run(
             self.image,
-            volumes=[f"{Path.cwd() / 'io'}:/io"], 
-            remove=True,
+            volumes=[f"{Path.cwd() / 'io'}:{self.docker_mnt}"],
             detach=True,
             privileged=True,
             ports={"22/tcp": self.ssh_fwd_port},
@@ -352,55 +375,42 @@ class RootFSBuilder(DockerRunner):
         gen = container.logs(stream=True, follow=True)
         [logger.debug(log.strip().decode()) for log in gen]
 
-    def check_existing(self):
+    def check_existing(self) -> bool:
+        logger.debug(f'Checking for existing rootfs: {self.rootfs_path}')
         if Path(self.rootfs_path).exists():
-            choice = "y"
-            logger.info(f"Found {self.rootfs_path}. Re-use it? [Y/n]")
-            tmp = input().lower()
-            if tmp != "":
-                choice = tmp
-            if choice in ["y", "yes"]:
-                logger.info("Reusing existing rootfs...")
-                return self.rootfs_path
-            else:
-                self.image = self.get_image()
+            return is_reuse(self.rootfs_path)
         else:
-            self.image = self.get_image()
+            return False
 
-    def run(self):
-        self.check_existing()
-        super().run()
+    def run(self) -> None:
+        if not self.check_existing():
+            self.image = self.get_image()
+            logger.debug(f"found rootfs_builder: {self.image}")
+            super().run()
+
 
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
 # | DEBUGGER                                                                                            |
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
 class Debugger(DockerRunner):
-    def __init__(self, arch: str, p: Path):
+    def __init__(self):
         super().__init__()
-        cfg_setter(self, ['general'])
+        cfg_setter(self, ['general', 'debugger', 'kernel_general'])
         self.cli = docker.APIClient(base_url=self.docker_sock)
-        self.mnt = Path("/io")
-        self.arch = arch
-        self.project_root = p
-        self.tag = "debugger"
 
-    def build_container(self):
-        logger.info("Building debug container...")
-
-        self.image = self.client.images.build(
-            path=str(self.dockerfile_ctx), dockerfile=self.dockerfile_ctx / ".dockerfile_dbg", tag=self.tag
-        )[0]
-        self.tag = self.image.tags[0]
-        logger.debug(f"Image: {self.image}")
-
-    def run_container(self):
-        entrypoint = f"/home/dbg/debugger.sh -a {self.arch} -p {self.mnt}"
-        runner = f'docker run -it --security-opt seccomp=unconfined --cap-add=SYS_PTRACE -v {Path.cwd() / self.project_root}:/io --net="host" {self.tag} {entrypoint}'
+    def run_container(self) -> None:
+        entrypoint = f"/home/dbg/debugger.sh -a {self.arch} -p {self.docker_mnt}"
+        runner = f'docker run -it --rm --security-opt seccomp=unconfined --cap-add=SYS_PTRACE -v {Path.cwd() / self.kernel_root}:/io --net="host" {self.tag} {entrypoint}'
         tmux_shell(runner)
 
+    def check_existing(self) -> None:
+        self.image = self.get_image()
+        if self.image and not is_reuse(self.image.tags[0]):
+            self.image = None
+
     def run(self):
-        self.get_image()
-        super().run() # TODO continue here
+        self.check_existing()
+        super().run()
 
 
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
@@ -410,25 +420,33 @@ class Debuggee:
     def __init__(self):
         cfg_setter(self, ['debuggee', 'general', 'kernel_general', 'rootfs_general'])
         self.img = self.rootfs_dir + self.rootfs_base + self.arch + self.rootfs_ftype
+        self.qemu_arch = adjust_arch(self.arch)
 
 
     def run(self):
-        cmd = f"qemu-system-{self.arch} -m {self.memory} -smp {self.smp} -kernel {self.kernel_root}/arch/{self.arch}/boot/bzImage"
-        cmd += " -append \"console=ttyS0 root=/dev/sda earlyprintk=serial net.ifnames=0" 
-        if self.kaslr:
-            cmd += "\""
-        else:
-            cmd += " nokaslr\""
-        cmd += f" -drive file={self.img},format=raw -net user,host=10.0.2.10,hostfwd=tcp:127.0.0.1:10021-:22 -net nic,model=e1000 -nographic -pidfile vm.pid"
+        cmd = f"qemu-system-{self.qemu_arch} -m {self.memory} -smp {self.smp} -kernel {self.kernel_root}/arch/{self.arch}/boot/bzImage"
+        cmd += " -append \"console=ttyS0 root=/dev/sda earlyprintk=serial net.ifnames=0"
+        if not self.kaslr:
+            cmd += " nokaslr"
+        if not self.smep:
+            cmd += " nosmep"
+        if not self.smap:
+            cmd += " nosmap"
+        if not self.kpti:
+            cmd += " nopti"
+        cmd += f" panic=1\" -drive file={self.img},format=raw -net user,host=10.0.2.10,hostfwd=tcp:127.0.0.1:10021-:22 -net nic,model=e1000 -nographic -pidfile vm.pid"
         if self.kvm:
             cmd += " -enable-kvm"
-        if self.dbg:
+        if self.gdb:
             cmd += " -S -s"
         tmux_shell(cmd)
 
 
-
 def main():
+    tmux_shell("tmux source-file .tmux.conf 2>&1 > /dev/null")
+    logger.debug("Loaded tmux config")
+    _ = input()  # FIXME: This reads the stdout of the tmux_shell cmd above. Messes with the remaining flow
+
     karchive = KernelDownloader().run()
     if not KernelUnpacker(karchive).run():
         KernelBuilder().run()
@@ -436,20 +454,18 @@ def main():
 
     # By now we should be in a tmux window
     # Run pwndbg container
-    #tmux_shell("tmux source-file .tmux.conf")
     #tmux("selectp -t 0")
     #tmux('rename-window "LIKE-DBG"')
-    #tmux("splitw -h -p 50")
-    #tmux("selectp -t 1")
-    #tmux("splitw -v -p 50")
+    # tmux("splitw -h -p 50")
+    # tmux("selectp -t 1")
+    # tmux("splitw -v -p 50")
 
-    # Then attach debugger
     #tmux("selectp -t 0")
-    #Debugger("i386:x86-64:intel", Path("kernel_root")).run()
+    #Debugger().run()
 
-    # Start kernel first
-    #tmux("selectp -t 1")
-    #Debuggee().run()
+    # tmux("selectp -t 1")
+    # Debuggee().run()
+
 
 if __name__ == "__main__":
     main()
