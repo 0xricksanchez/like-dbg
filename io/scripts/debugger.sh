@@ -34,13 +34,13 @@ done
 # Handle GDB naming sceme
 case "$ARCH" in
     arm64)
-        ARCH=armv8-a
+        ARCH=aarch64
         ;;
     arm)
         ARCH=armv7
         ;;
     x86_64)
-        ARCH=i386:x86-64
+        ARCH=i386:x86-64:intel
         ;;
     *)
         ARCH=$ARCH
@@ -52,8 +52,9 @@ popd
 rm vmlinux-gdb.py
 ln -sd scripts/gdb/vmlinux-gdb.py
 
-gdb -q $VMLINUX -iex "set architecture $ARCH" -ex "target remote :1234" \
+gdb-multiarch -q $VMLINUX -iex "set architecture $ARCH" -ex "target remote :1234" \
     -ex "add-symbol-file $VMLINUX" \
+    -ex "break startup_64" \
     -ex "break start_kernel" \
     -ex "continue" \
     -ex "lx-symbols" \

@@ -6,7 +6,7 @@ WORKDIR /tmp
 
 # Get essentials
 RUN apt update && apt upgrade -y && \
-    apt install -y vim debootstrap git openssh-server qemu-user-static libc-dev sudo && \
+    apt install -y vim debootstrap git openssh-server qemu-user-static libc-dev sudo qemu binfmt-support && \
     mkdir -p /var/run/sshd
 
 ENV USER_UID=1000

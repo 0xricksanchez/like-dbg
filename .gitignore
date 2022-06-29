@@ -3,6 +3,7 @@ kernel_root
 io/rootfs*
 io/filesystem*
 .gdb_history
+patches/*
 .venv
 Dockerfile*
 .zshrc

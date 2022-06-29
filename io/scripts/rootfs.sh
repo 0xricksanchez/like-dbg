@@ -6,21 +6,28 @@
 # -e exit on error
 # -u Write to stderr when trying to expand a variable that does not exist
 # -x Write to stderr for tracing 
-#set -x
+set -eux
 
+# Check if binfmt_misc is ready to go
+if [ ! -f /proc/sys/fs/binfmt_misc/register ]; then
+    mount binfmt_misc -t binfmt_misc /proc/sys/fs/binfmt_misc
+fi
+# Reset any qemu handlers...
+find /proc/sys/fs/binfmt_misc -type f -name 'qemu-*' -exec sh -c 'echo -1 > {}' \;
+
+# Grab qemu binfmt register script
 wget https://raw.githubusercontent.com/qemu/qemu/master/scripts/qemu-binfmt-conf.sh && \
 chmod 777 qemu-binfmt-conf.sh && \
-./qemu-binfmt-conf.sh 2>&1 > /dev/null
+./qemu-binfmt-conf.sh --qemu-suffix "-static" --qemu-path "/usr/bin"
 
 pushd /io
 
 MNT=rootfs
-SEEK=5120
+SEEK=2047
 PKGS="build-essential,vim,openssh-server,make,sudo,curl,tar,gcc,libc6-dev,time,strace,less,psmisc,selinux-utils,policycoreutils,checkpolicy,selinux-policy-default,firmware-atheros"
 ARCH=$(uname -m)
 DIST=bullseye
 ROOTFS_NAME=rootfs
-
 
 while true; do
     if [ $# -eq 0 ];then
@@ -116,13 +123,14 @@ fi
 if [ $DEBARCH == "riscv64" ]; then
     DEBOOTSTRAP_PARAMS="--keyring /usr/share/keyrings/debian-ports-archive-keyring.gpg --exclude firmware-atheros $DEBOOTSTRAP_PARAMS http://deb.debian.org/debian-ports"
 fi
+echo $DEBOOTSTRAP_PARAMS
 sudo debootstrap $DEBOOTSTRAP_PARAMS
-
 
 # 2. debootstrap stage: only necessary if target != host architecture
 if [ $FOREIGN = "true" ]; then
-    sudo cp $(which qemu-$ARCH-static) $MNT$(which qemu-$ARCH-static)
+    sudo cp -av $(which qemu-$ARCH-static) $MNT$(which qemu-$ARCH-static)
     sudo chroot $MNT /bin/bash -c "/debootstrap/debootstrap --second-stage"
+    rm -rf $MNT$(which qemu-$ARCH-static)
 fi
 
 # Set some defaults and enable promtless ssh to the machine for root.
@@ -134,9 +142,9 @@ echo 'debugfs /sys/kernel/debug debugfs defaults 0 0' | sudo tee -a $MNT/etc/fst
 echo 'securityfs /sys/kernel/security securityfs defaults 0 0' | sudo tee -a $MNT/etc/fstab
 echo 'configfs /sys/kernel/config/ configfs defaults 0 0' | sudo tee -a $MNT/etc/fstab
 echo 'binfmt_misc /proc/sys/fs/binfmt_misc binfmt_misc defaults 0 0' | sudo tee -a $MNT/etc/fstab
-echo -en "127.0.0.1\tlocalhost\n" | sudo tee $MNT/etc/hosts
+echo -en "127.0.0.1\tlocalhost $ROOTFS_NAME\n" | sudo tee $MNT/etc/hosts
 echo "nameserver 8.8.8.8" | sudo tee -a $MNT/etc/resolve.conf
-echo "" | sudo tee $MNT/etc/hostname
+echo "$ROOTFS_NAME" | sudo tee $MNT/etc/hostname
 ssh-keygen -f $ROOTFS_NAME.id_rsa -t rsa -N ''
 sudo mkdir -p $MNT/root/.ssh/
 cat $ROOTFS_NAME.id_rsa.pub | sudo tee $MNT/root/.ssh/authorized_keys
@@ -149,4 +157,4 @@ sudo mount -o loop $ROOTFS_NAME /mnt/$MNT
 sudo cp -a $MNT/. /mnt/$MNT/.
 sudo umount /mnt/$MNT
 sudo rm -rf $MNT
-chmod 777 $ROOTFS_NAME*
+chmod 755 $ROOTFS_NAME*

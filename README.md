@@ -29,5 +29,6 @@ Most of the config fields should be self explanatory.
 
 * [ ] Patch directory that is automatically applied to the kernel source
 * [ ] Multi Arch kernel builds
-* [ ] Custom compiler
+* [ ] Set custom compiler in config.ini
+* [ ] Set additional kernel config parameters in config.ini
 * [ ] Add android kernel as an option 

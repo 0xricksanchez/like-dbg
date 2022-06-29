@@ -10,6 +10,7 @@ import urllib.request
 from contextlib import contextmanager
 from pathlib import Path
 from typing import List
+from sys import exit
 
 import docker
 import requests
@@ -77,14 +78,24 @@ class DLProgressBarTQDM(tqdm):
 class KernelDownloader:
     def __init__(self) -> None:
         cfg_setter(self, ['kernel_dl'])
-        self.commit = self.commit if self.commit and not self.tag else self.resolve_latest()
-        self.choice = self.tag if self.tag else self.commit
+        self.commit = self._set_commit()
+        self.choice = self._set_choice()
         logger.info(f"Using kernel with (tag/commit) {self.choice}")
-        self.dl_uri = f"{self.snap_uri}{self.choice}.tar.gz"
+        self.dl_uri = self._set_dl_uri()
         self.archive = Path(f"linux-{self.choice}.tar.gz")
         logger.debug(f"Kernel snap: {self.dl_uri}")
 
-    def resolve_latest(self) -> str:
+
+    def _set_commit(self):
+        if any([self.tag, self.mmp]):
+            return self.commit
+        elif self.commit:
+            return self.commit
+        else:
+            self._resolve_latest()
+
+
+    def _resolve_latest(self) -> str:
         commit_re = rb"commit\/\?id=[0-9a-z]*"
         r = requests.get(self.commit_uri)
         search_res = re.search(commit_re, r.content)
@@ -95,6 +106,24 @@ class KernelDownloader:
         else:
             logger.error("Resolving latest commit")
             exit(-1)
+
+    def _set_choice(self):
+        if self.mmp:
+            return self.mmp
+        elif self.tag:
+            return self.tag
+        else:
+            return self.commit
+
+    def _set_dl_uri(self):
+        if self.mmp:
+            (major, minor, patch) = tuple(self.mmp.split('.'))
+            self.mmp_uri = self.mmp_uri.replace('KMAJOR', major)
+            self.mmp_uri = self.mmp_uri.replace('KMINOR', minor)
+            self.mmp_uri = self.mmp_uri.replace('KPATCH', patch)
+            return self.mmp_uri
+        else:
+            return "{self.snap_uri}{self.choice}.tar.gz"
 
     def is_present(self) -> bool:
         if Path(self.archive).exists():
@@ -123,7 +152,7 @@ class KernelUnpacker:
         cfg_setter(self, ['kernel_general'])
         self.kernel_root = Path(self.kernel_root)
         self.archive = p
-        self.ex_name = Path(self.archive.name.split(".")[0])
+        self.ex_name = Path('.'.join(self.archive.name.split('.')[:-2])) # FIXME only works for formats like .tar.gz
         self.dst_content = None
 
     def _is_dest_empty(self) -> bool:
@@ -183,6 +212,7 @@ class KernelBuilder:
     def __init__(self) -> None:
         cfg_setter(self, ['kernel_general', 'kernel_builder', 'general'])
         self.compiler = 'gcc' if not self.compiler else self.compiler
+        self.llvm_flag = 'LLVM=0' if self.compiler == 'gcc' else 'LLVM=1'
 
     @staticmethod
     @contextmanager
@@ -194,10 +224,6 @@ class KernelBuilder:
         finally:
             os.chdir(cur_cwd)
 
-    def apply_patches(self):
-        # TODO add option to apply patch files
-        pass
-
     @staticmethod
     def _run_generic(cmd: str) -> int:
         ret = sp.run(cmd, shell=True)
@@ -206,6 +232,16 @@ class KernelBuilder:
             exit(ret.returncode)
         return ret.returncode
 
+    def _apply_patches(self):
+        if Path(self.patch_dir).exists():
+            patch_files = [x for x in Path(self.patch_dir).iterdir()]
+            logger.debug(f"Applying patches...: {patch_files}")
+            for pfile in patch_files:
+                if sp.run(f'patch -p1 < {str(pfile)}', shell=True).returncode != 0:
+                    logger.error(f"Patching: {pfile}")
+                    exit(-1)
+
+
     def _build_mrproper(self):
         self._run_generic(f"CC={self.compiler} ARCH={self.arch} make mrproper")
 
@@ -213,12 +249,12 @@ class KernelBuilder:
         # TODO check how we need to sanitize the [general] config arch field to reflect the make options
         # All i know is it works if arch is x86_64
         if self.arch == 'x86_64':
-            self._run_generic(f"CC={self.compiler} LLVM=1 make {self.arch}_defconfig")
+            self._run_generic(f"CC={self.compiler} {self.llvm_flag} make {self.arch}_defconfig")
         else:
-            self._run_generic(f"CC={self.compiler} LLVM=1 ARCH={self.arch} make defconfig")
+            self._run_generic(f"CC={self.compiler} {self.llvm_flag} ARCH={self.arch} make defconfig")
 
     def _build_kvm_guest(self):
-        self._run_generic(f"CC={self.compiler} LLVM=1 ARCH={self.arch} make kvm_guest.config")
+        self._run_generic(f"CC={self.compiler} {self.llvm_flag} ARCH={self.arch} make kvm_guest.config")
 
     def _configure_kernel(self):
         if self.mode == 'syzkaller':
@@ -271,18 +307,24 @@ class KernelBuilder:
         )
 
     def _make(self):
-        self._run_generic(f"CC={self.compiler} ARCH={self.arch} LLVM=1 make -j$(nproc) all")
-        self._run_generic(f"CC={self.compiler} ARCH={self.arch} LLVM=1 make -j$(nproc) modules")
+        self._run_generic(f"CC={self.compiler} ARCH={self.arch} {self.llvm_flag} make -j$(nproc) all")
+        self._run_generic(f"CC={self.compiler} ARCH={self.arch} {self.llvm_flag} make -j$(nproc) modules")
 
     def run(self):
         logger.info("Building kernel. This may take a while...")
         with self.build_context(self.kernel_root):
             self._build_mrproper()
+            self._apply_patches()
             self._build_arch()
             self._build_kvm_guest()
             self._configure_kernel()
             self._make()
         logger.info("Successfully build the kernel")
+        if self.arch == 'x86_64':
+            kernel = Path(f'{self.kernel_root}/arch/x86/boot/bzImage')
+            if kernel.exists():
+                Path(Path.cwd() / kernel.parent.parent.parent / f"{self.arch}/boot/Image").symlink_to(Path.cwd() / kernel)
+                
 
 
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
@@ -423,9 +465,23 @@ class Debuggee:
         self.qemu_arch = adjust_arch(self.arch)
 
 
+
+    # What worked for me with aarch64
+    # qemu-system-aarch64 -cpu cortex-a72 -machine type=virt -nographic -smp 2 -m 4096 -kernel kernel_root/arch/arm64/boot/Image -append "root=/dev/vda console=ttyAMA0" -drive file=io/filesystem-arm64,format=raw -s -S
+    # gdb-ma
+    #   set architecture aarch64
+    # Even break start_kernel worked..
     def run(self):
-        cmd = f"qemu-system-{self.qemu_arch} -m {self.memory} -smp {self.smp} -kernel {self.kernel_root}/arch/{self.arch}/boot/bzImage"
-        cmd += " -append \"console=ttyS0 root=/dev/sda earlyprintk=serial net.ifnames=0"
+        cmd = f"qemu-system-{self.qemu_arch} -m {self.memory} -smp {self.smp} -kernel {self.kernel_root}/arch/{self.arch}/boot/Image "
+        if self.qemu_arch == 'aarch64':
+            cmd += "-cpu cortex-a72 -machine type=virt -append \"console=ttyAMA0 root=/dev/vda "
+        elif self.qemu_arch == 'x86_64':
+            # x86_64 right now
+            cmd += " -append \"console=ttyS0 root=/dev/sda "
+        else:
+            logger.error(f"Unsupported architecture: {self.qemu_arch}")
+            exit(-1)
+        cmd += " earlyprintk=serial net.ifnames=0 "
         if not self.kaslr:
             cmd += " nokaslr"
         if not self.smep:
@@ -435,17 +491,20 @@ class Debuggee:
         if not self.kpti:
             cmd += " nopti"
         cmd += f" panic=1\" -drive file={self.img},format=raw -net user,host=10.0.2.10,hostfwd=tcp:127.0.0.1:10021-:22 -net nic,model=e1000 -nographic -pidfile vm.pid"
-        if self.kvm:
+        if self.kvm and self.qemu_arch == 'x86_64':
             cmd += " -enable-kvm"
         if self.gdb:
             cmd += " -S -s"
+        logger.debug(cmd)
         tmux_shell(cmd)
 
 
+import time
 def main():
-    tmux_shell("tmux source-file .tmux.conf 2>&1 > /dev/null")
+    tmux_shell("tmux source-file .tmux.conf")
     logger.debug("Loaded tmux config")
-    _ = input()  # FIXME: This reads the stdout of the tmux_shell cmd above. Messes with the remaining flow
+    #r = input()  # FIXME: This reads the stdout of the tmux_shell cmd above. Messes with the remaining flow
+    #logger.debug(r)
 
     karchive = KernelDownloader().run()
     if not KernelUnpacker(karchive).run():
@@ -454,17 +513,18 @@ def main():
 
     # By now we should be in a tmux window
     # Run pwndbg container
-    #tmux("selectp -t 0")
-    #tmux('rename-window "LIKE-DBG"')
-    # tmux("splitw -h -p 50")
-    # tmux("selectp -t 1")
-    # tmux("splitw -v -p 50")
 
-    #tmux("selectp -t 0")
-    #Debugger().run()
+    tmux("selectp -t 0")
+    tmux('rename-window "LIKE-DBG"')
+    tmux("splitw -h -p 50")
+    tmux("selectp -t 1")
+    tmux("splitw -v -p 50")
 
-    # tmux("selectp -t 1")
-    # Debuggee().run()
+    tmux("selectp -t 0")
+    Debugger().run()
+
+    tmux("selectp -t 1")
+    Debuggee().run()
 
 
 if __name__ == "__main__":
