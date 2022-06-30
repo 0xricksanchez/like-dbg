@@ -36,23 +36,21 @@ RUN dpkg --add-architecture i386 && \
     update-locale LANG=en_US.UTF-8 && \
     apt-get clean
 
-
-
 ENV LC_ALL=en_US.UTF-8
-
 
 ENV USER_UID=1000
 ENV HOST_GID=1000
-ENV USER=dbg
+ARG USER
 ENV SHELL="/bin/bash"
 
 RUN groupadd -g $HOST_GID $USER && \
     useradd -u $USER_UID -g $HOST_GID -s $SHELL -m -p $(openssl passwd -1 $USER) $USER && \
     usermod -aG sudo $USER && \
-    echo "$USER ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/$USER && \
-    chmod 0440 /etc/sudoers.d/$USER
+    sed -ir "/^$USER/ { s/:x:/::/ }" /etc/passwd && \
+    mkdir /home/$USER/.ssh
 
-WORKDIR /home/dbg
+WORKDIR /home/$USER
+
 USER $USER
 COPY io/scripts/.gdbinit .
 COPY io/scripts/debugger.sh .

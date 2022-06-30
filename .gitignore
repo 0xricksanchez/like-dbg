@@ -1,3 +1,4 @@
+.idea/*
 linux-*
 kernel_root
 io/rootfs*

@@ -9,8 +9,8 @@ import tarfile
 import urllib.request
 from contextlib import contextmanager
 from pathlib import Path
-from typing import List
 from sys import exit
+from typing import List
 
 import docker
 import requests
@@ -47,6 +47,7 @@ def is_reuse(p: str) -> bool:
     else:
         return False
 
+
 def adjust_arch(arch):
     match arch:
         case 'arm64':
@@ -54,12 +55,23 @@ def adjust_arch(arch):
         case _:
             return arch
 
+
 def tmux(cmd: str) -> None:
     sp.run(f"tmux {cmd} > /dev/null", shell=True)
 
 
 def tmux_shell(cmd: str) -> None:
     tmux(f"send-keys '{cmd}' 'C-m'")
+
+
+@contextmanager
+def new_context(location: Path):
+    cur_cwd = Path.cwd()
+    try:
+        os.chdir(location)
+        yield
+    finally:
+        os.chdir(cur_cwd)
 
 
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
@@ -85,7 +97,6 @@ class KernelDownloader:
         self.archive = Path(f"linux-{self.choice}.tar.gz")
         logger.debug(f"Kernel snap: {self.dl_uri}")
 
-
     def _set_commit(self):
         if any([self.tag, self.mmp]):
             return self.commit
@@ -93,7 +104,6 @@ class KernelDownloader:
             return self.commit
         else:
             self._resolve_latest()
-
 
     def _resolve_latest(self) -> str:
         commit_re = rb"commit\/\?id=[0-9a-z]*"
@@ -152,8 +162,23 @@ class KernelUnpacker:
         cfg_setter(self, ['kernel_general'])
         self.kernel_root = Path(self.kernel_root)
         self.archive = p
-        self.ex_name = Path('.'.join(self.archive.name.split('.')[:-2])) # FIXME only works for formats like .tar.gz
+        self.ex_name = Path('.'.join(self.archive.name.split('.')[:-2]))  # FIXME only works for formats like .tar.gz
         self.dst_content = None
+        self.history = Path('.hist')
+
+    def _is_new(self):
+        if self.history.exists():
+            entry = self.history.read_text()
+            if entry == self.archive:
+                return 0
+        else:
+            self.history.write_text(self.archive)
+        return 1
+
+    def _make_clean(self):
+        logger.debug("Same kernel version already unpacked. Running 'make clean' just in case...")
+        with new_context(self.kernel_root):
+            sp.run('make clean', shell=True)
 
     def _is_dest_empty(self) -> bool:
         if self.kernel_root.exists():
@@ -180,7 +205,7 @@ class KernelUnpacker:
 
     def _unpack_targz(self) -> None:
         if not tarfile.is_tarfile(self.archive):
-            logger.error("Did not get a valid kernel tar archive for unpacking. Exiting...")
+            logger.error("Invalid archive format. Exiting...")
             exit(-1)
 
         logger.info("Unpacking kernel archive...")
@@ -200,131 +225,15 @@ class KernelUnpacker:
             if self._is_vmlinux():
                 if self._reuse_existing_vmlinux():
                     return 1
-        self._purge(self.kernel_root)
-        self._unpack_targz()
+            else:
+                self._make_clean()
+                return 0
+        if self._is_new():
+            self._purge(self.kernel_root)
+            self._unpack_targz()
+        else:
+            self._make_clean()
         return 0
-
-
-# +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
-# | KERNEL BUILDER                                                                                     |
-# +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
-class KernelBuilder:
-    def __init__(self) -> None:
-        cfg_setter(self, ['kernel_general', 'kernel_builder', 'general'])
-        self.compiler = 'gcc' if not self.compiler else self.compiler
-        self.llvm_flag = 'LLVM=0' if self.compiler == 'gcc' else 'LLVM=1'
-
-    @staticmethod
-    @contextmanager
-    def build_context(location: Path):
-        cur_cwd = Path.cwd()
-        try:
-            os.chdir(location)
-            yield
-        finally:
-            os.chdir(cur_cwd)
-
-    @staticmethod
-    def _run_generic(cmd: str) -> int:
-        ret = sp.run(cmd, shell=True)
-        if ret.returncode != 0:
-            logger.error(f"{cmd} in {Path.cwd()}")
-            exit(ret.returncode)
-        return ret.returncode
-
-    def _apply_patches(self):
-        if Path(self.patch_dir).exists():
-            patch_files = [x for x in Path(self.patch_dir).iterdir()]
-            logger.debug(f"Applying patches...: {patch_files}")
-            for pfile in patch_files:
-                if sp.run(f'patch -p1 < {str(pfile)}', shell=True).returncode != 0:
-                    logger.error(f"Patching: {pfile}")
-                    exit(-1)
-
-
-    def _build_mrproper(self):
-        self._run_generic(f"CC={self.compiler} ARCH={self.arch} make mrproper")
-
-    def _build_arch(self):
-        # TODO check how we need to sanitize the [general] config arch field to reflect the make options
-        # All i know is it works if arch is x86_64
-        if self.arch == 'x86_64':
-            self._run_generic(f"CC={self.compiler} {self.llvm_flag} make {self.arch}_defconfig")
-        else:
-            self._run_generic(f"CC={self.compiler} {self.llvm_flag} ARCH={self.arch} make defconfig")
-
-    def _build_kvm_guest(self):
-        self._run_generic(f"CC={self.compiler} {self.llvm_flag} ARCH={self.arch} make kvm_guest.config")
-
-    def _configure_kernel(self):
-        if self.mode == 'syzkaller':
-            self._configure_syzkaller()
-        else:
-            self._configure_generic()
-
-    def _configure_generic(self):
-        self._run_generic(
-            "./scripts/config \
-            -e DEBUG_KERNEL \
-            -e DEBUG_INFO \
-            -e DEBUG_INFO_DWARF4 \
-            -e FRAME_POINTER \
-            -e GDB_SCRIPTS \
-            -e KALLSYMS \
-            -d DEBUG_INFO_DWARF5 \
-            -d DEBUG_INFO_DWARF_TOOLCHAIN_DEFAULT \
-            -d DEBUG_INFO_REDUCED \
-            -d DEBUG_INFO_COMPRESSED \
-            -d DEBUG_INFO_SPLIT \
-            -d RANDOMIZE_BASE \
-            -d DEBUG_EFI \
-            -d DEBUG_INFO_BTF"
-        )
-
-    def _configure_syzkaller(self):
-        self._run_generic(
-            "./scripts/config \
-            -e DEBUG_FS -e DEBUG_INFO \
-            -e KALLSYMS -e KALLSYMS_ALL \
-            -e NAMESPACES -e UTS_NS -e IPC_NS -e PID_NS -e NET_NS -e USER_NS \
-            -e CGROUP_PIDS -e MEMCG -e CONFIGFS_FS -e SECURITYFS \
-            -e KASAN -e KASAN_INLINE -e WARNING \
-            -e FAULT_INJECTION -e FAULT_INJECTION_DEBUG_FS \
-            -e FAILSLAB -e FAIL_PAGE_ALLOC \
-            -e FAIL_MAKE_REQUEST -e FAIL_IO_TIMEOUT -e FAIL_FUTEX \
-            -e LOCKDEP -e PROVE_LOCKING \
-            -e DEBUG_ATOMIC_SLEEP \
-            -e PROVE_RCU -e DEBUG_VM \
-            -e REFCOUNT_FULL -e FORTIFY_SOURCE \
-            -e HARDENED_USERCOPY -e LOCKUP_DETECTOR \
-            -e SOFTLOCKUP_DETECTOR -e HARDLOCKUP_DETECTOR \
-            -e BOOTPARAM_HARDLOCKUP_PANIC \
-            -e DETECT_HUNG_TASK -e WQ_WATCHDOG \
-            --set-val DEFAULT_HUNG_TASK_TIMEOUT 140 \
-            --set-val RCU_CPU_STALL_TIMEOUT 100 \
-            -e UBSAN \
-            -d RANDOMIZE_BASE"
-        )
-
-    def _make(self):
-        self._run_generic(f"CC={self.compiler} ARCH={self.arch} {self.llvm_flag} make -j$(nproc) all")
-        self._run_generic(f"CC={self.compiler} ARCH={self.arch} {self.llvm_flag} make -j$(nproc) modules")
-
-    def run(self):
-        logger.info("Building kernel. This may take a while...")
-        with self.build_context(self.kernel_root):
-            self._build_mrproper()
-            self._apply_patches()
-            self._build_arch()
-            self._build_kvm_guest()
-            self._configure_kernel()
-            self._make()
-        logger.info("Successfully build the kernel")
-        if self.arch == 'x86_64':
-            kernel = Path(f'{self.kernel_root}/arch/x86/boot/bzImage')
-            if kernel.exists():
-                Path(Path.cwd() / kernel.parent.parent.parent / f"{self.arch}/boot/Image").symlink_to(Path.cwd() / kernel)
-                
 
 
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
@@ -334,8 +243,26 @@ class DockerRunner:
     def __init__(self) -> None:
         self.dockerfile_ctx = Path.cwd()
         self.client = docker.from_env()
+        self.ssh_conn = None
         self.image = None
         self.tag = None
+        self.user = None
+        self.ssh_fwd_port = None
+        self.container = None
+
+    def guarantee_ssh(self, ssh_dir: Path) -> None:
+        if Path(ssh_dir).exists() and os.listdir(ssh_dir):
+            logger.debug(f"Reusing local ssh keys from {ssh_dir} for {self.image}...")
+        else:
+            logger.debug("Generating new ssh key pair...")
+            Path(ssh_dir).mkdir()
+            sp.run(f'ssh-keygen -f {ssh_dir / "like.id_rsa"} -t rsa -N ""', shell=True)
+
+    def init_ssh(self):
+        # TODO remove hardcoded values in favor of a config
+        self.ssh_conn = Connection(f"{self.user}@localhost:{self.ssh_fwd_port}",
+                                   connect_kwargs={"key_filename": ".ssh/like.id_rsa"}
+                                   )
 
     def build_image_hl(self):
         image = self.client.images.build(
@@ -351,7 +278,9 @@ class DockerRunner:
                 path=str(self.dockerfile_ctx),
                 dockerfile=self.dockerfile,
                 tag=self.tag,
-                decode=True):
+                decode=True,
+                buildargs=self.buildargs
+        ):
             v = next(iter(log_entry.values()))
             if isinstance(v, str):
                 v = ' '.join(v.strip().split())
@@ -375,6 +304,111 @@ class DockerRunner:
     def run_container(self):
         pass
 
+    def stop_container(self):
+        self.container.stop()
+
+
+# +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
+# | KERNEL BUILDER                                                                                     |
+# +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
+class KernelBuilder(DockerRunner):
+    def __init__(self) -> None:
+        super().__init__()
+        cfg_setter(self, ['kernel_general', 'kernel_builder', 'general', 'kernel_builder_docker'])
+        self.cc = f'CC={self.compiler}' if self.compiler else ''
+        self.llvm_flag = '' if 'gcc' in self.cc else 'LLVM=1'
+        self.cli = docker.APIClient(base_url=self.docker_sock)
+        self.guarantee_ssh(self.ssh_dir)
+        self.tag = self.tag + f"_{self.arch}"
+        self.buildargs = {
+            'USER': self.user,
+            'CC': self.compiler,
+            'LLVM': 0 if self.compiler == 'gcc' else 1,
+            'TOOLCHAIN_ARCH': adjust_arch(self.arch),
+            'ARCH': self.arch,
+        }
+
+    def _run_ssh(self, cmd: str) -> int:
+        return self.ssh_conn.run(f"cd {self.docker_mnt}/{self.kernel_root} && {cmd}").exited
+
+    def _apply_patches(self):
+        if Path(self.patch_dir).exists():
+            patch_files = [x for x in Path(self.patch_dir).iterdir()]
+            logger.debug(f"Applying patches...: {patch_files}")
+            for pfile in patch_files:
+                if self._run_ssh(f'patch -p1 < ../{self.patch_dir}/{pfile.name}') != 0:
+                    logger.error(f"Patching: {pfile}")
+                    exit(-1)
+
+    def _build_mrproper(self):
+        self._run_ssh(f"{self.cc} ARCH={self.arch} make mrproper")
+
+    def _build_arch(self):
+        # TODO check how we need to sanitize the [general] config arch field to reflect the make options
+        # All i know is it works if arch is x86_64
+        if self.arch == 'x86_64':
+            self._run_ssh(f"{self.cc} {self.llvm_flag} make {self.arch}_defconfig")
+        else:
+            self._run_ssh(f"{self.cc} {self.llvm_flag} ARCH={self.arch} make defconfig")
+
+    def _build_kvm_guest(self):
+        self._run_ssh(f"{self.cc} {self.llvm_flag} ARCH={self.arch} make kvm_guest.config")
+
+    def _configure_kernel(self):
+        if self.mode == 'syzkaller':
+            self._configure_syzkaller()
+        elif self.mode == 'generic':
+            self._configure_generic()
+        else:
+            self._configure_custom()
+
+    def _configure_generic(self):
+        self._run_ssh(f"./scripts/config {self.generic_args}")
+
+    def _configure_syzkaller(self):
+        self._run_ssh(f"./scripts/config {self.syzkaller_args}")
+
+    def _configure_custom(self):
+        params = '-e ' + ' -e '.join(self.enable_args.split())
+        params += ' -d ' + ' -d '.join(self.disable_args.split())
+        self._run_ssh(f'./scripts/config {params}')
+
+    def _make(self):
+        self._run_ssh(f"{self.cc} ARCH={self.arch} {self.llvm_flag} make -j$(nproc) all")
+        self._run_ssh(f"{self.cc} ARCH={self.arch} {self.llvm_flag} make -j$(nproc) modules")
+
+    def run_container(self):
+        self.container = self.client.containers.run(
+            self.image,
+            volumes=[f"{Path.cwd()}:{self.docker_mnt}"],
+            ports={"22/tcp": self.ssh_fwd_port},
+            detach=True,
+            tty=True,
+        )
+        self.init_ssh()
+        if self.ssh_conn:
+            self._build_mrproper()
+            self._apply_patches()
+            self._build_arch()
+            self._build_kvm_guest()
+            self._configure_kernel()
+            self._make()
+        else:
+            logger.error("No ssh connection to docker")
+            exit(-1)
+
+    def run(self):
+        logger.info("Building kernel. This may take a while...")
+        self.image = self.get_image()
+        logger.debug(f"found: {self.image}")
+        super().run()
+        logger.info("Successfully build the kernel")
+        if self.arch == 'x86_64':
+            kernel = Path(f'{self.kernel_root}/arch/x86/boot/bzImage')
+            if kernel.exists():
+                Path(Path.cwd() / kernel.parent.parent.parent / f"{self.arch}/boot/Image").symlink_to(Path.cwd() / kernel)
+        self.stop_container()
+
 
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
 # | ROOTFS BUILDER                                                                                      |
@@ -384,24 +418,10 @@ class RootFSBuilder(DockerRunner):
         super().__init__()
         cfg_setter(self, ['rootfs_general', 'rootfs_builder', 'general'])
         self.cli = docker.APIClient(base_url=self.docker_sock)
-        self.ssh_conn = None
-        self.guarantee_ssh()
+        self.ssh_conn = self.init_ssh()
+        self.guarantee_ssh(self.ssh_dir)
         self.rootfs_path = self.rootfs_dir + self.rootfs_base + self.arch + self.rootfs_ftype
-        # self.dockerfile_path = self.dockerfile_ctx / self.dockerfile
-
-    def guarantee_ssh(self) -> None:
-        if Path(self.ssh_dir).exists() and os.listdir(self.ssh_dir):
-            pass
-            # logger.debug(f"Trying to reuse local ssh keys from {self.ssh_dir}...")
-        else:
-            # logger.debug("Generating new ssh key pair...")
-            Path(self.ssh_dir).mkdir()
-            sp.run(f'ssh-keygen -f {self.ssh_dir / "like.id_rsa"} -t rsa -N ""', shell=True)
-
-    def _init_ssh(self):
-        # TODO remove hardcoded values in favor of a config
-        # TODO do we even want this
-        self.ssh_conn = Connection("dbg@localhost:2222", connect_kwargs={"key_filename": ".ssh/like.id_rsa"})
+        self.buildargs = {'USER': self.user}
 
     def run_container(self):
         qemu_arch = adjust_arch(self.arch)
@@ -464,19 +484,11 @@ class Debuggee:
         self.img = self.rootfs_dir + self.rootfs_base + self.arch + self.rootfs_ftype
         self.qemu_arch = adjust_arch(self.arch)
 
-
-
-    # What worked for me with aarch64
-    # qemu-system-aarch64 -cpu cortex-a72 -machine type=virt -nographic -smp 2 -m 4096 -kernel kernel_root/arch/arm64/boot/Image -append "root=/dev/vda console=ttyAMA0" -drive file=io/filesystem-arm64,format=raw -s -S
-    # gdb-ma
-    #   set architecture aarch64
-    # Even break start_kernel worked..
     def run(self):
         cmd = f"qemu-system-{self.qemu_arch} -m {self.memory} -smp {self.smp} -kernel {self.kernel_root}/arch/{self.arch}/boot/Image "
         if self.qemu_arch == 'aarch64':
             cmd += "-cpu cortex-a72 -machine type=virt -append \"console=ttyAMA0 root=/dev/vda "
         elif self.qemu_arch == 'x86_64':
-            # x86_64 right now
             cmd += " -append \"console=ttyS0 root=/dev/sda "
         else:
             logger.error(f"Unsupported architecture: {self.qemu_arch}")
@@ -499,21 +511,14 @@ class Debuggee:
         tmux_shell(cmd)
 
 
-import time
 def main():
-    tmux_shell("tmux source-file .tmux.conf")
-    logger.debug("Loaded tmux config")
-    #r = input()  # FIXME: This reads the stdout of the tmux_shell cmd above. Messes with the remaining flow
-    #logger.debug(r)
-
     karchive = KernelDownloader().run()
     if not KernelUnpacker(karchive).run():
         KernelBuilder().run()
     RootFSBuilder().run()
 
-    # By now we should be in a tmux window
-    # Run pwndbg container
-
+    tmux_shell("tmux source-file .tmux.conf")
+    logger.debug("Loaded tmux config")
     tmux("selectp -t 0")
     tmux('rename-window "LIKE-DBG"')
     tmux("splitw -h -p 50")
