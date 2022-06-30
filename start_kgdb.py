@@ -49,11 +49,10 @@ def is_reuse(p: str) -> bool:
 
 
 def adjust_arch(arch):
-    match arch:
-        case 'arm64':
-            return 'aarch64'
-        case _:
-            return arch
+    if arch == 'arm64':
+        return 'aarch64'
+    else:
+        return arch
 
 
 def tmux(cmd: str) -> None:
@@ -255,8 +254,9 @@ class DockerRunner:
             logger.debug(f"Reusing local ssh keys from {ssh_dir} for {self.image}...")
         else:
             logger.debug("Generating new ssh key pair...")
-            Path(ssh_dir).mkdir()
-            sp.run(f'ssh-keygen -f {ssh_dir / "like.id_rsa"} -t rsa -N ""', shell=True)
+            if not Path(ssh_dir).exists():
+                Path(ssh_dir).mkdir()
+            sp.run(f'ssh-keygen -f {Path(ssh_dir) / "like.id_rsa"} -t rsa -N ""', shell=True)
 
     def init_ssh(self):
         # TODO remove hardcoded values in favor of a config
@@ -323,7 +323,7 @@ class KernelBuilder(DockerRunner):
         self.buildargs = {
             'USER': self.user,
             'CC': self.compiler,
-            'LLVM': 0 if self.compiler == 'gcc' else 1,
+            'LLVM': '0' if self.compiler == 'gcc' else '1',
             'TOOLCHAIN_ARCH': adjust_arch(self.arch),
             'ARCH': self.arch,
         }
