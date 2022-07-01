@@ -400,7 +400,6 @@ class KernelBuilder(DockerRunner):
     def run(self):
         logger.info("Building kernel. This may take a while...")
         self.image = self.get_image()
-        logger.debug(f"found: {self.image}")
         super().run()
         logger.info("Successfully build the kernel")
         if self.arch == 'x86_64':
@@ -425,7 +424,7 @@ class RootFSBuilder(DockerRunner):
 
     def run_container(self):
         qemu_arch = adjust_arch(self.arch)
-        command = f"/home/dbg/rootfs.sh -n /{self.rootfs_path} -a {qemu_arch}"
+        command = f"/home/{self.user}/rootfs.sh -n /{self.rootfs_path} -a {qemu_arch}"
         container = self.client.containers.run(
             self.image,
             volumes=[f"{Path.cwd() / 'io'}:{self.docker_mnt}"],
@@ -458,10 +457,11 @@ class Debugger(DockerRunner):
     def __init__(self):
         super().__init__()
         cfg_setter(self, ['general', 'debugger', 'kernel_general'])
+        self.buildargs = {'USER': self.user}
         self.cli = docker.APIClient(base_url=self.docker_sock)
 
     def run_container(self) -> None:
-        entrypoint = f"/home/dbg/debugger.sh -a {self.arch} -p {self.docker_mnt}"
+        entrypoint = f"/home/{self.user}/debugger.sh -a {self.arch} -p {self.docker_mnt}"
         runner = f'docker run -it --rm --security-opt seccomp=unconfined --cap-add=SYS_PTRACE -v {Path.cwd() / self.kernel_root}:/io --net="host" {self.tag} {entrypoint}'
         tmux_shell(runner)
 
@@ -478,38 +478,47 @@ class Debugger(DockerRunner):
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
 # | DEBUGGEE                                                                                            |
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
-class Debuggee:
+class Debuggee(DockerRunner):
     def __init__(self):
-        cfg_setter(self, ['debuggee', 'general', 'kernel_general', 'rootfs_general'])
-        self.img = self.rootfs_dir + self.rootfs_base + self.arch + self.rootfs_ftype
+        super().__init__()
+        cfg_setter(self, ['debuggee', 'debuggee_docker', 'general', 'kernel_general', 'rootfs_general'])
+        self.img = Path(self.docker_mnt) / self.rootfs_dir / (self.rootfs_base + self.arch + self.rootfs_ftype)
         self.qemu_arch = adjust_arch(self.arch)
+        self.cmd = None
+        self.buildargs = {'USER': self.user}
+        self.cli = docker.APIClient(base_url=self.docker_sock)
 
     def run(self):
-        cmd = f"qemu-system-{self.qemu_arch} -m {self.memory} -smp {self.smp} -kernel {self.kernel_root}/arch/{self.arch}/boot/Image "
+        self.cmd = f"qemu-system-{self.qemu_arch} -m {self.memory} -smp {self.smp} -kernel {self.docker_mnt}/{self.kernel_root}/arch/{self.arch}/boot/Image "
         if self.qemu_arch == 'aarch64':
-            cmd += "-cpu cortex-a72 -machine type=virt -append \"console=ttyAMA0 root=/dev/vda "
+            self.cmd += "-cpu cortex-a72 -machine type=virt -append \"console=ttyAMA0 root=/dev/vda "
         elif self.qemu_arch == 'x86_64':
-            cmd += " -append \"console=ttyS0 root=/dev/sda "
+            self.cmd += " -append \"console=ttyS0 root=/dev/sda "
         else:
             logger.error(f"Unsupported architecture: {self.qemu_arch}")
             exit(-1)
-        cmd += " earlyprintk=serial net.ifnames=0 "
+        self.cmd += " earlyprintk=serial net.ifnames=0 "
         if not self.kaslr:
-            cmd += " nokaslr"
+            self.cmd += " nokaslr"
         if not self.smep:
-            cmd += " nosmep"
+            self.cmd += " nosmep"
         if not self.smap:
-            cmd += " nosmap"
+            self.cmd += " nosmap"
         if not self.kpti:
-            cmd += " nopti"
-        cmd += f" panic=1\" -drive file={self.img},format=raw -net user,host=10.0.2.10,hostfwd=tcp:127.0.0.1:10021-:22 -net nic,model=e1000 -nographic -pidfile vm.pid"
+            self.cmd += " nopti"
+        self.cmd += f" panic=1\" -drive file={self.img},format=raw -net user,host=10.0.2.10,hostfwd=tcp:127.0.0.1:10021-:22 -net nic,model=e1000 -nographic -pidfile vm.pid"
         if self.kvm and self.qemu_arch == 'x86_64':
-            cmd += " -enable-kvm"
+            self.cmd += " -enable-kvm"
         if self.gdb:
-            cmd += " -S -s"
-        logger.debug(cmd)
-        tmux_shell(cmd)
+            self.cmd += " -S -s"
+        logger.debug(self.cmd)
+        self.image = self.get_image()
+        super().run()
+        #tmux_shell(cmd)
 
+    def run_container(self):
+        dcmd = 'docker run -it --rm -v /home/raven/Git/like-dbg/:/io --net="host" like_debuggee ' # FIXME me broken
+        tmux_shell(f'{dcmd} {self.cmd}')
 
 def main():
     karchive = KernelDownloader().run()
@@ -517,7 +526,6 @@ def main():
         KernelBuilder().run()
     RootFSBuilder().run()
 
-    tmux_shell("tmux source-file .tmux.conf")
     logger.debug("Loaded tmux config")
     tmux("selectp -t 0")
     tmux('rename-window "LIKE-DBG"')
@@ -527,6 +535,9 @@ def main():
 
     tmux("selectp -t 0")
     Debugger().run()
+
+    tmux("selectp -t 2")
+    tmux_shell("tmux source-file .tmux.conf")
 
     tmux("selectp -t 1")
     Debuggee().run()
