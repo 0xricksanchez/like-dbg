@@ -6,10 +6,12 @@ import re
 import shutil
 import subprocess as sp
 import tarfile
+import termios
 import urllib.request
 from contextlib import contextmanager
+from termios import tcflush, TCIFLUSH
 from pathlib import Path
-from sys import exit
+from sys import exit, stdin
 from typing import List
 
 import docker
@@ -38,6 +40,7 @@ def cfg_setter(obj, sections: List[str]) -> None:
 def is_reuse(p: str) -> bool:
     choice = "y"
     logger.info(f"Found {p}. Re-use it? [Y/n]")
+    tcflush(stdin, TCIFLUSH)
     tmp = input().lower()
     if tmp != "":
         choice = tmp
@@ -307,6 +310,12 @@ class DockerRunner:
     def stop_container(self):
         self.container.stop()
 
+    def check_existing(self) -> None:
+        self.image = self.get_image()
+        logger.error(self.image)
+        if self.image and not is_reuse(self.image.tags[0]):
+            self.image = None
+
 
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
 # | KERNEL BUILDER                                                                                     |
@@ -463,15 +472,12 @@ class Debugger(DockerRunner):
     def run_container(self) -> None:
         entrypoint = f"/home/{self.user}/debugger.sh -a {self.arch} -p {self.docker_mnt}"
         runner = f'docker run -it --rm --security-opt seccomp=unconfined --cap-add=SYS_PTRACE -v {Path.cwd() / self.kernel_root}:/io --net="host" {self.tag} {entrypoint}'
+        tmux("selectp -t 2")
         tmux_shell(runner)
-
-    def check_existing(self) -> None:
-        self.image = self.get_image()
-        if self.image and not is_reuse(self.image.tags[0]):
-            self.image = None
 
     def run(self):
         self.check_existing()
+        logger.error(self.image)
         super().run()
 
 
@@ -489,6 +495,13 @@ class Debuggee(DockerRunner):
         self.cli = docker.APIClient(base_url=self.docker_sock)
 
     def run(self):
+        self.check_existing()
+        logger.error(self.image)
+        #self.image = self.get_image()
+        super().run()
+
+    def run_container(self):
+        dcmd = 'docker run -it --rm -v /home/raven/Git/like-dbg/:/io --net="host" like_debuggee '
         self.cmd = f"qemu-system-{self.qemu_arch} -m {self.memory} -smp {self.smp} -kernel {self.docker_mnt}/{self.kernel_root}/arch/{self.arch}/boot/Image "
         if self.qemu_arch == 'aarch64':
             self.cmd += "-cpu cortex-a72 -machine type=virt -append \"console=ttyAMA0 root=/dev/vda "
@@ -512,35 +525,30 @@ class Debuggee(DockerRunner):
         if self.gdb:
             self.cmd += " -S -s"
         logger.debug(self.cmd)
-        self.image = self.get_image()
-        super().run()
-        #tmux_shell(cmd)
-
-    def run_container(self):
-        dcmd = 'docker run -it --rm -v /home/raven/Git/like-dbg/:/io --net="host" like_debuggee ' # FIXME me broken
+        tmux("selectp -t 1")
         tmux_shell(f'{dcmd} {self.cmd}')
 
 def main():
+    logger.debug("Loaded tmux config")
+    tmux_shell("tmux source-file .tmux.conf")
+    tmux("selectp -t 0")
+    tmux('rename-window "LIKE-DBG"')
+    tmux("splitw -h -p 50")
+    tmux("selectp -t 0")
+    tmux("splitw -v -p 50")
+    tmux("selectp -t 0")
+
     karchive = KernelDownloader().run()
     if not KernelUnpacker(karchive).run():
         KernelBuilder().run()
     RootFSBuilder().run()
 
-    logger.debug("Loaded tmux config")
-    tmux("selectp -t 0")
-    tmux('rename-window "LIKE-DBG"')
-    tmux("splitw -h -p 50")
-    tmux("selectp -t 1")
-    tmux("splitw -v -p 50")
 
+    Debuggee().run()
     tmux("selectp -t 0")
     Debugger().run()
+    tmux("selectp -t 0")
 
-    tmux("selectp -t 2")
-    tmux_shell("tmux source-file .tmux.conf")
-
-    tmux("selectp -t 1")
-    Debuggee().run()
 
 
 if __name__ == "__main__":
