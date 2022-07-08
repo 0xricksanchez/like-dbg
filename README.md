@@ -35,3 +35,6 @@ Most of the config fields should be self explanatory.
 * [x] Set custom compiler in config.ini
 * [ ] Set additional kernel config parameters in config.ini
 * [ ] Add android kernel as an option 
+
+
+https://opensource.samsung.com/uploadList?menuItem=mobile&classification1=mobile_phone

@@ -54,7 +54,6 @@ ln -sd scripts/gdb/vmlinux-gdb.py
 
 gdb-multiarch -q $VMLINUX -iex "set architecture $ARCH" -ex "target remote :1234" \
     -ex "add-symbol-file $VMLINUX" \
-    -ex "break startup_64" \
     -ex "break start_kernel" \
     -ex "continue" \
     -ex "lx-symbols" \

@@ -254,7 +254,7 @@ class DockerRunner:
 
     def guarantee_ssh(self, ssh_dir: Path) -> None:
         if Path(ssh_dir).exists() and os.listdir(ssh_dir):
-            logger.debug(f"Reusing local ssh keys from {ssh_dir} for {self.image}...")
+            logger.debug(f"Reusing local ssh keys from {ssh_dir}...")
         else:
             logger.debug("Generating new ssh key pair...")
             if not Path(ssh_dir).exists():
@@ -312,7 +312,6 @@ class DockerRunner:
 
     def check_existing(self) -> None:
         self.image = self.get_image()
-        logger.error(self.image)
         if self.image and not is_reuse(self.image.tags[0]):
             self.image = None
 
@@ -477,7 +476,6 @@ class Debugger(DockerRunner):
 
     def run(self):
         self.check_existing()
-        logger.error(self.image)
         super().run()
 
 
@@ -497,7 +495,6 @@ class Debuggee(DockerRunner):
     def run(self):
         self.check_existing()
         logger.error(self.image)
-        #self.image = self.get_image()
         super().run()
 
     def run_container(self):
@@ -524,13 +521,11 @@ class Debuggee(DockerRunner):
             self.cmd += " -enable-kvm"
         if self.gdb:
             self.cmd += " -S -s"
-        logger.debug(self.cmd)
+        #logger.debug(self.cmd)
         tmux("selectp -t 1")
         tmux_shell(f'{dcmd} {self.cmd}')
 
 def main():
-    logger.debug("Loaded tmux config")
-    tmux_shell("tmux source-file .tmux.conf")
     tmux("selectp -t 0")
     tmux('rename-window "LIKE-DBG"')
     tmux("splitw -h -p 50")
@@ -549,6 +544,8 @@ def main():
     Debugger().run()
     tmux("selectp -t 0")
 
+    logger.debug("Loaded tmux config")
+    tmux_shell("tmux source-file .tmux.conf")
 
 
 if __name__ == "__main__":
