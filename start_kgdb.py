@@ -6,12 +6,11 @@ import re
 import shutil
 import subprocess as sp
 import tarfile
-import termios
 import urllib.request
 from contextlib import contextmanager
-from termios import tcflush, TCIFLUSH
 from pathlib import Path
 from sys import exit, stdin
+from termios import tcflush, TCIFLUSH
 from typing import List
 
 import docker
@@ -276,7 +275,7 @@ class DockerRunner:
         return image
 
     def build_image(self):
-        logger.debug(self.__dict__)
+        # logger.debug(self.__dict__)
         for log_entry in self.cli.build(
                 path=str(self.dockerfile_ctx),
                 dockerfile=self.dockerfile,
@@ -364,22 +363,30 @@ class KernelBuilder(DockerRunner):
 
     def _configure_kernel(self):
         if self.mode == 'syzkaller':
-            self._configure_syzkaller()
+            params = self.syzkaller_args
         elif self.mode == 'generic':
-            self._configure_generic()
+            params = self.generic_args
         else:
-            self._configure_custom()
+            params = self._configure_custom()
+        if self.extra_args:
+            params = self._configure_extra_args(params)
+        self._run_ssh(f"./scripts/config {params}")
 
-    def _configure_generic(self):
-        self._run_ssh(f"./scripts/config {self.generic_args}")
-
-    def _configure_syzkaller(self):
-        self._run_ssh(f"./scripts/config {self.syzkaller_args}")
+    def _configure_extra_args(self, params: str) -> str:
+        for idx, opt in enumerate(self.extra_args.split()[1::2]):
+            if opt in params:
+                pattern = f'[-][ed]{1}\s{opt}'
+                params = re.sub(pattern, opt, params)
+            else:
+                new_opt = ' '.join(self.extra_args.split()[idx * 2:idx * 2 + 2])
+                params += f' {new_opt}'
+        logger.debug(params)
+        return params
 
     def _configure_custom(self):
         params = '-e ' + ' -e '.join(self.enable_args.split())
         params += ' -d ' + ' -d '.join(self.disable_args.split())
-        self._run_ssh(f'./scripts/config {params}')
+        return params
 
     def _make(self):
         self._run_ssh(f"{self.cc} ARCH={self.arch} {self.llvm_flag} make -j$(nproc) all")
@@ -413,7 +420,8 @@ class KernelBuilder(DockerRunner):
         if self.arch == 'x86_64':
             kernel = Path(f'{self.kernel_root}/arch/x86/boot/bzImage')
             if kernel.exists():
-                Path(Path.cwd() / kernel.parent.parent.parent / f"{self.arch}/boot/Image").symlink_to(Path.cwd() / kernel)
+                Path(Path.cwd() / kernel.parent.parent.parent / f"{self.arch}/boot/Image").symlink_to(
+                    Path.cwd() / kernel)
         self.stop_container()
 
 
@@ -521,9 +529,10 @@ class Debuggee(DockerRunner):
             self.cmd += " -enable-kvm"
         if self.gdb:
             self.cmd += " -S -s"
-        #logger.debug(self.cmd)
+        # logger.debug(self.cmd)
         tmux("selectp -t 1")
         tmux_shell(f'{dcmd} {self.cmd}')
+
 
 def main():
     tmux("selectp -t 0")
@@ -537,7 +546,6 @@ def main():
     if not KernelUnpacker(karchive).run():
         KernelBuilder().run()
     RootFSBuilder().run()
-
 
     Debuggee().run()
     tmux("selectp -t 0")

@@ -4,7 +4,6 @@ LABEL maintainer="Christopher Krah <admin@0x434b.dev>"
 ENV DEBIAN_FRONTEND noninteractive
 
 ARG USER
-ARG CMD
 
 # Get essentials
 RUN apt update && \
@@ -13,6 +12,7 @@ RUN apt update && \
         apt-utils \
         locales \
         qemu-system \
+        openssl \
         binfmt-support && \
     sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && \
     dpkg-reconfigure --frontend=noninteractive locales && \

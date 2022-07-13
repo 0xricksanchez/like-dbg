@@ -52,7 +52,8 @@ popd
 rm vmlinux-gdb.py
 ln -sd scripts/gdb/vmlinux-gdb.py
 
-gdb-multiarch -q $VMLINUX -iex "set architecture $ARCH" -ex "target remote :1234" \
+#gdb-multiarch -q $VMLINUX -iex "set architecture $ARCH" -ex "target remote :1234" \
+gdb-multiarch -q $VMLINUX -iex "set architecture $ARCH" -ex "gef-remote --qemu-user --qemu-binary $VMLINUX localhost 1234" \
     -ex "add-symbol-file $VMLINUX" \
     -ex "break start_kernel" \
     -ex "continue" \

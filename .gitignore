@@ -10,3 +10,5 @@ Dockerfile*
 .zshrc
 .git
 .ssh
+android*
+

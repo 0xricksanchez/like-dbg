@@ -31,10 +31,8 @@ Most of the config fields should be self explanatory.
     * [ ] QEMUs `--enable-kvm` is buggy?
 * [x] Patch directory that is automatically applied to the kernel source
 * [ ] Multi Arch kernel builds
-    * [ ] arm64: Builds fail
+    * [x] x86_64
+    * [x] arm64
 * [x] Set custom compiler in config.ini
-* [ ] Set additional kernel config parameters in config.ini
+* [x] Set additional kernel config parameters in config.ini
 * [ ] Add android kernel as an option 
-
-
-https://opensource.samsung.com/uploadList?menuItem=mobile&classification1=mobile_phone

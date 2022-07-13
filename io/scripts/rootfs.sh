@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 # Modified version of the syzkaller script:
 #   https://raw.githubusercontent.com/google/syzkaller/master/tools/create-image.sh
-# Should prolly exchange this in favor of buildroot soon
-# https://raw.githubusercontent.com/google/syzkaller/master/tools/create-buildroot-image.sh
 # -e exit on error
 # -u Write to stderr when trying to expand a variable that does not exist
 # -x Write to stderr for tracing 

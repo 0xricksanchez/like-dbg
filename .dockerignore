@@ -1,0 +1,9 @@
+android/
+android-kernel/
+kernel_root/
+linux-*
+requirements.txt
+start_kgdb.py
+README.md
+config.ini
+.git
