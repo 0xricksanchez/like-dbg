@@ -18,21 +18,23 @@ Currently there's a dedicated docker container for every step:
 * `docker` (may work with `podman` as well)
 * `tmux`
 * `python>=3.7`
-
+    * `venv`
 
 ## Configuration
 
-All the steps from *building the kernel* to *running the kernel* and *attaching the debugger* are configured via the `config.ini`.
-Some fields should not be altered but in general the fields that can be tweaked by the user should be self explanatory.
+Everything is configured in the `config.ini`
+Some fields should not be altered but in general the fields that are of interest to create a custom-tailored kernel debugging environment should be self explanatory.
 
-Once you're set executing the commands below should drop you into a 3-tile tmux configuration with a booted kernel in QEMU, an attached
-GDB debugger, and one terminal for free allocation:
+Once you're set, executing the commands below should drop you into a 3-tile tmux configuration with a booted kernel in QEMU, an attached
+GDB debugger, and one terminal for free allocation
 
 ```bash
 tmux
 python3 -m venv .like-dbg
-source .like-dbg/bin.activate
-python3 ./start_kgdb.py
+source .like-dbg/bin/activate
+python3 -m pip install --upgrade pip
+python3 -m pip install -r requirements.txt
+python3 start_kgdb.py
 ```
 
 ## Showcase
