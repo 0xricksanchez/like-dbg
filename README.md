@@ -1,19 +1,22 @@
-# LInux-KErnel DeBuGger (LIKE-DBG)
+# LInux-KErnel DeBuGger (LIKE-DBG) - **VERY MUCH IN POC WIP STATE**
 
 This repository aims at automating the boring steps when trying to set up a Linux kernel debugging environment.
-The gist of it is that 
+Currently only x86_64 and arm64 Linux kernel builds are supported.
 
+## Requirements
 
-## Quick start
 
 Make sure you have `tmux` and `docker` installed. 
-If you have the compiler set to `clang` make sure you have the complete llvm toolchain available!
+If you happen to default to the `clang` compiler make sure you have the complete LLVM toolchain available!
 
-In theory, to tweak the environment you want to debug all you have to do is customize the `config.ini` to your needs.
+## Setup
+
+In theory, to tweak the environment that you want to debug all you have to do is customize the `config.ini` to your needs.
 Afterwards, executing the commands below should drop you into a 3-tile tmux configuration with a QEMU booted kernel, an attached
 GDB debugger, and one terminal for free allocation.
 
 ```bash
+tmux
 python3 -m venv .like-dbg
 source .like-dbg/bin.activate
 python3 ./start_kgdb.py
@@ -24,15 +27,3 @@ python3 ./start_kgdb.py
 Most of the config fields should be self explanatory.
 
 
-
-## To-dos
-
-* [ ] FIXME: x86_64 does not break on `startup_64` 
-    * [ ] QEMUs `--enable-kvm` is buggy?
-* [x] Patch directory that is automatically applied to the kernel source
-* [ ] Multi Arch kernel builds
-    * [x] x86_64
-    * [x] arm64
-* [x] Set custom compiler in config.ini
-* [x] Set additional kernel config parameters in config.ini
-* [ ] Add android kernel as an option 
