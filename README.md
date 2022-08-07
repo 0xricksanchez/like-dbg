@@ -13,10 +13,10 @@ Currently there's a dedicated docker container for every step:
 
 ## Caveats
 
-* Currently only *x86_64* and *arm64* Linux kernel builds are supported
-* Only recent kernel builds will likely succeed building due to how the requirements for the toolchain differs between versions
-* No android kernel support right now
-* Fine-tuning of GDB environment (e.g. custom breakpoints) missing
+- [ ] Currently only *x86_64* and *arm64* Linux kernel builds are supported
+- [ ] Only recent kernel builds will likely succeed building due to how the requirements for the toolchain differs between versions
+- [ ] No android kernel support right now
+- [ ] Fine-tuning of GDB environment (e.g. custom breakpoints) missing
 
 ## Features
 
@@ -25,7 +25,7 @@ Currently there's a dedicated docker container for every step:
   - [x] Kernel compilation modes and custom flag support
   - [x] Building of kernel from *commit id*, *release tag* or *<major>.<minor>.<patch>*-version
   - [x] Applying patch files by specifiying a patch directory in `config.ini`
-- [x] GDB with gef to make debugging less of a pain
+- [x] GDB + [gef](https://github.com/hugsy/gef) to make debugging fun
 - [x] QEMU runtime options for the kernel like `kaslr`, `smep`, `smap`, `kpti`, and others
 - [x] Re-using builds/container images across runs to minimize start-up time
 - [x] Minimal host system requirements
