@@ -22,12 +22,18 @@ Currently there's a dedicated docker container for every step:
 
 - [x] Automated kernel/root file system builds based on `config.ini`
   - [x] Multi-arch: `x86_64` and `arm64`
-  - [x] Kernel compilation modes and custom flag support
-  - [x] Building of kernel from *commit id*, *release tag* or *<major>.<minor>.<patch>*-version
-  - [x] Applying patch files by specifiying a patch directory in `config.ini`
-- [x] GDB + [gef](https://github.com/hugsy/gef) to make debugging fun
+  - [x] Kernel compilation modes (generic, syzkaller) + custom flag support
+  - [x] Building of kernel from
+    - [x] Commit id 
+    - [x] Release tag, or
+    - [x] *\<major>.\<minor>.\<patch>*-version
+  - [x] Applying patch files
+- [x] Debugger powered by: GDB + [gef](https://github.com/hugsy/gef)
 - [x] QEMU runtime options for the kernel like `kaslr`, `smep`, `smap`, `kpti`, and others
-- [x] Re-using builds/container images across runs to minimize start-up time
+- [x] Re-use builds
+  - [x] Images
+  - [x] root file systems
+  - [x] kernels  
 - [x] Minimal host system requirements
 
 
