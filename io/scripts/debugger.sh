@@ -52,7 +52,11 @@ popd
 rm vmlinux-gdb.py
 ln -sd scripts/gdb/vmlinux-gdb.py
 
-#gdb-multiarch -q $VMLINUX -iex "set architecture $ARCH" -ex "target remote :1234" \
+# Fix the Image vs bzImage discrepancy
+if [ "$ARCH" -eq "x86_64" ];then
+    ln -s $(pwd)/arch/x86_64/boot/bzImage $(pwd)/arch/x86_64/boot/Image
+fi
+
 gdb-multiarch -q $VMLINUX -iex "set architecture $ARCH" -ex "gef-remote --qemu-user --qemu-binary $VMLINUX localhost 1234" \
     -ex "add-symbol-file $VMLINUX" \
     -ex "break start_kernel" \

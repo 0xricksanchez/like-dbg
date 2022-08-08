@@ -18,6 +18,7 @@ RUN groupadd -g $HOST_GID $USER && \
     useradd -u $USER_UID -g $HOST_GID -s $SHELL -m -p $(openssl passwd -1 $USER) $USER && \
     usermod -aG sudo $USER && \
     sed -ir "/^$USER/ { s/:x:/::/ }" /etc/passwd && \
+    mkdir -p /home/$USER
 
 WORKDIR /home/$USER
 
