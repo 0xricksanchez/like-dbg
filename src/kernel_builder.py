@@ -35,7 +35,6 @@ class KernelBuilder(DockerRunner):
         return self.ssh_conn.run(f"cd {self.docker_mnt}/{self.kernel_root} && {cmd}").exited
 
     def _apply_patches(self):
-        logger.error(f"patch_dir: {self.patch_dir}")
         if self.patch_dir and Path(self.patch_dir).exists():
             patch_files = [x for x in Path(self.patch_dir).iterdir()]
             if patch_files:
@@ -115,9 +114,4 @@ class KernelBuilder(DockerRunner):
         self.image = self.get_image()
         super().run()
         logger.info("Successfully build the kernel")
-        if self.arch == 'x86_64':
-            kernel = Path(f'{self.kernel_root}/arch/x86/boot/bzImage')
-            if kernel.exists():
-                Path(Path.cwd() / kernel.parent.parent.parent / f"{self.arch}/boot/Image").symlink_to(
-                    Path.cwd() / kernel)
         self.stop_container()
