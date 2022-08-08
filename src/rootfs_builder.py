@@ -46,5 +46,5 @@ class RootFSBuilder(DockerRunner):
     def run(self) -> None:
         if not self.check_existing():
             self.image = self.get_image()
-            logger.debug(f"found rootfs_builder: {self.image}")
+            logger.debug(f"Found rootfs_builder: {self.image}")
             super().run()

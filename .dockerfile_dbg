@@ -28,7 +28,7 @@ RUN apt update && \
         procps \
         wget \
         zsh \
-        libc6-dev \
+        libc6-dev && \
     python3 -m pip install --upgrade pip && \
     python3 -m pip install --upgrade pwntools && \
     sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && \
@@ -47,7 +47,7 @@ RUN groupadd -g $HOST_GID $USER && \
     useradd -u $USER_UID -g $HOST_GID -s $SHELL -m -p $(openssl passwd -1 $USER) $USER && \
     usermod -aG sudo $USER && \
     sed -ir "/^$USER/ { s/:x:/::/ }" /etc/passwd && \
-    mkdir /home/$USER/.ssh
+    mkdir -p /home/$USER/.ssh
 
 WORKDIR /home/$USER
 
@@ -56,9 +56,9 @@ COPY io/scripts/.gdbinit .
 COPY io/scripts/debugger.sh .
 RUN sudo chown $USER:$USER .gdbinit debugger.sh && \
     sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" && \
-    #git clone --depth=1 https://github.com/pwndbg/pwndbg && cd pwndbg && chmod +x setup.sh && echo y | ./setup.sh && cd ../
     wget -O ~/.gdbinit-gef.py -q https://gef.blah.cat/dev && \
     echo source ~/.gdbinit-gef.py >> ~/.gdbinit && \
-    wget -q -O- https://github.com/hugsy/gef/raw/dev/scripts/gef-extras.sh | bash -s - -b dev
+    wget -q -O- https://github.com/hugsy/gef/raw/dev/scripts/gef-extras.sh | bash -s - -b dev && \
+    echo "export PATH=/home/$USER/.local/bin/:${PATH}" >> /home/$USER/.zshrc
 
 WORKDIR /io

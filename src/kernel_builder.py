@@ -7,7 +7,7 @@ import docker
 from loguru import logger
 
 from .docker_runner import DockerRunner
-from .misc import adjust_arch, cfg_setter
+from .misc import adjust_arch, cfg_setter, canadian_cross
 
 
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
@@ -27,6 +27,7 @@ class KernelBuilder(DockerRunner):
             'CC': self.compiler,
             'LLVM': '0' if self.compiler == 'gcc' else '1',
             'TOOLCHAIN_ARCH': adjust_arch(self.arch),
+            'CANADIAN_CROSS': canadian_cross(self.arch),
             'ARCH': self.arch,
         }
 
@@ -34,13 +35,15 @@ class KernelBuilder(DockerRunner):
         return self.ssh_conn.run(f"cd {self.docker_mnt}/{self.kernel_root} && {cmd}").exited
 
     def _apply_patches(self):
-        if Path(self.patch_dir).exists():
+        logger.error(f"patch_dir: {self.patch_dir}")
+        if self.patch_dir and Path(self.patch_dir).exists():
             patch_files = [x for x in Path(self.patch_dir).iterdir()]
-            logger.debug(f"Applying patches...: {patch_files}")
-            for pfile in patch_files:
-                if self._run_ssh(f'patch -p1 < ../{self.patch_dir}/{pfile.name}') != 0:
-                    logger.error(f"Patching: {pfile}")
-                    exit(-1)
+            if patch_files:
+                logger.debug(f"Applying patches...: {patch_files}")
+                for pfile in patch_files:
+                    if self._run_ssh(f'patch -p1 < ../{self.patch_dir}/{pfile.name}') != 0:
+                        logger.error(f"Patching: {pfile}")
+                        exit(-1)
 
     def _build_mrproper(self):
         self._run_ssh(f"{self.cc} ARCH={self.arch} make mrproper")

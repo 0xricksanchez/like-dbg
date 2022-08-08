@@ -6,7 +6,7 @@ import docker
 from loguru import logger
 
 from .docker_runner import DockerRunner
-from .misc import tmux, tmux_shell, cfg_setter, adjust_arch
+from .misc import tmux, tmux_shell, cfg_setter, adjust_qemu_arch
 
 
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
@@ -17,7 +17,7 @@ class Debuggee(DockerRunner):
         super().__init__()
         cfg_setter(self, ['debuggee', 'debuggee_docker', 'general', 'kernel_general', 'rootfs_general'])
         self.img = Path(self.docker_mnt) / self.rootfs_dir / (self.rootfs_base + self.arch + self.rootfs_ftype)
-        self.qemu_arch = adjust_arch(self.arch)
+        self.qemu_arch = adjust_qemu_arch(self.arch)
         self.cmd = None
         self.buildargs = {'USER': self.user}
         self.cli = docker.APIClient(base_url=self.docker_sock)
