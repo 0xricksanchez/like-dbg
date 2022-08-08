@@ -1,34 +1,19 @@
-FROM debian:bullseye-slim
+FROM like_dbg_base:latest
 LABEL maintainer="Christopher Krah <admin@0x434b.dev>"
 
 ENV DEBIAN_FRONTEND noninteractive
 
 ARG USER
 
-# Get essentials
 RUN apt update && \
-    apt upgrade -y && \
-    apt install -y \
-        apt-utils \
-        locales \
+    apt install -yq --no-install-recommends \
         qemu-system \
         openssl \
         binfmt-support && \
-    sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && \
-    dpkg-reconfigure --frontend=noninteractive locales && \
-    update-locale LANG=en_US.UTF-8 && \
-    apt-get clean
+    apt-get -y autoremove --purge && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
 ENV LC_ALL=en_US.UTF-8
-
-ENV USER_UID=1000
-ENV HOST_GID=1000
-ENV SHELL="/bin/bash"
-
-RUN groupadd -g $HOST_GID $USER && \
-    useradd -u $USER_UID -g $HOST_GID -s $SHELL -m -p $(openssl passwd -1 $USER) $USER && \
-    usermod -aG sudo $USER && \
-    sed -ir "/^$USER/ { s/:x:/::/ }" /etc/passwd && \
-    mkdir -p /home/$USER/.ssh
 
 WORKDIR /io

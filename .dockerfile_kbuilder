@@ -1,4 +1,4 @@
-FROM debian:bullseye-slim
+FROM like_dbg_base:latest
 LABEL maintainer="Christopher Krah <admin@0x434b.dev>"
 
 ENV DEBIAN_FRONTEND noninteractive
@@ -11,25 +11,29 @@ ARG USER
 ARG CANADIAN_CROSS
 
 RUN apt update && \
-    apt upgrade -yq && \
-    apt install -yq sudo git libncurses-dev libssl-dev wget xz-utils ccache build-essential gcc make bc \
-                    gcc-$TOOLCHAIN_ARCH-linux-gnu binutils-$TOOLCHAIN_ARCH-linux-gnu flex bison file \
-                    cpio unzip rsync python3 perl g++ llvm clang lld lldb openssh-server libelf-dev && \
-    mkdir -p /var/run/sshd
-
-ENV USER_UID=1000
-ENV HOST_GID=1000
-ENV SHELL="/bin/bash"
-
-RUN groupadd -g $HOST_GID $USER && \
-    useradd -u $USER_UID -g $HOST_GID -s $SHELL -m -p $(openssl passwd -1 $USER) $USER && \
-    usermod -aG sudo $USER && \
-    sed -ir "/^$USER/ { s/:x:/::/ }" /etc/passwd && \
-    mkdir -p /home/$USER/.ssh
+    apt install -yq --no-install-recommends \
+        libncurses-dev \
+        libssl-dev \
+        xz-utils \
+        ccache \
+        bc \
+        gcc-$TOOLCHAIN_ARCH-linux-gnu \
+        binutils-$TOOLCHAIN_ARCH-linux-gnu \
+        flex \
+        bison \
+        cpio \
+        rsync \
+        llvm \
+        clang \
+        lld \
+        lldb \
+        libelf-dev && \
+    apt-get -y autoremove --purge && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /home/$USER
 
-COPY .ssh/like.id_rsa.pub .ssh/authorized_keys
 RUN echo "CROSS_COMPILE=$CANADIAN_CROSS" >> /etc/environment && \
     echo "CC=$CC" >> /etc/environment && \
     echo "LLVM=$LLVM" >> /etc/environment && \
