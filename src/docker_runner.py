@@ -47,13 +47,16 @@ class DockerRunner:
         )[0]
         return image
 
-    def build_image(self):
+    def build_image(self, dockerfile=None, buildargs=None, image_tag=None):
+        dockerfile = dockerfile if dockerfile else self.dockerfile
+        buildargs = buildargs if buildargs else self.buildargs
+        tag = image_tag if image_tag else self.tag
         for log_entry in self.cli.build(
                 path=str(self.dockerfile_ctx),
-                dockerfile=self.dockerfile,
-                tag=self.tag,
+                dockerfile=dockerfile,
+                tag=tag,
                 decode=True,
-                buildargs=self.buildargs
+                buildargs=buildargs
         ):
             v = next(iter(log_entry.values()))
             if isinstance(v, str):
@@ -61,15 +64,28 @@ class DockerRunner:
                 if v:
                     logger.debug(v)
 
-    def get_image(self):
+    def get_image(self, tag=None):
+        to_check = tag if tag else self.tag
         try:
-            image = self.client.images.get(self.tag)
+            image = self.client.images.get(to_check)
             return image
         except docker.errors.ImageNotFound:
             return None
 
+    def is_base_image(self) -> bool:
+        if self.get_image(tag=self.tag_base_image):
+            return True
+        else:
+            return False
+
+    def build_base_img(self):
+        self.build_image(dockerfile=self.dockerfile_base_img, image_tag=self.tag_base_image)
+
     def run(self):
         if not self.image:
+            if not self.is_base_image():
+                logger.debug("Could not find 'like-dbg'-base image! Building it!")
+                self.build_base_img()
             logger.info(f"Building fresh image for {type(self).__name__}")
             self.build_image()
             self.image = self.get_image()

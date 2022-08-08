@@ -5,5 +5,3 @@ set print pretty on
 set follow-fork-mode child
 set history save on
 set confirm off
-
-source /home/dbg/pwndbg/gdbinit.py

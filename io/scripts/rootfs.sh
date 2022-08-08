@@ -143,7 +143,7 @@ echo 'binfmt_misc /proc/sys/fs/binfmt_misc binfmt_misc defaults 0 0' | sudo tee 
 echo -en "127.0.0.1\tlocalhost $ROOTFS_NAME\n" | sudo tee $MNT/etc/hosts
 echo "nameserver 8.8.8.8" | sudo tee -a $MNT/etc/resolve.conf
 echo "$ROOTFS_NAME" | sudo tee $MNT/etc/hostname
-ssh-keygen -f $ROOTFS_NAME.id_rsa -t rsa -N ''
+yes | ssh-keygen -f $ROOTFS_NAME.id_rsa -t rsa -N ''
 sudo mkdir -p $MNT/root/.ssh/
 cat $ROOTFS_NAME.id_rsa.pub | sudo tee $MNT/root/.ssh/authorized_keys
 
