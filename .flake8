@@ -1,0 +1,6 @@
+[flake8]
+extend-ignore = E501
+exclude = 
+    .git,
+    src/__pycache__
+
