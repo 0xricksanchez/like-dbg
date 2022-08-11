@@ -72,10 +72,10 @@ class KernelBuilder(DockerRunner):
     def _configure_extra_args(self, params: str) -> str:
         for idx, opt in enumerate(self.extra_args.split()[1::2]):
             if opt in params:
-                pattern = fr"[-][ed]{1}\s{opt}"
+                pattern = rf"[-][ed]{1}\s{opt}"
                 params = re.sub(pattern, opt, params)
             else:
-                new_opt = " ".join(self.extra_args.split()[idx * 2: idx * 2 + 2])
+                new_opt = " ".join(self.extra_args.split()[idx * 2 : idx * 2 + 2])
                 params += f" {new_opt}"
         logger.debug(params)
         return params
