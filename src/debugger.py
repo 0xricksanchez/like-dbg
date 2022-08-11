@@ -14,8 +14,8 @@ from .misc import cfg_setter, tmux, tmux_shell
 class Debugger(DockerRunner):
     def __init__(self):
         super().__init__()
-        cfg_setter(self, ['general', 'debugger', 'kernel_general'])
-        self.buildargs = {'USER': self.user}
+        cfg_setter(self, ["general", "debugger", "kernel_general"])
+        self.buildargs = {"USER": self.user}
         self.cli = docker.APIClient(base_url=self.docker_sock)
 
     def run_container(self) -> None:

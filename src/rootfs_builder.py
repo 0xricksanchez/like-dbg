@@ -1,4 +1,4 @@
-#!/usr/bin/env python3 
+#!/usr/bin/env python3
 
 from pathlib import Path
 
@@ -15,12 +15,12 @@ from .misc import cfg_setter, adjust_arch, is_reuse
 class RootFSBuilder(DockerRunner):
     def __init__(self):
         super().__init__()
-        cfg_setter(self, ['rootfs_general', 'rootfs_builder', 'general'])
+        cfg_setter(self, ["rootfs_general", "rootfs_builder", "general"])
         self.cli = docker.APIClient(base_url=self.docker_sock)
         self.ssh_conn = self.init_ssh()
         self.guarantee_ssh(self.ssh_dir)
         self.rootfs_path = self.rootfs_dir + self.rootfs_base + self.arch + self.rootfs_ftype
-        self.buildargs = {'USER': self.user}
+        self.buildargs = {"USER": self.user}
 
     def run_container(self):
         qemu_arch = adjust_arch(self.arch)
@@ -31,13 +31,13 @@ class RootFSBuilder(DockerRunner):
             detach=True,
             privileged=True,
             ports={"22/tcp": self.ssh_fwd_port},
-            command=command
+            command=command,
         )
         gen = container.logs(stream=True, follow=True)
         [logger.debug(log.strip().decode()) for log in gen]
 
     def check_existing(self) -> bool:
-        logger.debug(f'Checking for existing rootfs: {self.rootfs_path}')
+        logger.debug(f"Checking for existing rootfs: {self.rootfs_path}")
         if Path(self.rootfs_path).exists():
             return is_reuse(self.rootfs_path)
         else:

@@ -16,12 +16,12 @@ from .misc import cfg_setter, is_reuse, new_context
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
 class KernelUnpacker:
     def __init__(self, p: Path) -> None:
-        cfg_setter(self, ['kernel_general'])
+        cfg_setter(self, ["kernel_general"])
         self.kernel_root = Path(self.kernel_root)
         self.archive = p
-        self.ex_name = Path('.'.join(self.archive.name.split('.')[:-2]))  # FIXME only works for formats like .tar.gz
+        self.ex_name = Path(".".join(self.archive.name.split(".")[:-2]))  # FIXME only works for formats like .tar.gz
         self.dst_content = None
-        self.history = Path('.hist')
+        self.history = Path(".hist")
 
     def _is_new(self):
         if self.history.exists():
@@ -35,7 +35,7 @@ class KernelUnpacker:
     def _make_clean(self):
         logger.debug("Same kernel version already unpacked. Running 'make clean' just in case...")
         with new_context(self.kernel_root):
-            sp.run('make clean', shell=True)
+            sp.run("make clean", shell=True)
 
     def _is_dest_empty(self) -> bool:
         if self.kernel_root.exists():

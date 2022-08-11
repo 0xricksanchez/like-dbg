@@ -36,32 +36,20 @@ class DockerRunner:
 
     def init_ssh(self):
         # TODO remove hardcoded values in favor of a config
-        self.ssh_conn = Connection(f"{self.user}@localhost:{self.ssh_fwd_port}",
-                                   connect_kwargs={"key_filename": ".ssh/like.id_rsa"}
-                                   )
+        self.ssh_conn = Connection(f"{self.user}@localhost:{self.ssh_fwd_port}", connect_kwargs={"key_filename": ".ssh/like.id_rsa"})
 
     def build_image_hl(self):
-        image = self.client.images.build(
-            path=str(self.dockerfile_ctx),
-            dockerfile=self.dockerfile_path,
-            tag=self.tag
-        )[0]
+        image = self.client.images.build(path=str(self.dockerfile_ctx), dockerfile=self.dockerfile_path, tag=self.tag)[0]
         return image
 
     def build_image(self, dockerfile=None, buildargs=None, image_tag=None):
         dockerfile = dockerfile if dockerfile else self.dockerfile
         buildargs = buildargs if buildargs else self.buildargs
         tag = image_tag if image_tag else self.tag
-        for log_entry in self.cli.build(
-                path=str(self.dockerfile_ctx),
-                dockerfile=dockerfile,
-                tag=tag,
-                decode=True,
-                buildargs=buildargs
-        ):
+        for log_entry in self.cli.build(path=str(self.dockerfile_ctx), dockerfile=dockerfile, tag=tag, decode=True, buildargs=buildargs):
             v = next(iter(log_entry.values()))
             if isinstance(v, str):
-                v = ' '.join(v.strip().split())
+                v = " ".join(v.strip().split())
                 if v:
                     logger.debug(v)
 
