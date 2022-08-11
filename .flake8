@@ -1,5 +1,5 @@
 [flake8]
-extend-ignore = E501
+extend-ignore = E501,E203
 exclude = 
     .git,
     src/__pycache__

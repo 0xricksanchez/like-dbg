@@ -11,7 +11,7 @@ from typing import List
 
 from loguru import logger
 
-config = Path.cwd() / 'config.ini'
+config = Path.cwd() / "config.ini"
 
 
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
@@ -23,7 +23,7 @@ def cfg_setter(obj, sections: List[str]) -> None:
     for sect in sections:
         for key in cfg[sect]:
             tmp = cfg[sect][key]
-            val = tmp if tmp not in ['yes', 'no'] else cfg[sect].getboolean(key)
+            val = tmp if tmp not in ["yes", "no"] else cfg[sect].getboolean(key)
             setattr(obj, key, val)
 
 
@@ -42,25 +42,27 @@ def is_reuse(p: str) -> bool:
 
 
 def canadian_cross(arch: str) -> str:
-    if arch == 'arm64':
-        return 'aarch64-linux-gnu-'
+    if arch == "arm64":
+        return "aarch64-linux-gnu-"
     else:
-        return 'x86_64-pc-linux-gnu-'
+        return "x86_64-pc-linux-gnu-"
 
 
 def adjust_arch(arch: str) -> str:
-    if arch == 'arm64':
-        return 'aarch64'
-    elif arch == 'x86_64':
-        return 'x86-64'
+    if arch == "arm64":
+        return "aarch64"
+    elif arch == "x86_64":
+        return "x86-64"
     else:
         return arch
 
+
 def adjust_qemu_arch(arch: str) -> str:
-    if arch == 'arm64':
-        return 'aarch64'
+    if arch == "arm64":
+        return "aarch64"
     else:
         return arch
+
 
 def tmux(cmd: str) -> None:
     sp.run(f"tmux {cmd} > /dev/null", shell=True)

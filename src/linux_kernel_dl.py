@@ -5,14 +5,16 @@ from .misc import cfg_setter
 from loguru import logger
 from pathlib import Path
 import requests
+import re
 import urllib.request
+
 
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
 # | KERNEL DOWNLOADER                                                                                   |
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
 class KernelDownloader:
     def __init__(self) -> None:
-        cfg_setter(self, ['kernel_dl'])
+        cfg_setter(self, ["kernel_dl"])
         self.commit = self._set_commit()
         self.choice = self._set_choice()
         logger.info(f"Using kernel with (tag/commit) {self.choice}")
@@ -50,10 +52,10 @@ class KernelDownloader:
 
     def _set_dl_uri(self):
         if self.mmp:
-            (major, minor, patch) = tuple(self.mmp.split('.'))
-            self.mmp_uri = self.mmp_uri.replace('KMAJOR', major)
-            self.mmp_uri = self.mmp_uri.replace('KMINOR', minor)
-            self.mmp_uri = self.mmp_uri.replace('KPATCH', patch)
+            (major, minor, patch) = tuple(self.mmp.split("."))
+            self.mmp_uri = self.mmp_uri.replace("KMAJOR", major)
+            self.mmp_uri = self.mmp_uri.replace("KMINOR", minor)
+            self.mmp_uri = self.mmp_uri.replace("KPATCH", patch)
             return self.mmp_uri
         else:
             return "{self.snap_uri}{self.choice}.tar.gz"
@@ -75,4 +77,3 @@ class KernelDownloader:
         if not self.is_present():
             self.download_kernel_archive()
         return self.archive
-
