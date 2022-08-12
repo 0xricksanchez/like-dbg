@@ -43,21 +43,20 @@ case "$ARCH" in
         ARCH=i386:x86-64:intel
         ;;
     *)
-        ARCH=$ARCH
         ;;
 esac
-pushd $HOME
+pushd "$HOME" || exit
 echo "add-auto-load-safe-path $PROJECT_DIR" >> .gdbinit
-popd
+popd || exit
 rm vmlinux-gdb.py
-ln -sd scripts/gdb/vmlinux-gdb.py
+ln -sd scripts/gdb/vmlinux-gdb.py .
 
 # Fix the Image vs bzImage discrepancy
-if [ "$ARCH" -eq "x86_64" ];then
-    ln -s $(pwd)/arch/x86_64/boot/bzImage $(pwd)/arch/x86_64/boot/Image
+if [ "$ARCH" == "x86_64" ];then
+    ln -s "$(pwd)/arch/x86_64/boot/bzImage" "$(pwd)/arch/x86_64/boot/Image"
 fi
 
-gdb-multiarch -q $VMLINUX -iex "set architecture $ARCH" -ex "gef-remote --qemu-user --qemu-binary $VMLINUX localhost 1234" \
+gdb-multiarch -q "$VMLINUX" -iex "set architecture $ARCH" -ex "gef-remote --qemu-user --qemu-binary $VMLINUX localhost 1234" \
     -ex "add-symbol-file $VMLINUX" \
     -ex "break start_kernel" \
     -ex "continue" \
