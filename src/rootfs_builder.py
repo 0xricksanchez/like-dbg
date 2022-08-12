@@ -19,12 +19,13 @@ class RootFSBuilder(DockerRunner):
         self.cli = docker.APIClient(base_url=self.docker_sock)
         self.ssh_conn = self.init_ssh()
         self.guarantee_ssh(self.ssh_dir)
-        self.rootfs_path = self.rootfs_dir + self.rootfs_base + self.arch + self.rootfs_ftype
+        self.fs_name = self.rootfs_base + self.arch + self.rootfs_ftype
+        self.rootfs_path = self.rootfs_dir + self.fs_name
         self.buildargs = {"USER": self.user}
 
     def run_container(self):
         qemu_arch = adjust_arch(self.arch)
-        command = f"/home/{self.user}/rootfs.sh -n /{self.rootfs_path} -a {qemu_arch}"
+        command = f"/home/{self.user}/rootfs.sh -n {self.fs_name} -a {qemu_arch}"
         container = self.client.containers.run(
             self.image,
             volumes=[f"{Path.cwd() / 'io'}:{self.docker_mnt}"],
