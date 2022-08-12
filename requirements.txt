@@ -1,4 +1,6 @@
 loguru
+flake8
+platformdirs
 fabric
 black
 docker 
