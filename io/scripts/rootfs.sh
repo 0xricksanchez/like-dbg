@@ -22,7 +22,7 @@ pushd /io
 
 MNT=rootfs
 SEEK=2047
-PKGS="build-essential,vim,openssh-server,make,sudo,curl,tar,gcc,libc6-dev,time,strace,less,psmisc,selinux-utils,policycoreutils,checkpolicy,selinux-policy-default,firmware-atheros"
+PKGS="build-essential,vim,openssh-server,make,sudo,curl,tar,gcc,libc6-dev,time,strace,less,psmisc,selinux-utils,policycoreutils,checkpolicy,selinux-policy-default,firmware-atheros,openssl"
 ARCH=$(uname -m)
 DIST=bullseye
 ROOTFS_NAME=rootfs
@@ -121,12 +121,19 @@ fi
 if [ "$DEBARCH" == "riscv64" ]; then
     DEBOOTSTRAP_PARAMS="--keyring /usr/share/keyrings/debian-ports-archive-keyring.gpg --exclude firmware-atheros $DEBOOTSTRAP_PARAMS http://deb.debian.org/debian-ports"
 fi
-sudo debootstrap "$DEBOOTSTRAP_PARAMS"
+#sudo debootstrap $DEBOOTSTRAP_PARAMS
+eval "sudo debootstrap $DEBOOTSTRAP_PARAMS"
 
 # 2. debootstrap stage: only necessary if target != host architecture
 if [ $FOREIGN = "true" ]; then
     sudo cp -av "$(which qemu-"$ARCH"-static)" "$MNT$(which qemu-"$ARCH"-static)"
     sudo chroot $MNT /bin/bash -c "/debootstrap/debootstrap --second-stage"
+fi
+
+# 3. Create a non-root user
+sudo chroot $MNT /bin/bash -c "groupadd -g 1000 user && useradd -u 1000 -g 1000 -s /bin/bash -m -p $(openssl passwd -1 user) user"
+
+if [ $FOREIGN = "true" ]; then
     rm -rf "$MNT$(which qemu-"$ARCH"-static)"
 fi
 
@@ -154,4 +161,4 @@ sudo mount -o loop "$ROOTFS_NAME" /mnt/$MNT
 sudo cp -a $MNT/. /mnt/$MNT/.
 sudo umount /mnt/$MNT
 sudo rm -rf "$MNT"
-chmod 755 "$ROOTFS_NAME*"
+find "$ROOTFS_NAME"* -print0 | xargs -0 chmod 0755 

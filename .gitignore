@@ -1,4 +1,5 @@
 .idea/*
+.like-dbg
 src/__pycache__
 linux-*
 kernel_root
