@@ -37,3 +37,4 @@ RUN sudo chown $USER:$USER .gdbinit debugger.sh && \
     echo "export PATH=/home/$USER/.local/bin/:${PATH}" >> /home/$USER/.zshrc
 
 WORKDIR /io
+COPY io/scripts/gdb_script .
