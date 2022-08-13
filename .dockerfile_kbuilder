@@ -10,8 +10,8 @@ ARG ARCH
 ARG USER
 ARG CANADIAN_CROSS
 
-RUN apt update && \
-    apt install -yq --no-install-recommends \
+RUN apt-get update && \
+    apt-get install -yq --no-install-recommends \
         libncurses-dev \
         libssl-dev \
         xz-utils \

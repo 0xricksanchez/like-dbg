@@ -1,2 +1,3 @@
 ignored:
-  - DL3007
+  - DL3007 # Using latest tag for image
+  - DL3008 # Not specifying versions when doing apt-get

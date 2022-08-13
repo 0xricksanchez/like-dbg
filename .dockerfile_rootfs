@@ -6,8 +6,8 @@ ARG USER
 ENV DEBIAN_FRONTEND noninteractive
 WORKDIR /tmp
   
-RUN apt update && \
-    apt install -yq --no-install-recommends \
+RUN apt-get update && \
+    apt-get install -yq --no-install-recommends \
         yes \
         debootstrap \
         qemu \
