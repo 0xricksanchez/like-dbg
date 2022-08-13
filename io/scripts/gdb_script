@@ -1,0 +1,2 @@
+# Feel free to specify your custom GDB commands in here
+# Note: This will require rebuilding the debugger container

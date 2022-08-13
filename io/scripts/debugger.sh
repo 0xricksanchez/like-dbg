@@ -63,5 +63,6 @@ gdb-multiarch -q "$VMLINUX" -iex "set architecture $ARCH" -ex "gef-remote --qemu
     -ex "continue" \
     -ex "lx-symbols" \
     -ex "macro define offsetof(_type, _memb) ((long)(&((_type *)0)->_memb))" \
-    -ex "macro define containerof(_ptr, _type, _memb) ((_type *)((void *)(_ptr) - offsetof(_type, _memb)))"
+    -ex "macro define containerof(_ptr, _type, _memb) ((_type *)((void *)(_ptr) - offsetof(_type, _memb)))" \
+    -x gdb_script
 
