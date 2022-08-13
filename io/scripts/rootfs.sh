@@ -22,7 +22,7 @@ pushd /io
 
 MNT=rootfs
 SEEK=2047
-PKGS="build-essential,vim,openssh-server,make,sudo,curl,tar,gcc,libc6-dev,time,strace,less,psmisc,selinux-utils,policycoreutils,checkpolicy,selinux-policy-default,firmware-atheros,openssl"
+PKGS="build-essential,openssh-server,sudo,curl,tar,time,less,psmisc,openssl"
 ARCH=$(uname -m)
 DIST=bullseye
 ROOTFS_NAME=rootfs
@@ -51,6 +51,11 @@ while true; do
         -n | --name)
             # Sets the name of the rootfs
             ROOTFS_NAME=$2
+            shift 2
+            ;;
+        -p | --packages)
+            # Set packages to install
+            PKGS=$2
             shift 2
             ;;
         -*)
