@@ -1,4 +1,4 @@
-name: black8
+name: black
 
 on: [push, pull_request]
 
