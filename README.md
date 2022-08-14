@@ -1,11 +1,10 @@
-# LInux-KErnel DeBuGger (LIKE-DBG) 
+# LInux-KErnel DeBuGger (LIKE-DBG)
 
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![Build Status: flake8](https://github.com/PyCQA/flake8/workflows/main/badge.svg)](https://github.com/0xricksanchez/like-dbg/actions?query=workflow%3Aflake8)
 [![Build Status: shellcheck](https://github.com/koalaman/shellcheck/actions/workflows/build.yml/badge.svg)](https://github.com/0xricksanchez/like-dbg/actions?query=workflow%3Ashellcheck)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://tldrlegal.com/license/mit-license)
 [![GitHub Release](https://img.shields.io/github/release/0xricksanchez/like-dbg.svg)](https://github.com/0xricksanchez/like-dbg/releases/)  
-
 
 This repository aims at automating the boring steps when trying to set up a Linux kernel debugging environment.
 All steps from building the kernel to running the kernel and attaching the debugger are transparently done inside docker containers to keep system requirements minimal.
@@ -18,36 +17,35 @@ Currently there's a dedicated docker container for every step:
 
 ## Caveats
 
-- [ ] Currently only *x86_64* and *arm64* Linux kernel builds are supported
-- [ ] Only recent kernel builds will likely succeed building due to how the requirements for the toolchain differs between versions
-- [ ] No android kernel support right now
-- [ ] Fine-tuning of GDB environment (e.g. custom breakpoints) missing
+* [ ] Currently only *x86_64* and *arm64* Linux kernel builds are supported
+* [ ] Only recent kernel builds will likely succeed building due to how the requirements for the toolchain differs between versions
+* [ ] No android kernel support right now
+* [ ] Fine-tuning of GDB environment (e.g. custom breakpoints) missing
 
 ## Features
 
-- [x] Automated kernel/root file system builds based on `config.ini`
-  - [x] Multi-arch: `x86_64` and `arm64`
-  - [x] Kernel compilation modes (generic, syzkaller) + custom flag support
-  - [x] Building of kernel from
-    - [x] Commit id 
-    - [x] Release tag, or
-    - [x] *\<major>.\<minor>.\<patch>*-version
-  - [x] Applying patch files
-- [x] Debugger powered by: GDB + [gef](https://github.com/hugsy/gef)
-- [x] QEMU runtime options for the kernel like `kaslr`, `smep`, `smap`, `kpti`, and others
-- [x] Re-use builds
-  - [x] Images
-  - [x] root file systems
-  - [x] kernels  
-- [x] Minimal host system requirements
-
+* [x] Automated kernel/root file system builds based on `config.ini`
+  * [x] Multi-arch: `x86_64` and `arm64`
+  * [x] Kernel compilation modes (generic, syzkaller) + custom flag support
+  * [x] Building of kernel from
+    * [x] Commit id
+    * [x] Release tag, or
+    * [x] *\<major>.\<minor>.\<patch>*-version
+  * [x] Applying patch files
+* [x] Debugger powered by: GDB + [gef](https://github.com/hugsy/gef)
+* [x] QEMU runtime options for the kernel like `kaslr`, `smep`, `smap`, `kpti`, and others
+* [x] Re-use builds
+  * [x] Images
+  * [x] root file systems
+  * [x] kernels  
+* [x] Minimal host system requirements
 
 ## Requirements
 
 * `docker` (may work with `podman` as well)
 * `tmux`
 * `python>=3.7`
-    * `venv`
+  * `venv`
 
 ## Configuration
 
@@ -58,12 +56,12 @@ Once you're set, executing the commands below should drop you into a 3-tile tmux
 GDB debugger, and one terminal for free allocation
 
 ```sh
-$ tmux
-$ python3 -m venv .like-dbg
-$ source .like-dbg/bin/activate
-$ python3 -m pip install --upgrade pip
-$ python3 -m pip install -r requirements.txt
-$ python3 start_kgdb.py
+tmux
+python3 -m venv .like-dbg
+source .like-dbg/bin/activate
+python3 -m pip install --upgrade pip
+python3 -m pip install -r requirements.txt
+python3 start_kgdb.py
 ```
 
 ## Showcase
