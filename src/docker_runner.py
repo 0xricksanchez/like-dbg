@@ -87,6 +87,10 @@ class DockerRunner:
         self.container.stop()
 
     def check_existing(self) -> None:
-        self.image = self.get_image()
-        if self.image and not is_reuse(self.image.tags[0]):
+        if self.force_rebuild:
+            logger.info(f"Force-rebuilding {type(self).__name__}")
             self.image = None
+        else:
+            self.image = self.get_image()
+            if self.image and not is_reuse(self.image.tags[0]):
+                self.image = None
