@@ -3,9 +3,9 @@ LABEL maintainer="Christopher Krah <admin@0x434b.dev>"
 
 ENV DEBIAN_FRONTEND noninteractive
 
-RUN apt update && \
-    apt upgrade -yq && \
-    apt install -yq --no-install-recommends sudo \
+RUN apt-get update && \
+    apt-get upgrade -yq && \
+    apt-get install -yq --no-install-recommends sudo \
         git \
         wget \
         build-essential \
@@ -25,7 +25,7 @@ RUN apt update && \
         vim \
         wget \
         zsh && \
-    python3 -m pip install --upgrade pip && \
+    python3 -m pip install --upgrade --no-cache-dir pip && \
     sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && \
     dpkg-reconfigure --frontend=noninteractive locales && \
     update-locale LANG=en_US.UTF-8 && \
@@ -40,7 +40,7 @@ ENV SHELL="/bin/bash"
 ARG USER
 
 RUN groupadd -g $HOST_GID $USER && \
-    useradd -u $USER_UID -g $HOST_GID -s $SHELL -m -p $(openssl passwd -1 $USER) $USER && \
+    useradd -l -u $USER_UID -g $HOST_GID -s $SHELL -m -p "$(openssl passwd -1 $USER)" $USER && \
     usermod -aG sudo $USER && \
     sed -ir "/^$USER/ { s/:x:/::/ }" /etc/passwd && \
     mkdir -p /home/$USER/.ssh

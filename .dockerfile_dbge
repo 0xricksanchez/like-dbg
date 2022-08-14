@@ -5,8 +5,8 @@ ENV DEBIAN_FRONTEND noninteractive
 
 ARG USER
 
-RUN apt update && \
-    apt install -yq --no-install-recommends \
+RUN apt-get update && \
+    apt-get install -yq --no-install-recommends \
         qemu-system \
         openssl \
         binfmt-support && \

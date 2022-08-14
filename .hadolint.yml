@@ -1,0 +1,4 @@
+ignored:
+  - DL3007 # Using latest tag for image
+  - DL3008 # Not specifying versions when doing apt-get
+  - DL3013 # Pin versions in pip
