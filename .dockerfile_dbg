@@ -3,8 +3,15 @@ LABEL maintainer="Christopher Krah <admin@0x434b.dev>"
 
 ENV DEBIAN_FRONTEND noninteractive
 
-RUN apt update && \
-    apt install -yq --no-install-recommends \
+ARG USER
+
+WORKDIR /home/$USER
+
+COPY io/scripts/.gdbinit .
+COPY io/scripts/debugger.sh .
+
+RUN apt-get update && \
+    apt-get install -yq --no-install-recommends \
         libc-dev \
         binutils \
         libssl-dev \ 
@@ -15,23 +22,19 @@ RUN apt update && \
         ca-certificates \
         procps \
         libc6-dev && \
-    python3 -m pip install --upgrade pwntools && \
+    python3 -m pip install --upgrade --no-cache-dir pwntools && \
     apt-get -y autoremove --purge && \
     apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/* && \
+    chown $USER:$USER .gdbinit debugger.sh
 
 ENV LC_ALL=en_US.UTF-8
 
-ARG USER
-
-WORKDIR /home/$USER
 
 USER $USER
-COPY io/scripts/.gdbinit .
-COPY io/scripts/debugger.sh .
-RUN sudo chown $USER:$USER .gdbinit debugger.sh && \
-    sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" && \
-    wget -O ~/.gdbinit-gef.py -q https://gef.blah.cat/dev && \
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+RUN wget -q -O- https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh | bash -s - && \
+    wget -q -O ~/.gdbinit-gef.py -q https://gef.blah.cat/dev && \
     echo source ~/.gdbinit-gef.py >> ~/.gdbinit && \
     wget -q -O- https://github.com/hugsy/gef/raw/dev/scripts/gef-extras.sh | bash -s - -b dev && \
     echo "export PATH=/home/$USER/.local/bin/:${PATH}" >> /home/$USER/.zshrc
