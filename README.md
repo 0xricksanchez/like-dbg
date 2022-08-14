@@ -1,6 +1,11 @@
 # LInux-KErnel DeBuGger (LIKE-DBG) 
 
-**VERY MUCH IN POC/WIP STATE**
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+[![Build Status: flake8](https://github.com/PyCQA/flake8/workflows/main/badge.svg)](https://github.com/0xricksanchez/like-dbg/actions?query=workflow%3Aflake8)
+[![Build Status: shellcheck](https://github.com/koalaman/shellcheck/actions/workflows/build.yml/badge.svg)](https://github.com/0xricksanchez/like-dbg/actions?query=workflow%3Ashellcheck)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://tldrlegal.com/license/mit-license)
+[![GitHub Release](https://img.shields.io/github/release/0xricksanchez/like-dbg.svg)](https://github.com/0xricksanchez/like-dbg/releases/)  
+
 
 This repository aims at automating the boring steps when trying to set up a Linux kernel debugging environment.
 All steps from building the kernel to running the kernel and attaching the debugger are transparently done inside docker containers to keep system requirements minimal.
