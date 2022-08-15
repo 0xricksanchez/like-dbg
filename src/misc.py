@@ -11,14 +11,16 @@ from typing import List
 
 from loguru import logger
 
-config = Path.cwd() / "config.ini"
+main_config = Path.cwd() / "config.ini"
+ctf_config = Path.cwd() / "ctf.ini"
 
 
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
 # | MISC QOL functions                                                                                  |
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
-def cfg_setter(obj, sections: List[str]) -> None:
+def cfg_setter(obj, sections: List[str], cfg_type: str = "main") -> None:
     cfg = configparser.ConfigParser()
+    config = main_config if cfg_type == "main" else ctf_config
     cfg.read(config)
     for sect in sections:
         for key in cfg[sect]:

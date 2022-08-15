@@ -2,6 +2,7 @@ FROM like_dbg_base:latest
 LABEL maintainer="Christopher Krah <admin@0x434b.dev>"
 
 ENV DEBIAN_FRONTEND noninteractive
+ENV LC_ALL=en_US.UTF-8
 
 ARG USER
 
@@ -13,7 +14,5 @@ RUN apt-get update && \
     apt-get -y autoremove --purge && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
-
-ENV LC_ALL=en_US.UTF-8
 
 WORKDIR /io
