@@ -47,7 +47,7 @@ class Debuggee(DockerRunner):
             self.cmd += " nosmap"
         if not self.kpti:
             self.cmd += " nopti"
-        self.cmd += f' panic=1" -drive file={self.img},format=raw -net user,host=10.0.2.10,hostfwd=tcp:127.0.0.1:10021-:22 -net nic,model=e1000 -nographic -pidfile vm.pid'
+        self.cmd += f' oops=panic panic=-1" -drive file={self.img},format=raw -net user,host=10.0.2.10,hostfwd=tcp:127.0.0.1:10021-:22 -net nic,model=e1000 -nographic -pidfile vm.pid'
         if self.kvm and self.qemu_arch == "x86_64":
             self.cmd += " -enable-kvm"
         if self.gdb:
