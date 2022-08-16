@@ -7,7 +7,6 @@ from contextlib import contextmanager
 from pathlib import Path
 from sys import stdin
 from termios import tcflush, TCIFLUSH
-from typing import List
 
 from loguru import logger
 

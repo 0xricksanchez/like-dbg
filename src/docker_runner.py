@@ -35,7 +35,6 @@ class DockerRunner:
             sp.run(f'ssh-keygen -f {Path(ssh_dir) / "like.id_rsa"} -t rsa -N ""', shell=True)
 
     def init_ssh(self):
-        # TODO remove hardcoded values in favor of a config
         self.ssh_conn = Connection(f"{self.user}@localhost:{self.ssh_fwd_port}", connect_kwargs={"key_filename": ".ssh/like.id_rsa"})
 
     def build_image_hl(self):
@@ -87,6 +86,10 @@ class DockerRunner:
         self.container.stop()
 
     def check_existing(self) -> None:
-        self.image = self.get_image()
-        if self.image and not is_reuse(self.image.tags[0]):
+        if self.force_rebuild:
+            logger.info(f"Force-rebuilding {type(self).__name__}")
             self.image = None
+        else:
+            self.image = self.get_image()
+            if self.image and not is_reuse(self.image.tags[0]):
+                self.image = None
