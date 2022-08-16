@@ -16,12 +16,17 @@ from src.rootfs_builder import RootFSBuilder
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--ctf', '-c', action=argparse.BooleanOptionalAction, help='Use this in combination with "--env" in CTF environments where you were given a Linux kernel image and a file system')
-    parser.add_argument('--env', '-e', nargs=2, help='Expected: <kernel_image> <root_file_system>')
+    parser.add_argument(
+        "--ctf",
+        "-c",
+        action=argparse.BooleanOptionalAction,
+        help='Use this in combination with "--env" in CTF environments where you were given a Linux kernel image and a file system',
+    )
+    parser.add_argument("--env", "-e", nargs=2, help="Expected: <kernel_image> <root_file_system>")
     args = parser.parse_args()
     if args.ctf and not args.env:
-        logger.error('Found --ctf but no environment was specified...')
-        logger.error(f'Usage: python3 {Path(__file__).name} --ctf --env <kernel> <rootfs>')
+        logger.error("Found --ctf but no environment was specified...")
+        logger.error(f"Usage: python3 {Path(__file__).name} --ctf --env <kernel> <rootfs>")
         exit(-1)
 
     tmux("selectp -t 0")
@@ -43,8 +48,8 @@ def main():
         if not ctf_fs.exists():
             logger.error(f"Failed to find {ctf_fs}")
             exit(-1)
-        dbge_args = {'ctf_ctx': True, 'ctf_kernel': ctf_kernel, 'ctf_fs': ctf_fs}
-        dbg_args = {k:v for k,v in dbge_args.items() if k != 'ctf_fs'}
+        dbge_args = {"ctf_ctx": True, "ctf_kernel": ctf_kernel, "ctf_fs": ctf_fs}
+        dbg_args = {k: v for k, v in dbge_args.items() if k != "ctf_fs"}
     else:
         logger.info("Executing in non-CTF context")
 
@@ -57,7 +62,6 @@ def main():
     tmux("selectp -t 0")
     Debugger(**dbg_args).run()
     tmux("selectp -t 0")
-
 
 
 if __name__ == "__main__":
