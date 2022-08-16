@@ -18,6 +18,8 @@ ctf_config = Path.cwd() / "ctf.ini"
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
 # | MISC QOL functions                                                                                  |
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
+
+
 def cfg_setter(obj, sections: List[str], cfg_type: str = "main") -> None:
     cfg = configparser.ConfigParser()
     config = main_config if cfg_type == "main" else ctf_config

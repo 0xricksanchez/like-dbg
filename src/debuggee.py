@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
-from pathlib import Path
 import subprocess as sp
+from pathlib import Path
 
 import docker
 from loguru import logger
@@ -18,8 +18,8 @@ class Debuggee(DockerRunner):
         super().__init__()
         cfg_setter(self, ["debuggee", "debuggee_docker", "general", "kernel_general", "rootfs_general"])
         if ctf_ctx:
-            self.kernel = Path(self.docker_mnt) / kwargs.get('ctf_kernel', '')
-            self.rootfs = Path(self.docker_mnt) / kwargs.get('ctf_fs', '')
+            self.kernel = Path(self.docker_mnt) / kwargs.get("ctf_kernel", "")
+            self.rootfs = Path(self.docker_mnt) / kwargs.get("ctf_fs", "")
         else:
             self.kernel = Path(self.docker_mnt) / self.kernel_root / "arch" / self.arch / "boot" / "Image"
             self.rootfs = Path(self.docker_mnt) / self.rootfs_dir / (self.rootfs_base + self.arch + self.rootfs_ftype)
@@ -43,10 +43,8 @@ class Debuggee(DockerRunner):
             exit(-1)
 
     def run_container(self):
-        dcmd = f'docker run -it --rm -v {Path().cwd()}:/io --net="host" like_debuggee '
-        self.cmd = (
-            f"qemu-system-{self.qemu_arch} -m {self.memory} -smp {self.smp} -kernel {self.kernel}"
-        )
+        dcmd = f'docker run -it --rm -v {Path.cwd()}:/io --net="host" like_debuggee '
+        self.cmd = f"qemu-system-{self.qemu_arch} -m {self.memory} -smp {self.smp} -kernel {self.kernel}"
         if self.qemu_arch == "aarch64":
             self.cmd += ' -cpu cortex-a72 -machine type=virt -append "console=ttyAMA0 root=/dev/vda'
         elif self.qemu_arch == "x86_64":

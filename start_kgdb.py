@@ -12,7 +12,6 @@ from src.kernel_unpacker import KernelUnpacker
 from src.linux_kernel_dl import KernelDownloader
 from src.misc import tmux
 from src.rootfs_builder import RootFSBuilder
-from src.ctf_runner import CTFRunner
 
 
 def main():
@@ -31,6 +30,8 @@ def main():
     tmux("selectp -t 0")
     tmux("splitw -v -p 50")
     tmux("selectp -t 0")
+    dbge_args = {}
+    dbg_args = {}
 
     if args.ctf and args.env:
         logger.info("Executing in CTF context")
@@ -42,7 +43,8 @@ def main():
         if not ctf_fs.exists():
             logger.error(f"Failed to find {ctf_fs}")
             exit(-1)
-        Debuggee(ctf_ctx=True, ctf_kernel=ctf_kernel, ctf_fs=ctf_fs).run()
+        dbge_args = {'ctf_ctx': True, 'ctf_kernel': ctf_kernel, 'ctf_fs': ctf_fs}
+        dbg_args = {k:v for k,v in dbge_args.items() if k != 'ctf_fs'}
     else:
         logger.info("Executing in non-CTF context")
 
@@ -51,10 +53,10 @@ def main():
             KernelBuilder().run()
         RootFSBuilder().run()
 
-        Debuggee().run()
-        tmux("selectp -t 0")
-        Debugger().run()
-        tmux("selectp -t 0")
+    Debuggee(**dbge_args).run()
+    tmux("selectp -t 0")
+    Debugger(**dbg_args).run()
+    tmux("selectp -t 0")
 
 
 

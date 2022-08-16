@@ -39,5 +39,5 @@ RUN wget -q -O- https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh |
     wget -q -O- https://github.com/hugsy/gef/raw/dev/scripts/gef-extras.sh | bash -s - -b dev && \
     echo "export PATH=/home/$USER/.local/bin/:${PATH}" >> /home/$USER/.zshrc
 
-WORKDIR /io
 COPY io/scripts/gdb_script .
+WORKDIR /io
