@@ -11,8 +11,7 @@ from typing import List
 
 from loguru import logger
 
-main_config = Path.cwd() / "config.ini"
-ctf_config = Path.cwd() / "ctf.ini"
+config = Path.cwd() / "config.ini"
 
 
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
@@ -20,9 +19,8 @@ ctf_config = Path.cwd() / "ctf.ini"
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
 
 
-def cfg_setter(obj, sections: List[str], cfg_type: str = "main") -> None:
+def cfg_setter(obj, sections: List[str]) -> None:
     cfg = configparser.ConfigParser()
-    config = main_config if cfg_type == "main" else ctf_config
     cfg.read(config)
     for sect in sections:
         for key in cfg[sect]:
