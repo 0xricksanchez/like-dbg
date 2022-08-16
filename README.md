@@ -45,7 +45,7 @@ Currently there's a dedicated docker container for every step:
 
 * `docker` (may work with `podman` as well)
 * `tmux`
-* `python>=3.7`
+* `python>=3.9`
   * `venv`
 
 ## Configuration
