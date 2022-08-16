@@ -61,7 +61,7 @@ class Debuggee(DockerRunner):
             self.cmd += " nosmap"
         if not self.kpti:
             self.cmd += " nopti"
-        self.cmd += f' oops=panic panic=-1"'
+        self.cmd += ' oops=panic panic=-1"'
         self.cmd += self.infer_qemu_fs_mount()
         self.cmd += " -net user,host=10.0.2.10,hostfwd=tcp:127.0.0.1:10021-:22 -net nic,model=e1000 -nographic -pidfile vm.pid"
         if self.kvm and self.qemu_arch == "x86_64":

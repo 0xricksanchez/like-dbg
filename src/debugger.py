@@ -26,7 +26,7 @@ class Debugger(DockerRunner):
                 self.extract_vmlinux()
         else:
             self.project_dir = Path.cwd() / self.kernel_root
-        self.ctf = int(ctf_ctx == True)
+        self.ctf = 1 if ctf_ctx else 0
         self.custom_gdb_script = Path("/home/") / self.user / Path(self.gdb_script).name
         self.buildargs = {"USER": self.user}
         self.cli = docker.APIClient(base_url=self.docker_sock)
