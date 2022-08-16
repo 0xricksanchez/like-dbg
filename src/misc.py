@@ -17,6 +17,8 @@ config = Path.cwd() / "config.ini"
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
 # | MISC QOL functions                                                                                  |
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
+
+
 def cfg_setter(obj, sections: List[str]) -> None:
     cfg = configparser.ConfigParser()
     cfg.read(config)

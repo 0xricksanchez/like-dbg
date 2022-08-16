@@ -53,7 +53,7 @@ Once you're set, executing the commands below should drop you into a 3-tile tmux
 GDB debugger, and one terminal for free allocation
 
 ```sh
-$ tmux
+$ tmux -f .tmux.conf
 $ python3 -m venv .like-dbg
 $ source .like-dbg/bin/activate
 $ python3 -m pip install --upgrade pip
