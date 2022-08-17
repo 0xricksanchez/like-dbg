@@ -108,10 +108,12 @@ class KernelBuilder(DockerRunner):
         else:
             logger.error("No ssh connection to docker")
             exit(-1)
-
+    
     def run(self):
         logger.info("Building kernel. This may take a while...")
         self.image = self.get_image()
         super().run()
         logger.info("Successfully build the kernel")
+        if self.arch == "x86_64":
+            self._run_ssh(f"cd arch/{self.arch}/boot/ && ln -s bzImage Image")
         self.stop_container()

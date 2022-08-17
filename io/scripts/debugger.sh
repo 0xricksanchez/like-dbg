@@ -51,11 +51,6 @@ popd || exit
 if [ "$CTF_CTX" -ne 1 ];then
     rm vmlinux-gdb.py
     ln -sd scripts/gdb/vmlinux-gdb.py .
-
-    # Fix the Image vs bzImage discrepancy
-    if [ "$ARCH" == "x86_64" ];then
-        ln -s "$(pwd)/arch/x86_64/boot/bzImage" "$(pwd)/arch/x86_64/boot/Image"
-    fi
 fi
 
 # Handle GDB naming sceme
