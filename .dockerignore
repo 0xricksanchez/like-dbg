@@ -3,6 +3,7 @@ android-kernel/
 android54/
 kernel_root/
 src/
+io/rootfs/
 img/
 io/filesystem*
 linux-*

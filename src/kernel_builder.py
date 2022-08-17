@@ -114,4 +114,6 @@ class KernelBuilder(DockerRunner):
         self.image = self.get_image()
         super().run()
         logger.info("Successfully build the kernel")
+        if self.arch == "x86_64":
+            self._run_ssh(f"cd arch/{self.arch}/boot/ && ln -s bzImage Image")
         self.stop_container()
