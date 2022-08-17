@@ -6,7 +6,7 @@ import docker
 from loguru import logger
 
 from .docker_runner import DockerRunner
-from .misc import cfg_setter, adjust_arch, is_reuse
+from .misc import cfg_setter, adjust_qemu_arch, is_reuse
 
 
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
@@ -24,7 +24,7 @@ class RootFSBuilder(DockerRunner):
         self.buildargs = {"USER": self.user}
 
     def run_container(self):
-        qemu_arch = adjust_arch(self.arch)
+        qemu_arch = adjust_qemu_arch(self.arch)
         command = f"/home/{self.user}/rootfs.sh -n {self.fs_name} -a {qemu_arch} -d {self.distribution} -p {self.packages}"
         container = self.client.containers.run(
             self.image,
