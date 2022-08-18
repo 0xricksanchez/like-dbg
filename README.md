@@ -37,12 +37,11 @@ On the upside, despite its early stages, a couple of useful features are already
   * Minimal host system requirements due to dockerization of every step
   * A single config (`config.ini`) to allow free customization
   * CTF runner that's specifically designed to handle Linux kernel exploitation challenges
-  * Code linters:
-    * [black](https://github.com/psf/black) for all python code
-    * [shellcheck](https://github.com/koalaman/shellcheck) for shell scripts
-    * [hadolint](https://github.com/hadolint/hadolint) for the Dockerfiles
-  * Code formatter:
-    * [flake8](https://github.com/PyCQA/flake8) for all python code
+  * Code quality measures:
+    * [black](https://github.com/psf/black) formatter for python code
+    * [flake8](https://github.com/PyCQA/flake8) linter for all python code
+    * [shellcheck](https://github.com/koalaman/shellcheck) linter for shell scripts
+    * [hadolint](https://github.com/hadolint/hadolint) linter for the Dockerfiles
 * Kernel builder:
   * Multi-arch: `x86_64`, `arm64`
   * Choose between `gcc` and `clang` to build the kernel
