@@ -15,8 +15,8 @@ Currently, there's a dedicated docker container for every step:
 
 * Building the kernel
 * Creating a root file system to use with the kernel
-* Launching the kernel + file system with QEMU
-* Launching the debugger, that attaches to the kernel.
+* Launching the kernel + file system as the *debuggee*
+* Attaching to the kernel as a *debugger*
 
 ## Caveats
 
@@ -108,5 +108,5 @@ In the end, your experience should look similar to this:
 
 ## Hacking
 
-If you want to extend the project with your own ideas the python code should be quite readable. All PR's are very much welcome :)!
+The python code should be quite readable, so feel free to extend the project with your own ideas. All PR's are very much welcome :)!
 Otherwise, feel free to create a feature-request issue or head over to the [discussions page](https://github.com/0xricksanchez/like-dbg/discussions) to brainstorm some cool new features!
