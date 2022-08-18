@@ -9,9 +9,9 @@
 
 LIKE-DBG (*LI*nux-*KE*rnel-*D*e*B*u*G*ger) aims at automating the boring steps when trying to set up a Linux kernel debugging environment.
 I set out to dive into kernel exploitation research and found existing solutions not usable enough.
-Hence, this is my attempt at making all necessary pre-steps before one can even think about diving into the research as painless and fun as possible.
+Hence, this is an attempt at making all necessary pre-steps before one can even think about diving into research as painless and fun as possible.
 All steps from building a kernel, running it inside an emulated environment, and attaching a debugger are transparently done inside docker containers to keep system requirements minimal.
-Currently, there's a dedicated docker container for every step:
+Currently, there's a dedicated docker container for every of the following steps:
 
 * Building the kernel
 * Creating a root file system to use with the kernel
@@ -20,18 +20,18 @@ Currently, there's a dedicated docker container for every step:
 
 ## Caveats
 
-As this project is in its early stages I expect things to change rapidly, while also introducing breaking changes along the way.
+As this project is in its early stages, I expect things to change rapidly, while also introducing breaking changes along the way.
 Major points to improve on are:
 
-* Getting torwards true multi-architecture support beyond `x86_64` and `arm64`
-* Extend to kernel builder to not only succeed in building recent™ kernels
+* Getting towards true multi-architecture support beyond `x86_64` and `arm64`
+* Extend kernel builder to not only succeed in building recent™ kernels
 * Add android kernel support
 * Add (integration) tests
 * Elevate the debugging experience even more
 
 ## Features
 
-On the upside, despite its early stages a couple of useful features are already present:
+On the upside, despite its early stages, a couple of useful features are already present:
 
 * General:
   * Minimal host system requirements due to dockerization of every step
@@ -40,8 +40,8 @@ On the upside, despite its early stages a couple of useful features are already 
   * Code linters:
     * [black](https://github.com/psf/black) for all python code
     * [shellcheck](https://github.com/koalaman/shellcheck) for shell scripts
-    * [hadolint](https://github.com/hadolint/hadolint) for the dockerfiles
-  * Code formattter:
+    * [hadolint](https://github.com/hadolint/hadolint) for the Dockerfiles
+  * Code formatter:
     * [flake8](https://github.com/PyCQA/flake8) for all python code
 * Kernel builder:
   * Multi-arch: `x86_64`, `arm64`
@@ -60,17 +60,17 @@ On the upside, despite its early stages a couple of useful features are already 
   * Automatic generation of file system that matches the kernels architecture
   * Ability to customize:
     * wanted packages in the file system
-    * the debian release version to base everything on
+    * the Debian release version to base everything on
 * Debuggee:
   * Powered by [QEMU](https://github.com/qemu/qemu)
   * Customization of QEMU runtime options from within the `config.ini`:
 * Debugger:
-  * Powered by [GDB (multiarch)](https://sourceware.org/gdb/) + [gef](https://github.com/hugsy/gef) and [gef-extras](https://github.com/hugsy/gef-extras)
+  * Powered by [GDB (multiarch)](https://sourceware.org/gdb/) + [GEF](https://github.com/hugsy/gef) and [GEF-extras](https://github.com/hugsy/gef-extras)
   * Allow users to specify GDB script in `io/scripts/gdb_script` to allow a scenario-tailored debugging experience
 
 ## Requirements
 
-To get start you have to ensure to have the following requirements set up in your system:
+To get started, you have to ensure to have the following requirements set up in your system:
 
 * `docker`
 * `tmux`
@@ -82,11 +82,11 @@ To get start you have to ensure to have the following requirements set up in you
 Fine-tuning the kernel debugging experience is one of the goals of this project.
 Currently, all tunable options are exposed in the `config.ini`.
 Some fields are recommended to not be altered as they're mainly for development reasons.
-However, all the ones to customize the environment to your needs should be self explanatory as all of them are labeled with a short comment.
+However, all the ones to customize the environment to your needs should be self-explanatory as all of them are labeled with a brief comment.
 
 ## Usage
 
-Once you're set with the configuration the usage depends on your scenario.
+Once you're set with the configuration, the usage depends on your scenario.
 
 ```sh
 tmux -f .tmux.conf
@@ -102,14 +102,14 @@ python3 -m pip install -r requirements.txt
 
 ## Showcase
 
-As a first time user you will see a lot of docker building messages race across the screen.
+As a first-time user, you will see a lot of docker building messages race across the screen.
 In the end, your experience should look similar to this:
 
 ![img/example.png](img/example.png)
 
 ## Hacking
 
-The python code should be quite readable, so feel free to extend the project with your own ideas. All PR's are very much welcome :)!
+The python code should be quite readable, so feel free to extend the project with your own ideas. All PRs are very much welcome :)!
 Otherwise, feel free to create a feature-request issue or head over to the [discussions page](https://github.com/0xricksanchez/like-dbg/discussions) to brainstorm some cool new features!
 
-PS: If you want to provide a logo feel free to do so.
+PS: If you want to provide a logo, feel free to do so.
