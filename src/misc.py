@@ -7,7 +7,6 @@ from contextlib import contextmanager
 from pathlib import Path
 from sys import stdin
 from termios import tcflush, TCIFLUSH
-from typing import List
 
 from loguru import logger
 
@@ -17,9 +16,7 @@ config = Path.cwd() / "config.ini"
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
 # | MISC QOL functions                                                                                  |
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
-
-
-def cfg_setter(obj, sections: List[str]) -> None:
+def cfg_setter(obj, sections: list[str]) -> None:
     cfg = configparser.ConfigParser()
     cfg.read(config)
     for sect in sections:
