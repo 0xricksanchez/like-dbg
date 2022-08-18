@@ -7,7 +7,7 @@ on:
 jobs:
   run-linters:
     name: Run linters
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Check out Git repository
@@ -16,7 +16,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v1
         with:
-          python-version: 3.7
+          python-version: 3.9
 
       - name: Install Python dependencies
         run: pip install black flake8
