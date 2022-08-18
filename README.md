@@ -7,7 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://tldrlegal.com/license/mit-license)
 [![GitHub Release](https://img.shields.io/github/release/0xricksanchez/like-dbg.svg)](https://github.com/0xricksanchez/like-dbg/releases/)  
 
-LIKE-DBG, (*LI*nux-*KE*rnel-*D*e*B*u*G*ger) aims at automating the boring steps when trying to set up a Linux kernel debugging environment.
+LIKE-DBG (*LI*nux-*KE*rnel-*D*e*B*u*G*ger) aims at automating the boring steps when trying to set up a Linux kernel debugging environment.
 I set out to dive into kernel exploitation research and found existing solutions not usable enough.
 Hence, this is my attempt at making all necessary pre-steps before one can even think about diving into the research as painless and fun as possible.
 All steps from building a kernel, running it inside an emulated environment, and attaching a debugger are transparently done inside docker containers to keep system requirements minimal.
@@ -21,12 +21,13 @@ Currently, there's a dedicated docker container for every step:
 ## Caveats
 
 As this project is in its early stages I expect things to change rapidly, while also introducing breaking changes along the way.
-On top of that, major missing features are:
+Major points to improve on are:
 
-* Architecture support limited to: `x86_64` and `arm64`
-* Only recent™ kernel builds will likely succeed due to how the toolchain requirements changed over the years
-* No android kernel support
-* No (integration) tests yet
+* Getting torwards true multi-architecture support beyond `x86_64` and `arm64`
+* Extend to kernel builder to not only succeed in building recent™ kernels
+* Add android kernel support
+* Add (integration) tests
+* Elevate the debugging experience even more
 
 ## Features
 
@@ -42,7 +43,7 @@ On the upside, despite its early stages a couple of useful features are already 
     * [hadolint](https://github.com/hadolint/hadolint) for the dockerfiles
   * Code formattter:
     * [flake8](https://github.com/PyCQA/flake8) for all python code
-* Building the kernel:
+* Kernel builder:
   * Multi-arch: `x86_64`, `arm64`
   * Choose between `gcc` and `clang` to build the kernel
   * Configuration modes:
@@ -54,7 +55,7 @@ On the upside, despite its early stages a couple of useful features are already 
     * Release tag (e.g.: 5.10-rc)
     * Major-Minor-Patch (e.g.: 5.10.77)
   * Ability to automatically apply patch files
-* Building a root file system:
+* Root file system builder:
   * Powered by [debootstrap](https://wiki.debian.org/Debootstrap)
   * Automatic generation of file system that matches the kernels architecture
   * Ability to customize:
@@ -110,3 +111,5 @@ In the end, your experience should look similar to this:
 
 The python code should be quite readable, so feel free to extend the project with your own ideas. All PR's are very much welcome :)!
 Otherwise, feel free to create a feature-request issue or head over to the [discussions page](https://github.com/0xricksanchez/like-dbg/discussions) to brainstorm some cool new features!
+
+PS: If you want to provide a logo feel free to do so.
