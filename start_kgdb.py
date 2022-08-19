@@ -31,10 +31,6 @@ def main():
 
     tmux("selectp -t 0")
     tmux('rename-window "LIKE-DBG"')
-    tmux("splitw -h -p 50")
-    tmux("selectp -t 0")
-    tmux("splitw -v -p 50")
-    tmux("selectp -t 0")
     dbge_args = {}
     dbg_args = {}
 
@@ -58,6 +54,10 @@ def main():
             KernelBuilder().run()
         RootFSBuilder().run()
 
+    tmux("splitw -h -p 50")
+    tmux("selectp -t 0")
+    tmux("splitw -v -p 50")
+    tmux("selectp -t 0")
     Debuggee(**dbge_args).run()
     tmux("selectp -t 0")
     Debugger(**dbg_args).run()
