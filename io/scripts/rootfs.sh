@@ -136,7 +136,8 @@ if [ $FOREIGN = "true" ]; then
 fi
 
 # 3. Create a non-root user
-sudo chroot $MNT /bin/bash -c "groupadd -g 1000 user && useradd -u 1000 -g 1000 -s /bin/bash -m -p $(openssl passwd -1 user) user"
+pass=$(openssl passwd -1 user)
+sudo chroot $MNT /bin/bash -c "groupadd -g 1000 user && useradd -u 1000 -g 1000 -s /bin/bash -m -p \"$pass\" user"
 
 if [ $FOREIGN = "true" ]; then
     rm -rf "$MNT$(which qemu-"$ARCH"-static)"
