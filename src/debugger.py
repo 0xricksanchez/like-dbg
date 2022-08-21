@@ -61,6 +61,7 @@ class Debugger(DockerRunner):
         if self._is_gdb_script_hist():
             if get_sha256_from_file(GDB_SCRIPT_HIST) != get_sha256_from_file(Path(self.gdb_script)):
                 self.force_rebuild = True
+                self._update_gdb_script_hist()
         else:
             self._update_gdb_script_hist()
 
