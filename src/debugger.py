@@ -8,7 +8,9 @@ import docker
 from loguru import logger
 
 from .docker_runner import DockerRunner
-from .misc import cfg_setter, tmux, tmux_shell, new_context
+from .misc import cfg_setter, tmux, tmux_shell, new_context, get_sha256_from_file
+
+GDB_SCRIPT_HIST = Path(".gdb_hist")
 
 
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
@@ -23,7 +25,7 @@ class Debugger(DockerRunner):
             self.project_dir = Path.cwd() / self.ctf_dir
             vmlinux = Path(self.project_dir) / "vmlinux"
             if not vmlinux.exists() or b"ELF" not in sp.run(f"file {vmlinux}", shell=True, capture_output=True).stdout:
-                self.extract_vmlinux()
+                self._extract_vmlinux()
         else:
             self.project_dir = Path.cwd() / self.kernel_root
         self.ctf = 1 if ctf_ctx else 0
@@ -31,7 +33,7 @@ class Debugger(DockerRunner):
         self.buildargs = {"USER": self.user}
         self.cli = docker.APIClient(base_url=self.docker_sock)
 
-    def extract_vmlinux(self):
+    def _extract_vmlinux(self) -> None:
         with new_context(self.ctf_dir):
             vml_ext = glob("**/extract*", recursive=True)[0]
             ret = sp.run(f"./{vml_ext} {Path(self.ctf_kernel).name} > vmlinux", shell=True, capture_output=True)
@@ -47,6 +49,16 @@ class Debugger(DockerRunner):
         tmux("selectp -t 2")
         tmux_shell(runner)
 
-    def run(self):
+    @staticmethod
+    def _is_gdb_script_hist() -> bool:
+        return GDB_SCRIPT_HIST.exists()
+
+    def _handle_gdb_change(self) -> None:
+        if self._is_gdb_script_hist():
+            if get_sha256_from_file(GDB_SCRIPT_HIST) != get_sha256_from_file(Path(self.gdb_script)):
+                self.force_rebuild = True
+
+    def run(self) -> None:
+        self._handle_gdb_change()
         self.check_existing()
         super().run()

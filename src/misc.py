@@ -3,6 +3,7 @@
 import configparser
 import os
 import subprocess as sp
+import hashlib
 from contextlib import contextmanager
 from pathlib import Path
 from sys import stdin
@@ -79,3 +80,8 @@ def new_context(location: Path):
         yield
     finally:
         os.chdir(cur_cwd)
+
+
+def get_sha256_from_file(p: Path) -> str:
+    content = Path(p).read_bytes()
+    return hashlib.sha256(content).digest()
