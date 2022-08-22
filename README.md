@@ -71,6 +71,7 @@ On the upside, despite its early stages, a couple of useful features are already
 
 To get started, you have to ensure to have the following requirements set up in your system:
 
+* `make`
 * `docker`
 * `tmux`
 * `python>=3.9`

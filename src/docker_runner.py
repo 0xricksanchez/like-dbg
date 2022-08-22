@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import os
+import time
 import subprocess as sp
 from pathlib import Path
 
@@ -36,7 +37,24 @@ class DockerRunner:
             sp.run(f'ssh-keygen -f {Path(ssh_dir) / "like.id_rsa"} -t rsa -N ""', shell=True)
 
     def init_ssh(self):
-        self.ssh_conn = Connection(f"{self.user}@localhost:{self.ssh_fwd_port}", connect_kwargs={"key_filename": ".ssh/like.id_rsa"})
+        switch = False
+        tries = 0
+        while not switch:
+            try:
+                self.ssh_conn = Connection(
+                    f"{self.user}@localhost:{self.ssh_fwd_port}", connect_kwargs={"key_filename": ".ssh/like.id_rsa"}, connect_timeout=200
+                )
+            except Exception as e:
+                tries += 1
+                logger.error(f"Failed to initialize SSH connection to {type(self).__name__}: {e}")
+                logger.error("Retrying in 5 seconds...")
+                if tries >= 5:
+                    logger.error(f"{tries} attempts failed! Exiting...")
+                    exit(-1)
+                time.sleep(5)
+            else:
+                logger.debug("Established SSH connection!")
+                switch = True
 
     def build_image_hl(self):
         image = self.client.images.build(path=str(self.dockerfile_ctx), dockerfile=self.dockerfile_path, tag=self.tag)[0]
@@ -88,7 +106,7 @@ class DockerRunner:
 
     def wait_for_container(self) -> None:
         ret = self.container.wait()
-        if ret['StatusCode'] != 0:
+        if ret["StatusCode"] != 0:
             logger.error(f"Failed to run {type(self).__name__}")
             exit(-1)
 

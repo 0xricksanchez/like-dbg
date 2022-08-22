@@ -52,9 +52,10 @@ class RootFSBuilder(DockerRunner):
             return False
 
     def run(self) -> None:
-        if self.is_exist() and self.skip_prompts:
+        e = self.is_exist()
+        if e and self.skip_prompts:
             return
-        elif self.is_exist() and is_reuse(self.rootfs_path):
+        elif e and is_reuse(self.rootfs_path):
             return
         else:
             self.image = self.get_image()
