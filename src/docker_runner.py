@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import os
+import time
 import subprocess as sp
 from pathlib import Path
 
@@ -36,7 +37,15 @@ class DockerRunner:
             sp.run(f'ssh-keygen -f {Path(ssh_dir) / "like.id_rsa"} -t rsa -N ""', shell=True)
 
     def init_ssh(self):
-        self.ssh_conn = Connection(f"{self.user}@localhost:{self.ssh_fwd_port}", connect_kwargs={"key_filename": ".ssh/like.id_rsa"})
+        switch = False
+        while not switch:
+            try:
+                self.ssh_conn = Connection(f"{self.user}@localhost:{self.ssh_fwd_port}", connect_kwargs={"key_filename": ".ssh/like.id_rsa"})
+            except Exception:
+                logger.error(f"Failed to initialize SSH connection to {type(self).__name__}. Retrying in 2 seconds...")
+                time.sleep(2)
+            else:
+                switch = True
 
     def build_image_hl(self):
         image = self.client.images.build(path=str(self.dockerfile_ctx), dockerfile=self.dockerfile_path, tag=self.tag)[0]
@@ -88,7 +97,7 @@ class DockerRunner:
 
     def wait_for_container(self) -> None:
         ret = self.container.wait()
-        if ret['StatusCode'] != 0:
+        if ret["StatusCode"] != 0:
             logger.error(f"Failed to run {type(self).__name__}")
             exit(-1)
 
