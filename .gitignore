@@ -2,6 +2,7 @@
 .venv
 .like-dbg
 .git
+.gdb_hist
 .ssh
 .zshrc
 .gdb_history

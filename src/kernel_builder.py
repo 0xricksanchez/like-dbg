@@ -90,24 +90,26 @@ class KernelBuilder(DockerRunner):
         self._run_ssh(f"{self.cc} ARCH={self.arch} {self.llvm_flag} make -j$(nproc) modules")
 
     def run_container(self):
-        self.container = self.client.containers.run(
-            self.image,
-            volumes=[f"{Path.cwd()}:{self.docker_mnt}"],
-            ports={"22/tcp": self.ssh_fwd_port},
-            detach=True,
-            tty=True,
-        )
-        self.init_ssh()
-        if self.ssh_conn:
+        try:
+            self.container = self.client.containers.run(
+                self.image,
+                volumes=[f"{Path.cwd()}:{self.docker_mnt}"],
+                ports={"22/tcp": self.ssh_fwd_port},
+                detach=True,
+                tty=True,
+            )
+            self.init_ssh()
             self._build_mrproper()
             self._apply_patches()
             self._build_arch()
             self._build_kvm_guest()
             self._configure_kernel()
             self._make()
-        else:
-            logger.error("No ssh connection to docker")
+        except Exception as e:
+            logger.error(f"Oops: {e}")
             exit(-1)
+        finally:
+            self.stop_container()
 
     def run(self):
         logger.info("Building kernel. This may take a while...")
@@ -116,4 +118,3 @@ class KernelBuilder(DockerRunner):
         logger.info("Successfully build the kernel")
         if self.arch == "x86_64":
             self._run_ssh(f"cd arch/{self.arch}/boot/ && ln -s bzImage Image")
-        self.stop_container()
