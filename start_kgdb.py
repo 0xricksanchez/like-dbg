@@ -23,6 +23,7 @@ def main():
         help='Use this in combination with "--env" in CTF environments where you were given a Linux kernel image and a file system',
     )
     parser.add_argument("--env", "-e", nargs=2, help="Expected: <kernel_image> <root_file_system>")
+    parser.add_argument("--yes", "-y", action=argparse.BooleanOptionalAction, help="If this is set all re-use prompts are answered with 'yes'")
     args = parser.parse_args()
     if args.ctf and not args.env:
         logger.error("Found --ctf but no environment was specified...")
@@ -31,8 +32,9 @@ def main():
 
     tmux("selectp -t 0")
     tmux('rename-window "LIKE-DBG"')
-    dbge_args = {}
-    dbg_args = {}
+    generic_args = {"skip_prompts": True if args.yes else False}
+    dbge_args = {} | generic_args
+    dbg_args = {} | generic_args
 
     if args.ctf and args.env:
         logger.info("Executing in CTF context")
@@ -44,15 +46,15 @@ def main():
         if not ctf_fs.exists():
             logger.error(f"Failed to find {ctf_fs}")
             exit(-1)
-        dbge_args = {"ctf_ctx": True, "ctf_kernel": ctf_kernel, "ctf_fs": ctf_fs}
+        dbge_args = generic_args | {"ctf_ctx": args.ctf, "ctf_kernel": ctf_kernel, "ctf_fs": ctf_fs}
         dbg_args = {k: v for k, v in dbge_args.items() if k != "ctf_fs"}
     else:
         logger.info("Executing in non-CTF context")
 
         karchive = KernelDownloader().run()
-        if not KernelUnpacker(karchive).run():
-            KernelBuilder().run()
-        RootFSBuilder().run()
+        if not KernelUnpacker(karchive, **generic_args).run():
+            KernelBuilder(**generic_args).run()
+        RootFSBuilder(**generic_args).run()
 
     tmux("splitw -h -p 50")
     tmux("selectp -t 0")

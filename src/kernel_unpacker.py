@@ -15,13 +15,14 @@ from .misc import cfg_setter, is_reuse, new_context
 # | KERNEL UNPACKER                                                                                     |
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
 class KernelUnpacker:
-    def __init__(self, p: Path) -> None:
+    def __init__(self, p: Path, **kwargs) -> None:
         cfg_setter(self, ["kernel_general"])
         self.kernel_root = Path(self.kernel_root)
         self.archive = p
         self.ex_name = Path(".".join(self.archive.name.split(".")[:-2]))  # FIXME only works for formats like .tar.gz
         self.dst_content = None
         self.history = Path(".hist")
+        self.skip_prompts = kwargs.get("skip_prompts", False)
 
     def _is_new(self):
         if self.history.exists():
@@ -80,6 +81,9 @@ class KernelUnpacker:
     def run(self) -> int:
         if not self._is_dest_empty():
             if self._is_vmlinux():
+                if self.skip_prompts:
+                    logger.info("Re-using existing vmlinux")
+                    return 1
                 if self._reuse_existing_vmlinux():
                     return 1
             else:

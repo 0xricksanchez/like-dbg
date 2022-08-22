@@ -14,8 +14,8 @@ from .misc import adjust_arch, cfg_setter, canadian_cross
 # | KERNEL BUILDER                                                                                     |
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
 class KernelBuilder(DockerRunner):
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
         cfg_setter(self, ["kernel_general", "kernel_builder", "general", "kernel_builder_docker"])
         self.cc = f"CC={self.compiler}" if self.compiler else ""
         self.llvm_flag = "" if "gcc" in self.cc else "LLVM=1"

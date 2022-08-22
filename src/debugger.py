@@ -18,7 +18,7 @@ GDB_SCRIPT_HIST = Path(".gdb_hist")
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
 class Debugger(DockerRunner):
     def __init__(self, ctf_ctx: bool = False, **kwargs):
-        super().__init__()
+        super().__init__(**kwargs)
         cfg_setter(self, ["general", "debugger", "kernel_general"])
         if ctf_ctx:
             self.ctf_kernel = kwargs.get("ctf_kernel", "")
@@ -30,6 +30,7 @@ class Debugger(DockerRunner):
             self.project_dir = Path.cwd() / self.kernel_root
         self.ctf = 1 if ctf_ctx else 0
         self.custom_gdb_script = Path("/home/") / self.user / Path(self.gdb_script).name
+        self.skip_prompts = kwargs.get("skip_prompts", False)
         self.buildargs = {"USER": self.user}
         self.cli = docker.APIClient(base_url=self.docker_sock)
 
