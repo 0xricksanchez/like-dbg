@@ -24,18 +24,24 @@ class RootFSBuilder(DockerRunner):
         self.buildargs = {"USER": self.user}
 
     def run_container(self):
-        qemu_arch = adjust_qemu_arch(self.arch)
-        command = f"/home/{self.user}/rootfs.sh -n {self.fs_name} -a {qemu_arch} -d {self.distribution} -p {self.packages}"
-        container = self.client.containers.run(
-            self.image,
-            volumes=[f"{Path.cwd() / 'io'}:{self.docker_mnt}"],
-            detach=True,
-            privileged=True,
-            ports={"22/tcp": self.ssh_fwd_port},
-            command=command,
-        )
-        gen = container.logs(stream=True, follow=True)
-        [logger.debug(log.strip().decode()) for log in gen]
+        try:
+            qemu_arch = adjust_qemu_arch(self.arch)
+            command = f"/home/{self.user}/rootfs.sh -n {self.fs_name} -a {qemu_arch} -d {self.distribution} -p {self.packages}"
+            container = self.client.containers.run(
+                self.image,
+                volumes=[f"{Path.cwd() / 'io'}:{self.docker_mnt}"],
+                detach=True,
+                privileged=True,
+                ports={"22/tcp": self.ssh_fwd_port},
+                command=command,
+            )
+            gen = container.logs(stream=True, follow=True)
+            [logger.debug(log.strip().decode()) for log in gen]
+        except Exception as e:
+            logger.error(f"Oops: {e}")
+            exit(-1)
+        finally:
+            self.stop_container()
 
     def check_existing(self) -> bool:
         logger.debug(f"Checking for existing rootfs: {self.rootfs_path}")
