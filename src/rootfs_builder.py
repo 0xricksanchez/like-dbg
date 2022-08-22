@@ -61,4 +61,3 @@ class RootFSBuilder(DockerRunner):
             self.image = self.get_image()
             logger.debug(f"Found rootfs_builder: {self.image}")
             super().run()
-        logger.error(self.container.status)

@@ -108,6 +108,10 @@ class KernelBuilder(DockerRunner):
         except Exception as e:
             logger.error(f"Oops: {e}")
             exit(-1)
+        else:
+            logger.info("Successfully build the kernel")
+            if self.arch == "x86_64":
+                self._run_ssh(f"cd arch/{self.arch}/boot/ && ln -s bzImage Image")
         finally:
             self.stop_container()
 
@@ -115,6 +119,3 @@ class KernelBuilder(DockerRunner):
         logger.info("Building kernel. This may take a while...")
         self.image = self.get_image()
         super().run()
-        logger.info("Successfully build the kernel")
-        if self.arch == "x86_64":
-            self._run_ssh(f"cd arch/{self.arch}/boot/ && ln -s bzImage Image")
