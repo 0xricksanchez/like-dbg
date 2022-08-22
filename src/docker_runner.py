@@ -38,13 +38,22 @@ class DockerRunner:
 
     def init_ssh(self):
         switch = False
+        tries = 0
         while not switch:
             try:
-                self.ssh_conn = Connection(f"{self.user}@localhost:{self.ssh_fwd_port}", connect_kwargs={"key_filename": ".ssh/like.id_rsa"})
-            except Exception:
-                logger.error(f"Failed to initialize SSH connection to {type(self).__name__}. Retrying in 2 seconds...")
-                time.sleep(2)
+                self.ssh_conn = Connection(
+                    f"{self.user}@localhost:{self.ssh_fwd_port}", connect_kwargs={"key_filename": ".ssh/like.id_rsa"}, connect_timeout=200
+                )
+            except Exception as e:
+                tries += 1
+                logger.error(f"Failed to initialize SSH connection to {type(self).__name__}: {e}")
+                logger.error("Retrying in 5 seconds...")
+                if tries >= 5:
+                    logger.error(f"{tries} attempts failed! Exiting...")
+                    exit(-1)
+                time.sleep(5)
             else:
+                logger.debug("Established SSH connection!")
                 switch = True
 
     def build_image_hl(self):
