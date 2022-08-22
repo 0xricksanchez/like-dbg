@@ -13,7 +13,7 @@ from .misc import cfg_setter, adjust_qemu_arch, is_reuse
 # | ROOTFS BUILDER                                                                                      |
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
 class RootFSBuilder(DockerRunner):
-    def __init__(self):
+    def __init__(self, **kwargs):
         super().__init__()
         cfg_setter(self, ["rootfs_general", "rootfs_builder", "general"])
         self.cli = docker.APIClient(base_url=self.docker_sock)
@@ -21,6 +21,7 @@ class RootFSBuilder(DockerRunner):
         self.guarantee_ssh(self.ssh_dir)
         self.fs_name = self.rootfs_base + self.arch + self.rootfs_ftype
         self.rootfs_path = self.rootfs_dir + self.fs_name
+        self.skip_prompts = kwargs.get("skip_prompts", False)
         self.buildargs = {"USER": self.user}
 
     def run_container(self):
@@ -50,8 +51,19 @@ class RootFSBuilder(DockerRunner):
         else:
             return False
 
+    def is_exist(self) -> bool:
+        logger.debug(f"Checking for existing rootfs: {self.rootfs_path}")
+        if Path(self.rootfs_path).exists():
+            return True
+        else:
+            return False
+
     def run(self) -> None:
-        if not self.check_existing():
+        if self.is_exist() and self.skip_prompts:
+            return
+        elif self.is_exist() and is_reuse(self.rootfs_path):
+            return
+        else:
             self.image = self.get_image()
             logger.debug(f"Found rootfs_builder: {self.image}")
             super().run()

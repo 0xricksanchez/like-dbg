@@ -15,7 +15,8 @@ from .misc import is_reuse
 # | DOCKER RUNNER                                                                                       |
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
 class DockerRunner:
-    def __init__(self) -> None:
+    def __init__(self, **kwargs) -> None:
+        self.skip_prompts = kwargs.get("skip_prompts", False)
         self.dockerfile_ctx = Path.cwd()
         self.client = docker.from_env()
         self.ssh_conn = None
@@ -24,6 +25,7 @@ class DockerRunner:
         self.user = None
         self.ssh_fwd_port = None
         self.container = None
+        logger.error(f"Its me the docker runner: {vars(self)}")
 
     def guarantee_ssh(self, ssh_dir: Path) -> None:
         if Path(ssh_dir).exists() and os.listdir(ssh_dir):
@@ -91,5 +93,7 @@ class DockerRunner:
             self.image = None
         else:
             self.image = self.get_image()
-            if self.image and not is_reuse(self.image.tags[0]):
+            if self.image and self.skip_prompts:
+                return
+            elif self.image and not is_reuse(self.image.tags[0]):
                 self.image = None

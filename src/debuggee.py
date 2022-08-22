@@ -15,7 +15,7 @@ from .misc import tmux, tmux_shell, cfg_setter, adjust_qemu_arch
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
 class Debuggee(DockerRunner):
     def __init__(self, ctf_ctx: bool = False, **kwargs):
-        super().__init__()
+        super().__init__(**kwargs)
         cfg_setter(self, ["debuggee", "debuggee_docker", "general", "kernel_general", "rootfs_general"])
         if ctf_ctx:
             self.kernel = Path(self.docker_mnt) / kwargs.get("ctf_kernel", "")
