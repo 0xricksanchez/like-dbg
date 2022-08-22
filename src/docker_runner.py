@@ -67,10 +67,10 @@ class DockerRunner:
         else:
             return False
 
-    def build_base_img(self):
+    def build_base_img(self) -> None:
         self.build_image(dockerfile=self.dockerfile_base_img, image_tag=self.tag_base_image)
 
-    def run(self):
+    def run(self) -> None:
         if not self.image:
             if not self.is_base_image():
                 logger.debug("Could not find 'like-dbg'-base image! Building it!")
@@ -83,8 +83,14 @@ class DockerRunner:
     def run_container(self):
         pass
 
-    def stop_container(self):
+    def stop_container(self) -> None:
         self.container.stop()
+
+    def wait_for_container(self) -> None:
+        ret = self.container.wait()
+        if ret['StatusCode'] != 0:
+            logger.error(f"Failed to run {type(self).__name__}")
+            exit(-1)
 
     def check_existing(self) -> None:
         if self.force_rebuild:
