@@ -25,7 +25,6 @@ class DockerRunner:
         self.user = None
         self.ssh_fwd_port = None
         self.container = None
-        logger.error(f"Its me the docker runner: {vars(self)}")
 
     def guarantee_ssh(self, ssh_dir: Path) -> None:
         if Path(ssh_dir).exists() and os.listdir(ssh_dir):

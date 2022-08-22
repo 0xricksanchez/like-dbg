@@ -44,13 +44,6 @@ class RootFSBuilder(DockerRunner):
         finally:
             self.stop_container()
 
-    def check_existing(self) -> bool:
-        logger.debug(f"Checking for existing rootfs: {self.rootfs_path}")
-        if Path(self.rootfs_path).exists():
-            return is_reuse(self.rootfs_path)
-        else:
-            return False
-
     def is_exist(self) -> bool:
         logger.debug(f"Checking for existing rootfs: {self.rootfs_path}")
         if Path(self.rootfs_path).exists():
