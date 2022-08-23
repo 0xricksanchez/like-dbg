@@ -84,4 +84,4 @@ def new_context(location: Path):
 
 def get_sha256_from_file(p: Path) -> str:
     content = Path(p).read_bytes()
-    return hashlib.sha256(content).digest()
+    return hashlib.sha256(content).hexdigest()
