@@ -22,10 +22,11 @@ pushd /io
 
 MNT=rootfs
 SEEK=2047
-PKGS="build-essential,openssh-server,sudo,curl,tar,time,less,psmisc,openssl"
+PKGS="build-essential,openssh-server,sudo,curl,tar,time,less,psmisc,openssl,plymouth,file"
 ARCH=$(uname -m)
 DIST=bullseye
 ROOTFS_NAME=rootfs
+USER=user
 
 while true; do
     if [ $# -eq 0 ];then
@@ -56,6 +57,11 @@ while true; do
         -p | --packages)
             # Set packages to install
             PKGS=$2
+            shift 2
+            ;;
+        -u | --user)
+            # The non-root user
+            USER=$2
             shift 2
             ;;
         -*)
@@ -149,12 +155,16 @@ echo 'T0:23:respawn:/sbin/getty -L ttyS0 115200 vt100' | sudo tee -a $MNT/etc/in
 printf '\nauto eth0\niface eth0 inet dhcp\n' | sudo tee -a $MNT/etc/network/interfaces
 echo '/dev/root / ext4 defaults 0 0' | sudo tee -a $MNT/etc/fstab
 echo 'debugfs /sys/kernel/debug debugfs defaults 0 0' | sudo tee -a $MNT/etc/fstab
-echo 'securityfs /sys/kernel/security securityfs defaults 0 0' | sudo tee -a $MNT/etc/fstab
-echo 'configfs /sys/kernel/config/ configfs defaults 0 0' | sudo tee -a $MNT/etc/fstab
+# echo 'securityfs /sys/kernel/security securityfs defaults 0 0' | sudo tee -a $MNT/etc/fstab
+# echo 'configfs /sys/kernel/config/ configfs defaults 0 0' | sudo tee -a $MNT/etc/fstab
 echo 'binfmt_misc /proc/sys/fs/binfmt_misc binfmt_misc defaults 0 0' | sudo tee -a $MNT/etc/fstab
 echo -en "127.0.0.1\tlocalhost $ROOTFS_NAME\n" | sudo tee $MNT/etc/hosts
 echo "nameserver 8.8.8.8" | sudo tee -a $MNT/etc/resolve.conf
 echo "$ROOTFS_NAME" | sudo tee $MNT/etc/hostname
+dircolors -p > $MNT/home/user/.dircolors
+echo "export TERM=xterm-256color" >> $MNT/home/"$USER"/.bashrc
+echo "stty cols 128 rows 192" >> $MNT/home/"$USER"/.bashrc
+cp $MNT/home/"$USER"/.bashrc $MNT/home/"$USER"/.dircolor $MNT/root
 yes | ssh-keygen -f "$ROOTFS_NAME.id_rsa" -t rsa -N ''
 sudo mkdir -p $MNT/root/.ssh/
 cat "$ROOTFS_NAME.id_rsa.pub" | sudo tee $MNT/root/.ssh/authorized_keys > /dev/null

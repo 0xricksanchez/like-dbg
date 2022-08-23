@@ -42,6 +42,10 @@ On the upside, despite its early stages, a couple of useful features are already
     * [flake8](https://github.com/PyCQA/flake8) linter for all python code
     * [shellcheck](https://github.com/koalaman/shellcheck) linter for shell scripts
     * [hadolint](https://github.com/hadolint/hadolint) linter for the Dockerfiles
+  * Operating system agnostic, meaning it should run just fine on:
+    * Debian/Ubuntu
+    * Arch Linux/Manjaro
+    * Fedora
 * Kernel builder:
   * Multi-arch: `x86_64`, `arm64`
   * Choose between `gcc` and `clang` to build the kernel
@@ -71,6 +75,7 @@ On the upside, despite its early stages, a couple of useful features are already
 
 To get started, you have to ensure to have the following requirements set up in your system:
 
+* `gcc`
 * `make`
 * `docker`
 * `tmux`
