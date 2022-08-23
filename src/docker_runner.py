@@ -37,9 +37,8 @@ class DockerRunner:
             sp.run(f'ssh-keygen -f {Path(ssh_dir) / "like.id_rsa"} -t rsa -N ""', shell=True)
 
     def init_ssh(self):
-        switch = False
         tries = 0
-        while not switch:
+        while True:
             try:
                 self.ssh_conn = Connection(
                     f"{self.user}@localhost:{self.ssh_fwd_port}", connect_kwargs={"key_filename": ".ssh/like.id_rsa"}, connect_timeout=200
@@ -54,7 +53,7 @@ class DockerRunner:
                 time.sleep(5)
             else:
                 logger.debug("Established SSH connection!")
-                switch = True
+                break
 
     def build_image_hl(self):
         image = self.client.images.build(path=str(self.dockerfile_ctx), dockerfile=self.dockerfile_path, tag=self.tag)[0]
