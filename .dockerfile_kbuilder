@@ -40,4 +40,5 @@ RUN echo "CROSS_COMPILE=$CANADIAN_CROSS" >> /etc/environment && \
     echo "ARCH=$ARCH" >> /etc/environment
 
 WORKDIR /io
+HEALTHCHECK --interval=30s --timeout=3s --retries=3 --start-period=2s CMD ps aux | grep "sshd -D" | grep -v grep || exit 1
 CMD ["/usr/sbin/sshd", "-D"]

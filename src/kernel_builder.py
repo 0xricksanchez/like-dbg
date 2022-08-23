@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import re
+import time
 from pathlib import Path
 
 import docker
@@ -89,6 +90,17 @@ class KernelBuilder(DockerRunner):
         self._run_ssh(f"{self.cc} ARCH={self.arch} {self.llvm_flag} make -j$(nproc) all")
         self._run_ssh(f"{self.cc} ARCH={self.arch} {self.llvm_flag} make -j$(nproc) modules")
 
+    def _wait_for_container(self) -> None:
+        switch = False
+        logger.info("Waiting for Container to be up...")
+        while not switch:
+            c = self.cli.inspect_container(self.container.id)
+            if c["State"]["Health"]["Status"] != "healthy":
+                time.sleep(1)
+            else:
+                switch = True
+                break
+
     def run_container(self):
         try:
             self.container = self.client.containers.run(
@@ -98,6 +110,7 @@ class KernelBuilder(DockerRunner):
                 detach=True,
                 tty=True,
             )
+            self._wait_for_container()
             self.init_ssh()
             self._build_mrproper()
             self._apply_patches()
@@ -117,5 +130,5 @@ class KernelBuilder(DockerRunner):
 
     def run(self):
         logger.info("Building kernel. This may take a while...")
-        self.image = self.get_image()
+        self.check_existing()
         super().run()
