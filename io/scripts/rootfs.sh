@@ -166,7 +166,7 @@ echo "export TERM=vt100" >> $MNT/home/"$USER"/.bashrc
 echo "stty cols 128 rows 192" >> $MNT/home/"$USER"/.bashrc
 cp $MNT/home/"$USER"/.bashrc $MNT/home/"$USER"/.dircolors $MNT/root
 echo 'eval "$(dircolors ~/.dircolors)" > /dev/null' >> $MNT/root/.bashrc
-printf "+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+\nWelcome to your LIKE-DBG session :). Happy hacking\!\n+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+\n" > $MNT/etc/motd
+printf "+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+\nWelcome to your LIKE-DBG session :). Happy hacking!\n+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+\n" > $MNT/etc/motd
 yes | ssh-keygen -f "$ROOTFS_NAME.id_rsa" -t rsa -N ''
 sudo mkdir -p $MNT/root/.ssh/
 cat "$ROOTFS_NAME.id_rsa.pub" | sudo tee $MNT/root/.ssh/authorized_keys > /dev/null
