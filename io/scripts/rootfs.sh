@@ -142,8 +142,8 @@ if [ $FOREIGN = "true" ]; then
 fi
 
 # 3. Create a non-root user
-pass=$(openssl passwd -1 user)
-sudo chroot $MNT /bin/bash -c "groupadd -g 1000 user && useradd -u 1000 -g 1000 -s /bin/bash -m -p \"$pass\" user"
+PASS=$(perl -e 'print crypt($ARGV[0], "password")' "$USER")
+sudo chroot $MNT /bin/bash -c "groupadd -g 1000 $USER && useradd -u 1000 -g 1000 -s /bin/bash -m -p $PASS $USER"
 
 if [ $FOREIGN = "true" ]; then
     rm -rf "$MNT$(which qemu-"$ARCH"-static)"
@@ -161,10 +161,12 @@ echo 'binfmt_misc /proc/sys/fs/binfmt_misc binfmt_misc defaults 0 0' | sudo tee 
 echo -en "127.0.0.1\tlocalhost $ROOTFS_NAME\n" | sudo tee $MNT/etc/hosts
 echo "nameserver 8.8.8.8" | sudo tee -a $MNT/etc/resolve.conf
 echo "$ROOTFS_NAME" | sudo tee $MNT/etc/hostname
-dircolors -p > $MNT/home/user/.dircolors
-echo "export TERM=xterm-256color" >> $MNT/home/"$USER"/.bashrc
+dircolors -p > $MNT/home/"$USER"/.dircolors
+echo "export TERM=vt100" >> $MNT/home/"$USER"/.bashrc
 echo "stty cols 128 rows 192" >> $MNT/home/"$USER"/.bashrc
-cp $MNT/home/"$USER"/.bashrc $MNT/home/"$USER"/.dircolor $MNT/root
+cp $MNT/home/"$USER"/.bashrc $MNT/home/"$USER"/.dircolors $MNT/root
+echo 'eval "$(dircolors ~/.dircolors)" > /dev/null' >> $MNT/root/.bashrc
+printf "+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+\nWelcome to your LIKE-DBG session :). Happy hacking\!\n+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+\n" > $MNT/etc/motd
 yes | ssh-keygen -f "$ROOTFS_NAME.id_rsa" -t rsa -N ''
 sudo mkdir -p $MNT/root/.ssh/
 cat "$ROOTFS_NAME.id_rsa.pub" | sudo tee $MNT/root/.ssh/authorized_keys > /dev/null
