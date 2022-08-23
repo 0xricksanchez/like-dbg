@@ -90,13 +90,12 @@ class KernelBuilder(DockerRunner):
         self._run_ssh(f"{self.cc} ARCH={self.arch} {self.llvm_flag} make -j$(nproc) all")
         self._run_ssh(f"{self.cc} ARCH={self.arch} {self.llvm_flag} make -j$(nproc) modules")
 
-
     def _wait_for_container(self) -> None:
         switch = False
         logger.info("Waiting for Container to be up...")
         while not switch:
             c = self.cli.inspect_container(self.container.id)
-            if c['State']['Health']['Status'] != "healthy":
+            if c["State"]["Health"]["Status"] != "healthy":
                 time.sleep(1)
             else:
                 switch = True
