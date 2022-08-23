@@ -54,17 +54,15 @@ class Debugger(DockerRunner):
     def _is_gdb_script_hist() -> bool:
         return GDB_SCRIPT_HIST.exists()
 
-    def _update_gdb_script_hist(self) -> None:
-        content = get_sha256_from_file(Path(self.gdb_script))
-        GDB_SCRIPT_HIST.write_bytes(content)
-
     def _handle_gdb_change(self) -> None:
+        src = get_sha256_from_file(Path(self.gdb_script))
         if self._is_gdb_script_hist():
-            if get_sha256_from_file(GDB_SCRIPT_HIST) != get_sha256_from_file(Path(self.gdb_script)):
+            dst = GDB_SCRIPT_HIST.read_text()
+            if dst != src:
                 self.force_rebuild = True
-                self._update_gdb_script_hist()
+                GDB_SCRIPT_HIST.write_text(src)
         else:
-            self._update_gdb_script_hist()
+            GDB_SCRIPT_HIST.write_text(src)
 
     def run(self) -> None:
         self._handle_gdb_change()
