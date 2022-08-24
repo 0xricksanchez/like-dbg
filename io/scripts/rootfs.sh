@@ -3,7 +3,7 @@
 #   https://raw.githubusercontent.com/google/syzkaller/master/tools/create-image.sh
 # -e exit on error
 # -u Write to stderr when trying to expand a variable that does not exist
-# -x Write to stderr for tracing 
+# -x Write to stderr for tracing
 set -eux
 
 # Check if binfmt_misc is ready to go
@@ -14,9 +14,9 @@ fi
 find /proc/sys/fs/binfmt_misc -type f -name 'qemu-*' -exec sh -c 'echo -1 > $1' shell {} \;
 
 # Grab qemu binfmt register script
-wget https://raw.githubusercontent.com/qemu/qemu/master/scripts/qemu-binfmt-conf.sh && \
-chmod 777 qemu-binfmt-conf.sh && \
-./qemu-binfmt-conf.sh --qemu-suffix "-static" --qemu-path "/usr/bin"
+wget https://raw.githubusercontent.com/qemu/qemu/master/scripts/qemu-binfmt-conf.sh &&
+    chmod 777 qemu-binfmt-conf.sh &&
+    ./qemu-binfmt-conf.sh --qemu-suffix "-static" --qemu-path "/usr/bin"
 
 pushd /io
 
@@ -29,24 +29,24 @@ ROOTFS_NAME=rootfs
 USER=user
 
 while true; do
-    if [ $# -eq 0 ];then
-	echo $#
-	break
+    if [ $# -eq 0 ]; then
+        echo $#
+        break
     fi
     case "$1" in
         -a | --arch)
             # Sets the architecture
-    	    ARCH=$2
+            ARCH=$2
             shift 2
             ;;
         -d | --distribution)
             # Sets the debian distribution, which defaults to bullseye right now
-    	    DIST=$2
+            DIST=$2
             shift 2
             ;;
         -s | --seek)
             # Sets the size of the file system, default 5G
-	        SEEK=$(($2 - 1))
+            SEEK=$(($2 - 1))
             shift 2
             ;;
         -n | --name)
@@ -68,7 +68,7 @@ while true; do
             echo "Error: Unknown option: $1" >&2
             exit 1
             ;;
-        *)  # No more options
+        *) # No more options
             break
             ;;
     esac
@@ -119,7 +119,6 @@ fi
 sudo rm -rf $MNT
 sudo mkdir -p $MNT
 sudo chmod 0755 $MNT
-
 
 # 1. debootstrap stage
 DEBOOTSTRAP_PARAMS="--arch=$DEBARCH --include=$PKGS --components=main,contrib,non-free $DIST $MNT"
@@ -179,4 +178,4 @@ sudo mount -o loop "$ROOTFS_NAME" /mnt/$MNT
 sudo cp -a $MNT/. /mnt/$MNT/.
 sudo umount /mnt/$MNT
 sudo rm -rf "$MNT"
-find "$ROOTFS_NAME"* -print0 | xargs -0 chmod 0755 
+find "$ROOTFS_NAME"* -print0 | xargs -0 chmod 0755

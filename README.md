@@ -37,6 +37,7 @@ On the upside, despite its early stages, a couple of useful features are already
   * Minimal host system requirements due to dockerization of every step
   * A single config (`config.ini`) to allow free customization
   * CTF runner that's specifically designed to handle Linux kernel exploitation challenges
+    * `ctf/misc` that houses some nifty scripts to aid in CTFs
   * Code quality measures:
     * [black](https://github.com/psf/black) formatter for python code
     * [flake8](https://github.com/PyCQA/flake8) linter for all python code
@@ -81,6 +82,13 @@ To get started, you have to ensure to have the following requirements set up in 
 * `tmux`
 * `python>=3.9`
   * `venv`
+
+### Optional
+
+This section covers tools that are *not* required to run LIKE-DBG but are nice to have and assist heavily when debugging or writing an exploit
+
+* [ctags](https://github.com/universal-ctags/ctags)
+* [ropr](https://github.com/Ben-Lichtman/ropr)
 
 ## Configuration
 
