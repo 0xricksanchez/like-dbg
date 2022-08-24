@@ -6,6 +6,7 @@
 .ssh
 .zshrc
 .gdb_history
+tags
 src/__pycache__
 linux-*
 kernel_root
@@ -15,5 +16,6 @@ patches/*
 Dockerfile*
 android*
 ctf/bzImage
-ctf/rootfs.cpio
+ctf/root*
 ctf/vmlinux
+ctf/initramfs

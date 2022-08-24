@@ -82,6 +82,13 @@ To get started, you have to ensure to have the following requirements set up in 
 * `python>=3.9`
   * `venv`
 
+### Optional
+
+Nice to have tools to make debugging/exploitation a lot more fun:
+
+* [ctags](https://github.com/universal-ctags/ctags)
+* [ropr](https://github.com/Ben-Lichtman/ropr)
+
 ## Configuration
 
 Fine-tuning the kernel debugging experience is one of the goals of this project.
