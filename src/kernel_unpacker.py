@@ -18,6 +18,8 @@ class KernelUnpacker:
         cfg_setter(self, ["general"])
         self.archive = p
         self.ex_name = ".".join(self.archive.name.split(".")[:-2])  # FIXME only works for formats like .tar.gz
+        if not Path(self.kernel_root).exists():
+            Path(self.kernel_root).mkdir()
         self.kernel_root = Path(self.kernel_root) / (self.ex_name + f"_{self.arch}")
         self.dst_content = None
         self.skip_prompts = kwargs.get("skip_prompts", False)
