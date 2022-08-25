@@ -17,12 +17,13 @@ from .misc import adjust_arch, cfg_setter, canadian_cross
 class KernelBuilder(DockerRunner):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
-        cfg_setter(self, ["kernel_builder", "general", "kernel_builder_docker"])
+        cfg_setter(self, ["kernel_builder", "general", "kernel_builder_docker"], exclude_keys=["kernel_root"])
         self.cc = f"CC={self.compiler}" if self.compiler else ""
         self.llvm_flag = "" if "gcc" in self.cc else "LLVM=1"
         self.cli = docker.APIClient(base_url=self.docker_sock)
         self.guarantee_ssh(self.ssh_dir)
         self.tag = self.tag + f"_{self.arch}"
+        self.dirty = kwargs.get("assume_dirty", False)
         self.buildargs = {
             "USER": self.user,
             "CC": self.compiler,
@@ -41,7 +42,7 @@ class KernelBuilder(DockerRunner):
             if patch_files:
                 logger.debug(f"Applying patches...: {patch_files}")
                 for pfile in patch_files:
-                    if self._run_ssh(f"patch -p1 < ../{self.patch_dir}/{pfile.name}") != 0:
+                    if self._run_ssh(f"patch -p1 < ../../{self.patch_dir}/{pfile.name}") != 0:
                         logger.error(f"Patching: {pfile}")
                         exit(-1)
 
@@ -86,6 +87,10 @@ class KernelBuilder(DockerRunner):
         params += " -d " + " -d ".join(self.disable_args.split())
         return params
 
+    def _make_clean(self):
+        logger.debug("Running 'make clean' just in case...")
+        self._run_ssh("make clean")
+
     def _make(self):
         self._run_ssh(f"{self.cc} ARCH={self.arch} {self.llvm_flag} make -j$(nproc) all")
         self._run_ssh(f"{self.cc} ARCH={self.arch} {self.llvm_flag} make -j$(nproc) modules")
@@ -110,6 +115,8 @@ class KernelBuilder(DockerRunner):
             )
             self._wait_for_container()
             self.init_ssh()
+            if self.dirty:
+                self._make_clean()
             self._build_mrproper()
             self._apply_patches()
             self._build_arch()
