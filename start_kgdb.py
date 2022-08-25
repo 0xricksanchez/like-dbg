@@ -32,7 +32,8 @@ def main():
 
     tmux("selectp -t 0")
     tmux('rename-window "LIKE-DBG"')
-    generic_args = {"skip_prompts": True if args.yes else False}
+    kunpacker = {}
+    generic_args = {"skip_prompts": True if args.yes else False, "ctf_ctx": True if args.ctf else False}
     dbge_args = {} | generic_args
     dbg_args = {} | generic_args
 
@@ -46,23 +47,24 @@ def main():
         if not ctf_fs.exists():
             logger.error(f"Failed to find {ctf_fs}")
             exit(-1)
-        dbge_args = generic_args | {"ctf_ctx": True if args.ctf else False, "ctf_kernel": ctf_kernel, "ctf_fs": ctf_fs}
+        dbge_args = generic_args | {"ctf_kernel": ctf_kernel, "ctf_fs": ctf_fs}
         dbg_args = {k: v for k, v in dbge_args.items() if k != "ctf_fs"}
     else:
         logger.info("Executing in non-CTF context")
 
-        karchive = KernelDownloader().run()
-        if not KernelUnpacker(karchive, **generic_args).run():
-            KernelBuilder(**generic_args).run()
-        RootFSBuilder(**generic_args).run()
+        kaname = KernelDownloader().run()
+        kunpacker = KernelUnpacker(kaname, **generic_args).run()
+        if not kunpacker["status_code"]:
+            KernelBuilder(**generic_args | kunpacker).run()
+        RootFSBuilder(**generic_args | kunpacker).run()
 
     tmux("splitw -h -p 50")
     tmux("selectp -t 0")
     tmux("splitw -v -p 50")
     tmux("selectp -t 0")
-    Debuggee(**dbge_args).run()
+    Debuggee(**dbge_args | kunpacker).run()
     tmux("selectp -t 0")
-    Debugger(**dbg_args).run()
+    Debugger(**dbg_args | kunpacker).run()
     tmux("selectp -t 0")
 
 

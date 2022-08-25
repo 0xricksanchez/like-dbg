@@ -75,7 +75,7 @@ class KernelDownloader:
             urllib.request.urlretrieve(self.dl_uri, filename=self.archive, reporthook=t.update_to)
             t.total = t.n
 
-    def run(self):
+    def run(self) -> Path:
         if not self.is_present():
             self.download_kernel_archive()
         return self.archive

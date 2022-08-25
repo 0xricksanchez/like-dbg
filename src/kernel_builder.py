@@ -17,7 +17,7 @@ from .misc import adjust_arch, cfg_setter, canadian_cross
 class KernelBuilder(DockerRunner):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
-        cfg_setter(self, ["kernel_general", "kernel_builder", "general", "kernel_builder_docker"])
+        cfg_setter(self, ["kernel_builder", "general", "kernel_builder_docker"])
         self.cc = f"CC={self.compiler}" if self.compiler else ""
         self.llvm_flag = "" if "gcc" in self.cc else "LLVM=1"
         self.cli = docker.APIClient(base_url=self.docker_sock)

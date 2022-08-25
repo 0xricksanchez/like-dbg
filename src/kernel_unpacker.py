@@ -16,10 +16,10 @@ from .misc import cfg_setter, is_reuse, new_context
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
 class KernelUnpacker:
     def __init__(self, p: Path, **kwargs) -> None:
-        cfg_setter(self, ["kernel_general"])
-        self.kernel_root = Path(self.kernel_root)
+        cfg_setter(self, ["general"])
         self.archive = p
-        self.ex_name = Path(".".join(self.archive.name.split(".")[:-2]))  # FIXME only works for formats like .tar.gz
+        self.ex_name = ".".join(self.archive.name.split(".")[:-2])  # FIXME only works for formats like .tar.gz
+        self.kernel_root = Path(self.kernel_root) / (self.ex_name + f"_{self.arch}")
         self.dst_content = None
         self.history = Path(".hist")
         self.skip_prompts = kwargs.get("skip_prompts", False)
@@ -71,27 +71,30 @@ class KernelUnpacker:
             members = t.getmembers()
             for member in tqdm(iterable=members, total=len(members)):
                 t.extract(member)
-        self.ex_name.rename(self.kernel_root)
+        Path(self.ex_name).rename(self.kernel_root)
 
     @staticmethod
     def _purge(p: Path) -> None:
         logger.info("Purging unclean kernel build environment...")
         shutil.rmtree(p, ignore_errors=True)
 
-    def run(self) -> int:
+    def run(self) -> dict:
+        res = {"kroot": self.kernel_root}
+        if not self.kernel_root.exists():
+            self.kernel_root.mkdir(parents=True)
         if not self._is_dest_empty():
             if self._is_vmlinux():
                 if self.skip_prompts:
                     logger.info("Re-using existing vmlinux")
-                    return 1
+                    return res | {"status_code": 1}
                 if self._reuse_existing_vmlinux():
-                    return 1
+                    return res | {"status_code": 1}
             else:
                 self._make_clean()
-                return 0
+                return res | {"status_code": 0}
         if self._is_new():
             self._purge(self.kernel_root)
             self._unpack_targz()
         else:
             self._make_clean()
-        return 0
+        return res | {"status_code": 0}

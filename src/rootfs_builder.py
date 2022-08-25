@@ -14,7 +14,7 @@ from .misc import cfg_setter, adjust_qemu_arch, is_reuse
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
 class RootFSBuilder(DockerRunner):
     def __init__(self, **kwargs):
-        super().__init__()
+        super().__init__(**kwargs)
         cfg_setter(self, ["rootfs_general", "rootfs_builder", "general"])
         self.cli = docker.APIClient(base_url=self.docker_sock)
         self.fs_name = self.rootfs_base + self.arch + self.rootfs_ftype

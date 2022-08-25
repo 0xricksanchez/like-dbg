@@ -156,7 +156,9 @@ echo '/dev/root / ext4 defaults 0 0' | sudo tee -a $MNT/etc/fstab
 echo 'debugfs /sys/kernel/debug debugfs defaults 0 0' | sudo tee -a $MNT/etc/fstab
 # echo 'securityfs /sys/kernel/security securityfs defaults 0 0' | sudo tee -a $MNT/etc/fstab
 # echo 'configfs /sys/kernel/config/ configfs defaults 0 0' | sudo tee -a $MNT/etc/fstab
-echo 'binfmt_misc /proc/sys/fs/binfmt_misc binfmt_misc defaults 0 0' | sudo tee -a $MNT/etc/fstab
+if [ $FOREIGN = "false" ]; then
+    echo 'binfmt_misc /proc/sys/fs/binfmt_misc binfmt_misc defaults 0 0' | sudo tee -a $MNT/etc/fstab
+fi
 echo -en "127.0.0.1\tlocalhost $ROOTFS_NAME\n" | sudo tee $MNT/etc/hosts
 echo "nameserver 8.8.8.8" | sudo tee -a $MNT/etc/resolve.conf
 echo "$ROOTFS_NAME" | sudo tee $MNT/etc/hostname
