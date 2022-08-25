@@ -16,12 +16,18 @@ from .tqdm_dlbar import DLProgressBarTQDM
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
 class KernelDownloader:
     def __init__(self) -> None:
-        cfg_setter(self, ["kernel_dl"])
+        cfg_setter(
+            self,
+            ["kernel_dl", "general"],
+            exclude_keys=["ssh_dir", "arch", "docker_sock", "docker_mnt", "user", "dockerfile_base_img", "tag_base_image", "kernel_root", "ctf_dir"],
+        )
         self.commit = self._set_commit()
         self.choice = self._set_choice()
         logger.info(f"Using kernel with (tag/commit) {self.choice}")
         self.dl_uri = self._set_dl_uri()
-        self.archive = Path(f"linux-{self.choice}.tar.gz")
+        if not Path(self.kernel_dl_path).exists():
+            Path(self.kernel_dl_path).mkdir()
+        self.archive = Path(self.kernel_dl_path) / f"linux-{self.choice}.tar.gz"
         logger.debug(f"Kernel snap: {self.dl_uri}")
 
     def _set_commit(self):
