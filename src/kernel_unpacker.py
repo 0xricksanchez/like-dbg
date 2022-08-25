@@ -32,15 +32,12 @@ class KernelUnpacker:
     def _is_vmlinux(self) -> int:
         if "vmlinux" in self.content:
             return 1
-        else:
-            return 0
+        return 0
 
     def _reuse_existing_vmlinux(self) -> int:
-        if not is_reuse("vmlinux"):
-            self._purge(self.kernel_root)
-            self._unpack_targz()
-            return 0
-        return 1
+        if is_reuse(f"{self.kernel_root}/vmlinux"):
+            return 1
+        return 0
 
     def _unpack_targz(self) -> None:
         if not tarfile.is_tarfile(self.archive):
@@ -66,9 +63,13 @@ class KernelUnpacker:
             self._unpack_targz()
             return res | {"status_code": 0}
         elif not self._is_dest_empty():
-            if self._is_vmlinux() and (self.skip_prompts or self._reuse_existing_vmlinux()):
-                logger.info(f"Re-using existing {self.kernel_root}/vmlinux")
-                return res | {"status_code": 1}
+            if self._is_vmlinux():
+                reuse = self._reuse_existing_vmlinux()
+                if self.skip_prompts or reuse:
+                    logger.info(f"Re-using existing {self.kernel_root}/vmlinux")
+                    return res | {"status_code": 1}
+                else:
+                    return res | {"status_code": 0, "assume_dirty": True}
             else:
                 logger.debug(f"{self.kernel_root} does exist, but contains no kernel. Assuming dirty directory...")
                 return res | {"status_code": 0, "assume_dirty": True}
