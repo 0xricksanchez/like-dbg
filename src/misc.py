@@ -17,14 +17,15 @@ config = Path.cwd() / "config.ini"
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
 # | MISC QOL functions                                                                                  |
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
-def cfg_setter(obj, sections: list[str]) -> None:
+def cfg_setter(obj, sections: list[str], exclude_keys: list[str] = []) -> None:
     cfg = configparser.ConfigParser()
     cfg.read(config)
     for sect in sections:
         for key in cfg[sect]:
-            tmp = cfg[sect][key]
-            val = tmp if tmp not in ["yes", "no"] else cfg[sect].getboolean(key)
-            setattr(obj, key, val)
+            if key not in exclude_keys:
+                tmp = cfg[sect][key]
+                val = tmp if tmp not in ["yes", "no"] else cfg[sect].getboolean(key)
+                setattr(obj, key, val)
 
 
 def is_reuse(p: str) -> bool:

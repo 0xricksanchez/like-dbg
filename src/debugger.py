@@ -17,9 +17,10 @@ GDB_SCRIPT_HIST = Path(".gdb_hist")
 # | DEBUGGER                                                                                            |
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
 class Debugger(DockerRunner):
-    def __init__(self, ctf_ctx: bool = False, **kwargs):
+    def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        cfg_setter(self, ["general", "debugger", "kernel_general"])
+        cfg_setter(self, ["general", "debugger"], exclude_keys=["kernel_root"])
+        ctf_ctx = kwargs.get("ctf_ctx", False)
         if ctf_ctx:
             self.ctf_kernel = kwargs.get("ctf_kernel", "")
             self.project_dir = Path.cwd() / self.ctf_dir
