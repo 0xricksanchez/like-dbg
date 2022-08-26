@@ -66,8 +66,7 @@ class KernelUnpacker:
             return res | {"status_code": 0}
         elif not self._is_dest_empty():
             if self._is_vmlinux():
-                reuse = self._reuse_existing_vmlinux()
-                if self.skip_prompts or reuse:
+                if self.skip_prompts or self._reuse_existing_vmlinux():
                     logger.info(f"Re-using existing {self.kernel_root}/vmlinux")
                     return res | {"status_code": 1}
                 else:
