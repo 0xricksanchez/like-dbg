@@ -1,6 +1,6 @@
 #!/bin/bash
 # ----------------------------------------------------------------------
-# (c) 2022      <admin@0x434b.dev>
+# (c) 2022 - 0xricksanchez <admin@0x434b.dev>
 # ----------------------------------------------------------------------
 set -e
 
@@ -37,15 +37,15 @@ is_exist() {
 
 pack() {
     is_exist "$1" "-d"
-    is_exist "$3" "-f"
 
     if [ -n "$3" ]; then
+        is_exist "$3" "-f"
         is_exist "$MUSL" "-f"
         out=$(echo "$3" | awk '{ print substr( $0, 1, length($0)-2 ) }')
         musl-gcc "$3" -static -o "$out" || exit 255
     fi
 
-    pushd . && pushd "$1"
+    pushd . > /dev/null && pushd "$1" > /dev/null
     cmd="find . -print0 | cpio --null --format=newc -o --owner=root 2>/dev/null"
     if [ "$2" -eq 1 ]; then
         cmd="${cmd} | gzip -9 > ../$1.cpio.gz"
@@ -53,24 +53,25 @@ pack() {
         cmd="${cmd} > ../$1.cpio"
     fi
     eval "$cmd"
-    popd
+    popd > /dev/null
 }
 
 unpack() {
     mkdir initramfs
-    pushd . && pushd initramfs
+    pushd . > /dev/null && pushd initramfs > /dev/null
     cp ../"$1" .
+    LOCAL_ROOTFS="$(pwd)/$(basename $1)"
 
     if [ "$2" -eq 1 ]; then
-        gzip -dc "$1" | cpio -idm &
-        > /dev/null
+        gzip -dc "$LOCAL_ROOTFS" | cpio -idm &> /dev/null
     else
-        cpio -idm < "$1" &
-        > /dev/null
+        cpio -idm < "$LOCAL_ROOTFS" &> /dev/null
     fi
 
-    rm "$1"
-    popd
+    rm "$LOCAL_ROOTFS"
+    LUSER=$(logname 2> /dev/null || echo $SUDO_USER)
+    popd > /dev/null
+    chown -R $LUSER:$LUSER initramfs
 }
 
 while true; do
@@ -114,6 +115,11 @@ while true; do
     esac
 done
 
+if [[ $UID != 0 ]]; then
+    echo "Script needs to be run with sudo as unpacking may fail otherwise"
+    exit 255
+fi
+
 if [ "$ENC" -eq "$DEC" ]; then
     echo "Cannot pack and unpack at the same time..."
     exit 255
@@ -126,3 +132,5 @@ fi
 if [ "$ENC" -eq 1 ]; then
     pack "$ROOTFS" "$GZIP" "$EXPLOIT"
 fi
+
+echo "Success!"
