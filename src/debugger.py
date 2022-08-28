@@ -22,7 +22,7 @@ class Debugger(DockerRunner):
         cfg_setter(self, ["general", "debugger"], exclude_keys=["kernel_root"])
         ctf_ctx = kwargs.get("ctf_ctx", False)
         if ctf_ctx:
-            self.ctf_kernel = kwargs.get("ctf_kernel", "")
+            self.ctf_kernel = Path(kwargs.get("ctf_kernel", ""))
             self.project_dir = Path.cwd() / self.ctf_dir
             vmlinux = Path(self.project_dir) / "vmlinux"
             if not vmlinux.exists() or b"ELF" not in sp.run(f"file {vmlinux}", shell=True, capture_output=True).stdout:
@@ -38,7 +38,7 @@ class Debugger(DockerRunner):
     def _extract_vmlinux(self) -> None:
         with new_context(self.ctf_dir):
             vml_ext = glob("**/extract*", recursive=True)[0]
-            ret = sp.run(f"./{vml_ext} {Path(self.ctf_kernel).name} > vmlinux", shell=True, capture_output=True)
+            ret = sp.run(f"./{vml_ext} {Path(*self.ctf_kernel.parts[1:])} > vmlinux", shell=True, capture_output=True)
             if ret.returncode == 0:
                 logger.info("Successfully extracted 'vmlinux' from compressed kernel")
             else:
