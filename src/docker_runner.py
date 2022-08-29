@@ -45,9 +45,7 @@ class DockerRunner:
         tries = 0
         while True:
             try:
-                self.ssh_conn = Connection(
-                    f"{self.user}@localhost:{self.ssh_fwd_port}", connect_kwargs={"key_filename": ".ssh/like.id_rsa"}, connect_timeout=200
-                )
+                self.ssh_conn = Connection(f"{self.user}@localhost:{self.ssh_fwd_port}", connect_kwargs={"key_filename": ".ssh/like.id_rsa"})
             except Exception as e:
                 tries += 1
                 logger.error(f"Failed to initialize SSH connection to {type(self).__name__}: {e}")

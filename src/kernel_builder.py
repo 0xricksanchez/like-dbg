@@ -18,7 +18,7 @@ from .misc import adjust_arch, cfg_setter, canadian_cross
 class KernelBuilder(DockerRunner):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
-        cfg_setter(self, ["kernel_builder", "general", "kernel_builder_docker"], exclude_keys=["kernel_root"])
+        cfg_setter(self, ["kernel_builder", "general", "kernel_builder_docker"], exclude_keys=["kernel_root"], cherry_pick={"debuggee": ["kvm"]})
         self.cc = f"CC={self.compiler}" if self.compiler else ""
         self.llvm_flag = "" if "gcc" in self.cc else "LLVM=1"
         self.cli = docker.APIClient(base_url=self.docker_sock)
@@ -33,23 +33,24 @@ class KernelBuilder(DockerRunner):
             "CANADIAN_CROSS": canadian_cross(self.arch),
             "ARCH": self.arch,
         }
+        logger.error(vars(self))
+        exit(1)
 
     @staticmethod
-    def make_sudo() -> str:
-        is_sudo = True if getuid() == 0 else False
-        if is_sudo:
-            return "sudo"
+    def make_sudo(cmd: str) -> str:
+        if getuid() == 0:
+            return f"sudo {cmd}"
         else:
-            return ""
+            return cmd
 
     def _run_ssh(self, cmd: str) -> int:
-        return self.ssh_conn.run(f"cd {self.docker_mnt}/{self.kernel_root} && {self.make_sudo()} {cmd}").exited
+        cmd = self.make_sudo(cmd)
+        return self.ssh_conn.run(f"cd {self.docker_mnt}/{self.kernel_root} && {cmd}", echo=True).exited
 
     def _apply_patches(self):
         if self.patch_dir and Path(self.patch_dir).exists():
             patch_files = [x for x in Path(self.patch_dir).iterdir()]
             if patch_files:
-                logger.debug(f"Applying patches...: {patch_files}")
                 for pfile in patch_files:
                     if self._run_ssh(f"patch -p1 < ../../{self.patch_dir}/{pfile.name}") != 0:
                         logger.error(f"Patching: {pfile}")
