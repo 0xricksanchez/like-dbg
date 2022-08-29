@@ -49,8 +49,8 @@ echo "add-auto-load-safe-path $PROJECT_DIR" >> .gdbinit
 popd || exit
 
 if [ "$CTF_CTX" -ne 1 ]; then
-    rm vmlinux-gdb.py
-    ln -sd scripts/gdb/vmlinux-gdb.py .
+    sudo rm -f vmlinux-gdb.py
+    sudo ln -sd scripts/gdb/vmlinux-gdb.py .
 fi
 
 # Handle GDB naming sceme
