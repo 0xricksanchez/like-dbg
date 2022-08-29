@@ -54,10 +54,10 @@ class KernelBuilder(DockerRunner):
                         logger.error(f"Patching: {pfile}")
                         exit(-1)
 
-    def _build_mrproper(self):
+    def _build_mrproper(self) -> None:
         self._run_ssh(f"{self.cc} ARCH={self.arch} make mrproper")
 
-    def _build_arch(self):
+    def _build_arch(self) -> None:
         # TODO check how we need to sanitize the [general] config arch field to reflect the make options
         # All i know is it works if arch is x86_64
         if self.arch == "x86_64":
@@ -65,10 +65,10 @@ class KernelBuilder(DockerRunner):
         else:
             self._run_ssh(f"{self.cc} {self.llvm_flag} ARCH={self.arch} make defconfig")
 
-    def _build_kvm_guest(self):
+    def _build_kvm_guest(self) -> None:
         self._run_ssh(f"{self.cc} {self.llvm_flag} ARCH={self.arch} make kvm_guest.config")
 
-    def _configure_kernel(self):
+    def _configure_kernel(self) -> None:
         if self.mode == "syzkaller":
             params = self.syzkaller_args
         elif self.mode == "generic":
@@ -90,16 +90,16 @@ class KernelBuilder(DockerRunner):
         logger.debug(params)
         return params
 
-    def _configure_custom(self):
+    def _configure_custom(self) -> str:
         params = "-e " + " -e ".join(self.enable_args.split())
         params += " -d " + " -d ".join(self.disable_args.split())
         return params
 
-    def _make_clean(self):
+    def _make_clean(self) -> None:
         logger.debug("Running 'make clean' just in case...")
         self._run_ssh("make clean")
 
-    def _make(self):
+    def _make(self) -> None:
         self._run_ssh(f"{self.cc} ARCH={self.arch} {self.llvm_flag} make -j$(nproc) all")
         self._run_ssh(f"{self.cc} ARCH={self.arch} {self.llvm_flag} make -j$(nproc) modules")
 
@@ -112,7 +112,7 @@ class KernelBuilder(DockerRunner):
             else:
                 break
 
-    def run_container(self):
+    def run_container(self) -> None:
         try:
             self.container = self.client.containers.run(
                 self.image,
@@ -143,7 +143,7 @@ class KernelBuilder(DockerRunner):
         finally:
             self.stop_container()
 
-    def run(self):
+    def run(self) -> None:
         logger.info("Building kernel. This may take a while...")
         self.check_existing()
         super().run()
