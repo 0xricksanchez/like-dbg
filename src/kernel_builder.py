@@ -38,13 +38,13 @@ class KernelBuilder(DockerRunner):
     def make_sudo(is_sudo: bool) -> str:
         if is_sudo:
             return "sudo"
-        else
-        return ""
+        else:
+            return ""
 
     def _run_ssh(self, cmd: str, is_sudo: bool) -> int:
         return self.ssh_conn.run(f"cd {self.docker_mnt}/{self.kernel_root} && {self.make_sudo(is_sudo)} {cmd}").exited
 
-    def _apply_patches(self, is_sudo :bool):
+    def _apply_patches(self, is_sudo: bool):
         if self.patch_dir and Path(self.patch_dir).exists():
             patch_files = [x for x in Path(self.patch_dir).iterdir()]
             if patch_files:
@@ -61,7 +61,7 @@ class KernelBuilder(DockerRunner):
         # TODO check how we need to sanitize the [general] config arch field to reflect the make options
         # All i know is it works if arch is x86_64
         if self.arch == "x86_64":
-            self._run_ssh(f"{self.make_sudo(is_sudo)} {{self.cc} {self.llvm_flag} make {self.arch}_defconfig", is_sudo)
+            self._run_ssh(f"{self.cc} {self.llvm_flag} make {self.arch}_defconfig", is_sudo)
         else:
             self._run_ssh(f"{self.cc} {self.llvm_flag} ARCH={self.arch} make defconfig", is_sudo)
 
@@ -97,7 +97,7 @@ class KernelBuilder(DockerRunner):
 
     def _make_clean(self, is_sudo: bool):
         logger.debug("Running 'make clean' just in case...")
-        self._run_ssh(f"make clean", is_sudo)
+        self._run_ssh("make clean", is_sudo)
 
     def _make(self, is_sudo: bool):
         self._run_ssh(f"{self.cc} ARCH={self.arch} {self.llvm_flag} make -j$(nproc) all", is_sudo)
