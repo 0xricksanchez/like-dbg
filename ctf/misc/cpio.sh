@@ -115,17 +115,16 @@ while true; do
     esac
 done
 
-if [[ $UID != 0 ]]; then
-    echo "Script needs to be run with sudo as unpacking may fail otherwise"
-    exit 255
-fi
-
 if [ "$ENC" -eq "$DEC" ]; then
     echo "Cannot pack and unpack at the same time..."
     exit 255
 fi
 
 if [ "$DEC" -eq 1 ]; then
+    if [[ $UID != 0 ]]; then
+        echo "Script needs to be run with sudo when unpacking as it may fail otherwise"
+        exit 255
+    fi
     unpack "$ROOTFS" "$GZIP"
 fi
 
