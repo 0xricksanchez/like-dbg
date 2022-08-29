@@ -8,6 +8,7 @@ img/
 io/filesystem*
 linux-*
 requirements.txt
+vm.pid
 start_kgdb.py
 README.md
 config.ini
