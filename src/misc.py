@@ -17,7 +17,7 @@ config = Path.cwd() / "config.ini"
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
 # | MISC QOL functions                                                                                  |
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
-def cfg_setter(obj, sections: list[str], exclude_keys: list[str] = []) -> None:
+def cfg_setter(obj, sections: list[str], exclude_keys: list[str] = [], cherry_pick: dict[str, list[str]] = {}) -> None:
     cfg = configparser.ConfigParser()
     cfg.read(config)
     for sect in sections:
@@ -25,6 +25,12 @@ def cfg_setter(obj, sections: list[str], exclude_keys: list[str] = []) -> None:
             if key not in exclude_keys:
                 tmp = cfg[sect][key]
                 val = tmp if tmp not in ["yes", "no"] else cfg[sect].getboolean(key)
+                setattr(obj, key, val)
+    for entry in cherry_pick.keys():
+        for key in cfg[entry]:
+            if key in cherry_pick[entry]:
+                tmp = cfg[entry][key]
+                val = tmp if tmp not in ["yes", "no"] else cfg[entry].getboolean(key)
                 setattr(obj, key, val)
 
 
