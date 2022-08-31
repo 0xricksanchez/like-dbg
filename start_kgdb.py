@@ -62,7 +62,6 @@ def main():
         logger.info("Executing in non-CTF context")
 
         kaname = KernelDownloader().run()
-        exit(1)
         kunpacker = KernelUnpacker(kaname, **generic_args).run()
         if not kunpacker["status_code"]:
             KernelBuilder(**generic_args | kunpacker).run()
