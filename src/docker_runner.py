@@ -29,7 +29,7 @@ class DockerRunner:
         if not kwargs.get("ctf_ctx", False):
             self.kernel_root = kwargs.get("kroot", None)
             if not self.kernel_root:
-                logger.error(f"{type(self).__name__} got invalid kernel root: '{self.kernel_root}'")
+                logger.critical(f"{type(self).__name__} got invalid kernel root: '{self.kernel_root}'")
                 exit(-1)
 
     def guarantee_ssh(self, ssh_dir: Path) -> None:
@@ -51,7 +51,7 @@ class DockerRunner:
                 logger.error(f"Failed to initialize SSH connection to {type(self).__name__}: {e}")
                 logger.error("Retrying in 5 seconds...")
                 if tries >= 5:
-                    logger.error(f"{tries} attempts failed! Exiting...")
+                    logger.critical(f"{tries} attempts failed! Exiting...")
                     exit(-1)
                 time.sleep(5)
             else:
@@ -109,7 +109,7 @@ class DockerRunner:
     def wait_for_container(self) -> None:
         ret = self.container.wait()
         if ret["StatusCode"] != 0:
-            logger.error(f"Failed to run {type(self).__name__}")
+            logger.critical(f"Failed to run {type(self).__name__}")
             exit(-1)
 
     def check_existing(self) -> None:

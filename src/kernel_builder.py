@@ -45,13 +45,14 @@ class KernelBuilder(DockerRunner):
         cmd = self.make_sudo(cmd)
         return self.ssh_conn.run(f"cd {self.docker_mnt}/{self.kernel_root} && {cmd}", echo=True).exited
 
-    def _apply_patches(self, is_sudo: bool):
+    def _apply_patches(self):
         if self.patch_dir and Path(self.patch_dir).exists():
             patch_files = [x for x in Path(self.patch_dir).iterdir()]
             if patch_files:
                 for pfile in patch_files:
-                    if self._run_ssh(f"patch -p1 < ../../{self.patch_dir}/{pfile.name}", is_sudo) != 0:
-                        logger.error(f"Patching: {pfile}")
+                    logger.debug(f"Patching: {pfile}")
+                    if self._run_ssh(f"patch -p1 < ../../{self.patch_dir}/{pfile.name}") != 0:
+                        logger.critical(f"Patching: {pfile}")
                         exit(-1)
 
     def _build_mrproper(self):

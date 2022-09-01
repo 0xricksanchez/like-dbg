@@ -47,19 +47,19 @@ def main():
     dbg_args = {} | generic_args
 
     if args.ctf and args.env:
-        logger.info("Executing in CTF context")
+        logger.debug("Executing in CTF context")
         ctf_kernel = Path(args.env[0])
         ctf_fs = Path(args.env[1])
         if not ctf_kernel.exists():
-            logger.error(f"Failed to find {ctf_kernel}")
+            logger.critical(f"Failed to find {ctf_kernel}")
             exit(-1)
         if not ctf_fs.exists():
-            logger.error(f"Failed to find {ctf_fs}")
+            logger.critical(f"Failed to find {ctf_fs}")
             exit(-1)
         dbge_args = generic_args | {"ctf_kernel": ctf_kernel, "ctf_fs": ctf_fs}
         dbg_args = {k: v for k, v in dbge_args.items() if k != "ctf_fs"}
     else:
-        logger.info("Executing in non-CTF context")
+        logger.debug("Executing in non-CTF context")
 
         kaname = KernelDownloader().run()
         kunpacker = KernelUnpacker(kaname, **generic_args).run()
