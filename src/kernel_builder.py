@@ -45,16 +45,17 @@ class KernelBuilder(DockerRunner):
         cmd = self.make_sudo(cmd)
         return self.ssh_conn.run(f"cd {self.docker_mnt}/{self.kernel_root} && {cmd}", echo=True).exited
 
-    def _apply_patches(self):
+    def _apply_patches(self, is_sudo: bool):
         if self.patch_dir and Path(self.patch_dir).exists():
             patch_files = [x for x in Path(self.patch_dir).iterdir()]
             if patch_files:
                 for pfile in patch_files:
-                    if self._run_ssh(f"patch -p1 < ../../{self.patch_dir}/{pfile.name}") != 0:
-                        logger.error(f"Patching: {pfile}")
+                    logger.debug(f"Patching: {pfile}")
+                    if self._run_ssh(f"patch -p1 < ../../{self.patch_dir}/{pfile.name}", is_sudo) != 0:
+                        logger.critical(f"Patching: {pfile}")
                         exit(-1)
 
-    def _build_mrproper(self) -> None:
+    def _build_mrproper(self):
         self._run_ssh(f"{self.cc} ARCH={self.arch} make mrproper")
 
     def _build_arch(self) -> None:
@@ -65,7 +66,7 @@ class KernelBuilder(DockerRunner):
         else:
             self._run_ssh(f"{self.cc} {self.llvm_flag} ARCH={self.arch} make defconfig")
 
-    def _build_kvm_guest(self) -> None:
+    def _build_kvm_guest(self):
         self._run_ssh(f"{self.cc} {self.llvm_flag} ARCH={self.arch} make kvm_guest.config")
 
     def _configure_kernel(self) -> None:
@@ -99,7 +100,7 @@ class KernelBuilder(DockerRunner):
         logger.debug("Running 'make clean' just in case...")
         self._run_ssh("make clean")
 
-    def _make(self) -> None:
+    def _make(self):
         self._run_ssh(f"{self.cc} ARCH={self.arch} {self.llvm_flag} make -j$(nproc) all")
         self._run_ssh(f"{self.cc} ARCH={self.arch} {self.llvm_flag} make -j$(nproc) modules")
 
