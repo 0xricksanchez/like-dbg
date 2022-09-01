@@ -50,8 +50,9 @@ class KernelBuilder(DockerRunner):
             patch_files = [x for x in Path(self.patch_dir).iterdir()]
             if patch_files:
                 for pfile in patch_files:
+                    logger.debug(f"Patching: {pfile}")
                     if self._run_ssh(f"patch -p1 < ../../{self.patch_dir}/{pfile.name}", is_sudo) != 0:
-                        logger.error(f"Patching: {pfile}")
+                        logger.critical(f"Patching: {pfile}")
                         exit(-1)
 
     def _build_mrproper(self):

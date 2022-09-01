@@ -19,7 +19,7 @@ class KernelDownloader:
         cfg_setter(self, ["kernel_dl"])
         self.commit = self._set_commit()
         self.choice = self._set_choice()
-        logger.info(f"Using kernel with (tag/commit) {self.choice}")
+        logger.info(f"Using kernel with (tag/commit/version) {self.choice}")
         self.dl_uri = self._set_dl_uri()
         if not Path(self.kernel_dl_path).exists():
             Path(self.kernel_dl_path).mkdir()
@@ -43,7 +43,7 @@ class KernelDownloader:
             logger.debug(f"Found latest commit: {commit}")
             return commit
         else:
-            logger.error("Resolving latest commit")
+            logger.critical("Resolving latest commit")
             exit(-1)
 
     def _set_choice(self):
@@ -66,7 +66,7 @@ class KernelDownloader:
 
     def is_present(self) -> bool:
         if Path(self.archive).exists():
-            logger.info("Kernel archive already exists locally. Skipping download...")
+            logger.debug("Kernel archive already exists locally. Skipping download...")
             return True
         else:
             return False

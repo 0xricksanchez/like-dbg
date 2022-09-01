@@ -38,7 +38,7 @@ class RootFSBuilder(DockerRunner):
             [logger.debug(log.strip().decode()) for log in gen]
             self.wait_for_container()
         except Exception as e:
-            logger.error(f"Oops: {e}")
+            logger.critical(f"Oops: {e}")
             exit(-1)
 
     def is_exist(self) -> bool:

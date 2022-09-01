@@ -43,7 +43,7 @@ class KernelUnpacker:
 
     def _unpack_targz(self) -> None:
         if not tarfile.is_tarfile(self.archive):
-            logger.error("Invalid archive format. Exiting...")
+            logger.critical("Invalid archive format. Exiting...")
             exit(-1)
 
         logger.info("Unpacking kernel archive...")
@@ -55,7 +55,7 @@ class KernelUnpacker:
 
     @staticmethod
     def _purge(p: Path) -> None:
-        logger.info("Purging unclean kernel build environment...")
+        logger.debug("Purging unclean kernel build environment...")
         shutil.rmtree(p, ignore_errors=True)
 
     def run(self) -> dict:
