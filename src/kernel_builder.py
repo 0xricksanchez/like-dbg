@@ -98,7 +98,7 @@ class KernelBuilder(DockerRunner):
 
     def _make_clean(self) -> None:
         logger.debug("Running 'make clean' just in case...")
-        self._run_ssh(f"make clean")
+        self._run_ssh("make clean")
 
     def _make(self):
         self._run_ssh(f"{self.cc} ARCH={self.arch} {self.llvm_flag} make -j$(nproc) all")
