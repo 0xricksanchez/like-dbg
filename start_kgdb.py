@@ -2,6 +2,7 @@
 
 import argparse
 from pathlib import Path
+import sys
 
 from loguru import logger
 
@@ -14,6 +15,12 @@ from src.misc import tmux
 from src.rootfs_builder import RootFSBuilder
 
 
+def set_log_level(verbose: bool) -> None:
+    logger.remove()
+    log_level = "DEBUG" if verbose else "INFO"
+    logger.add(sys.stderr, level=log_level)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -24,7 +31,9 @@ def main():
     )
     parser.add_argument("--env", "-e", nargs=2, help="Expected: <kernel_image> <root_file_system>")
     parser.add_argument("--yes", "-y", action=argparse.BooleanOptionalAction, help="If this is set all re-use prompts are answered with 'yes'")
+    parser.add_argument("--verbose", "-v", action=argparse.BooleanOptionalAction, help="Enable debug logging")
     args = parser.parse_args()
+    set_log_level(args.verbose)
     if args.ctf and not args.env:
         logger.error("Found --ctf but no environment was specified...")
         logger.error(f"Usage: python3 {Path(__file__).name} --ctf --env <kernel> <rootfs>")
