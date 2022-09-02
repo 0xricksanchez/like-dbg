@@ -31,6 +31,7 @@ class Debugger(DockerRunner):
             self.project_dir = Path.cwd() / self.kernel_root
         self.ctf = 1 if ctf_ctx else 0
         self.custom_gdb_script = Path("/home/") / self.user / Path(self.gdb_script).name
+        self.script_logging = "set -e" if kwargs.get("log_level", "INFO") == "INFO" else "set -eux"
         self.skip_prompts = kwargs.get("skip_prompts", False)
         self.buildargs = {"USER": self.user}
         self.cli = docker.APIClient(base_url=self.docker_sock)
@@ -46,7 +47,7 @@ class Debugger(DockerRunner):
                 exit(-1)
 
     def run_container(self) -> None:
-        entrypoint = f"/home/{self.user}/debugger.sh -a {self.arch} -p {self.docker_mnt} -c {self.ctf} -g {self.custom_gdb_script}"
+        entrypoint = f'/bin/bash -c "{self.script_logging}; . /home/{self.user}/debugger.sh -a {self.arch} -p {self.docker_mnt} -c {self.ctf} -g {self.custom_gdb_script}"'
         runner = f'docker run -it --rm --security-opt seccomp=unconfined --cap-add=SYS_PTRACE -v {self.project_dir}:/io --net="host" {self.tag} {entrypoint}'
         tmux("selectp -t 2")
         tmux_shell(runner)

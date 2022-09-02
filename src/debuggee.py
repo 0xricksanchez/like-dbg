@@ -69,4 +69,5 @@ class Debuggee(DockerRunner):
         if self.gdb:
             self.cmd += " -S -s"
         tmux("selectp -t 1")
-        tmux_shell(f"{dcmd} {self.cmd}")
+        runner = f"{dcmd} {self.cmd}"
+        tmux_shell(runner)
