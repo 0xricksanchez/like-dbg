@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-set -e
 
 PROJECT_DIR=""
 VMLINUX=""
@@ -7,11 +6,7 @@ ARCH=""
 CTF_CTX=0
 PATH_GDB_SCRIPT=""
 
-while true; do
-    if [ $# -eq 0 ]; then
-        echo $#
-        break
-    fi
+while (("$#")); do
     case "$1" in
         -a | --arch)
             # Sets the architecture as expected in GDB
@@ -44,9 +39,14 @@ while true; do
     esac
 done
 
-pushd "$HOME" || exit
+if [ -z "$PROJECT_DIR" ] || [ -z "$VMLINUX" ] || [ -z "$ARCH" ] || [ -z "$PATH_GDB_SCRIPT" ]; then
+    echo "[!] Not all required arguments were set"
+    exit 255
+fi
+
+pushd "$HOME" > /dev/null || exit
 echo "add-auto-load-safe-path $PROJECT_DIR" >> .gdbinit
-popd || exit
+popd > /dev/null || exit
 
 if [ "$CTF_CTX" -ne 1 ]; then
     sudo rm -f vmlinux-gdb.py

@@ -15,10 +15,11 @@ from src.misc import tmux
 from src.rootfs_builder import RootFSBuilder
 
 
-def set_log_level(verbose: bool) -> None:
+def set_log_level(verbose: bool) -> str:
     logger.remove()
     log_level = "DEBUG" if verbose else "INFO"
     logger.add(sys.stderr, level=log_level)
+    return log_level
 
 
 def main():
@@ -33,7 +34,7 @@ def main():
     parser.add_argument("--yes", "-y", action=argparse.BooleanOptionalAction, help="If this is set all re-use prompts are answered with 'yes'")
     parser.add_argument("--verbose", "-v", action=argparse.BooleanOptionalAction, help="Enable debug logging")
     args = parser.parse_args()
-    set_log_level(args.verbose)
+    log_level = set_log_level(args.verbose)
     if args.ctf and not args.env:
         logger.error("Found --ctf but no environment was specified...")
         logger.error(f"Usage: python3 {Path(__file__).name} --ctf --env <kernel> <rootfs>")
@@ -42,7 +43,7 @@ def main():
     tmux("selectp -t 0")
     tmux('rename-window "LIKE-DBG"')
     kunpacker = {}
-    generic_args = {"skip_prompts": True if args.yes else False, "ctf_ctx": True if args.ctf else False}
+    generic_args = {"skip_prompts": True if args.yes else False, "ctf_ctx": True if args.ctf else False, "log_level": log_level}
     dbge_args = {} | generic_args
     dbg_args = {} | generic_args
 
