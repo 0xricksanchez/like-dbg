@@ -7,6 +7,7 @@ ENV LC_ALL=en_US.UTF-8
 ARG USER
 
 RUN apt-get update && \
+    set -e && \
     apt-get install -yq --no-install-recommends \
         qemu-system \
         openssl \

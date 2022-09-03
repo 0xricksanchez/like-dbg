@@ -5,6 +5,7 @@ ENV DEBIAN_FRONTEND noninteractive
 
 RUN apt-get update && \
     apt-get upgrade -yq && \
+    set -e && \
     apt-get install -yq --no-install-recommends sudo \
         git \
         wget \

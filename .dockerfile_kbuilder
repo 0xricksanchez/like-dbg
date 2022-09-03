@@ -8,9 +8,10 @@ ARG CC
 ARG LLVM
 ARG ARCH
 ARG USER
-ARG CANADIAN_CROSS
+ARG CROSS_COMPILE
 
 RUN apt-get update && \
+    set -e && \
     apt-get install -yq --no-install-recommends \
         libncurses-dev \
         libssl-dev \
