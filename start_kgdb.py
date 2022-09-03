@@ -24,7 +24,6 @@ except ModuleNotFoundError:
 finally:
     if not os.getenv("TMUX"):
         print("-> Not running inside TMUX session!")
-        print("Exiting...")
         exit(-1)
 
 
