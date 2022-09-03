@@ -3,16 +3,29 @@
 import argparse
 from pathlib import Path
 import sys
+import os
 
-from loguru import logger
+try:
+    from loguru import logger
 
-from src.debuggee import Debuggee
-from src.debugger import Debugger
-from src.kernel_builder import KernelBuilder
-from src.kernel_unpacker import KernelUnpacker
-from src.linux_kernel_dl import KernelDownloader
-from src.misc import tmux
-from src.rootfs_builder import RootFSBuilder
+    from src.debuggee import Debuggee
+    from src.debugger import Debugger
+    from src.kernel_builder import KernelBuilder
+    from src.kernel_unpacker import KernelUnpacker
+    from src.linux_kernel_dl import KernelDownloader
+    from src.misc import tmux
+    from src.rootfs_builder import RootFSBuilder
+except ModuleNotFoundError:
+    if sys.prefix == sys.base_prefix:
+        print("-> No virtual environment found!")
+    else:
+        print("-> Is the 'requirements.txt' installed?")
+    exit(-1)
+finally:
+    if not os.getenv("TMUX"):
+        print("-> Not running inside TMUX session!")
+        print("Exiting...")
+        exit(-1)
 
 
 def set_log_level(verbose: bool) -> str:
