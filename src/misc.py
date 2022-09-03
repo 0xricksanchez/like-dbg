@@ -48,20 +48,32 @@ def is_reuse(p: str) -> bool:
         return False
 
 
-def canadian_cross(arch: str) -> str:
+def cross_compile(arch: str) -> str:
     if arch == "arm64":
         return "aarch64-linux-gnu-"
+    elif arch == "riscv64":
+        return "riscv64-linux-gnu-"
     else:
         return "x86_64-pc-linux-gnu-"
 
 
-def adjust_arch(arch: str) -> str:
+def adjust_toolchain_arch(arch: str) -> str:
     if arch == "arm64":
         return "aarch64"
     elif arch == "x86_64":
         return "x86-64"
     else:
         return arch
+
+
+def adjust_arch(arch: str) -> str:
+    if arch == "riscv64":
+        return "riscv"
+    elif arch in ["x86_64", "arm64"]:
+        return arch
+    else:
+        logger.error("Unknown arch")
+        exit(-1)
 
 
 def adjust_qemu_arch(arch: str) -> str:

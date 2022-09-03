@@ -7,6 +7,7 @@ ENV DEBIAN_FRONTEND noninteractive
 WORKDIR /tmp
   
 RUN apt-get update && \
+    set -e && \
     apt-get install -yq --no-install-recommends \
         yes \
         debootstrap \

@@ -9,7 +9,7 @@ import docker
 from loguru import logger
 
 from .docker_runner import DockerRunner
-from .misc import adjust_arch, cfg_setter, canadian_cross
+from .misc import adjust_arch, cfg_setter, cross_compile, adjust_toolchain_arch
 
 
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
@@ -25,14 +25,16 @@ class KernelBuilder(DockerRunner):
         self.guarantee_ssh(self.ssh_dir)
         self.tag = self.tag + f"_{self.arch}"
         self.dirty = kwargs.get("assume_dirty", False)
+        tmp_arch = adjust_arch(self.arch)
         self.buildargs = {
             "USER": self.user,
             "CC": self.compiler,
             "LLVM": "0" if self.compiler == "gcc" else "1",
-            "TOOLCHAIN_ARCH": adjust_arch(self.arch),
-            "CANADIAN_CROSS": canadian_cross(self.arch),
-            "ARCH": self.arch,
+            "TOOLCHAIN_ARCH": adjust_toolchain_arch(self.arch),
+            "CROSS_COMPILE": cross_compile(self.arch),
+            "ARCH": tmp_arch,
         }
+        self.arch = tmp_arch
 
     @staticmethod
     def make_sudo(cmd: str) -> str:
@@ -41,9 +43,10 @@ class KernelBuilder(DockerRunner):
         else:
             return cmd
 
-    def _run_ssh(self, cmd: str) -> int:
+    def _run_ssh(self, cmd: str, **kwargs) -> int:
         cmd = self.make_sudo(cmd)
-        return self.ssh_conn.run(f"cd {self.docker_mnt}/{self.kernel_root} && {cmd}", echo=True).exited
+        warn = kwargs.get("warn", False)
+        return self.ssh_conn.run(f"cd {self.docker_mnt}/{self.kernel_root} && {cmd}", echo=True, warn=warn).exited
 
     def _apply_patches(self):
         if self.patch_dir and Path(self.patch_dir).exists():
@@ -51,9 +54,8 @@ class KernelBuilder(DockerRunner):
             if patch_files:
                 for pfile in patch_files:
                     logger.debug(f"Patching: {pfile}")
-                    if self._run_ssh(f"patch -p1 < ../../{self.patch_dir}/{pfile.name}") != 0:
-                        logger.critical(f"Patching: {pfile}")
-                        exit(-1)
+                    if self._run_ssh(f"patch -p1 < ../../{self.patch_dir}/{pfile.name} > /dev/null", warn=True) != 0:
+                        logger.error(f"Failed to apply patch: {pfile}... Continuing anyway!")
 
     def _build_mrproper(self):
         self._run_ssh(f"{self.cc} ARCH={self.arch} make mrproper")
