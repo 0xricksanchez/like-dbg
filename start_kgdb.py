@@ -17,13 +17,13 @@ try:
     from src.rootfs_builder import RootFSBuilder
 except ModuleNotFoundError:
     if sys.prefix == sys.base_prefix:
-        print("-> No virtual environment found!")
+        print("-> No active virtual environment found!")
     else:
         print("-> Is the 'requirements.txt' installed?")
     exit(-1)
 finally:
     if not os.getenv("TMUX"):
-        print("-> Not running inside TMUX session!")
+        print("-> Not running inside a TMUX session!")
         exit(-1)
 
 

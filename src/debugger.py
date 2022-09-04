@@ -61,6 +61,7 @@ class Debugger(DockerRunner):
         if self._is_gdb_script_hist():
             dst = GDB_SCRIPT_HIST.read_text()
             if dst != src:
+                logger.info(f"Detected changes in {self.gdb_script}. Rebuilding debugger!")
                 self.force_rebuild = True
                 GDB_SCRIPT_HIST.write_text(src)
         else:
