@@ -66,7 +66,7 @@ class KernelDownloader:
 
     def is_present(self) -> bool:
         if Path(self.archive).exists():
-            logger.debug("Kernel archive already exists locally. Skipping download...")
+            logger.info("Kernel archive already exists locally. Skipping download...")
             return True
         else:
             return False

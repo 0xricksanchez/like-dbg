@@ -58,7 +58,7 @@ def stage4(skip: bool, **kwargs) -> None:
 def stage3(skip: bool, **kwargs) -> dict:
     kunpacker = stage2(kwargs)
     if not kunpacker["status_code"] and not skip:
-        KernelBuilder(**kwargs | kunpacker).run()
+        KernelBuilder(kwargs | kunpacker).run()
     return kunpacker
 
 
