@@ -97,14 +97,14 @@ def main():
     if args.dry:
         logger.debug("Executing in dry-run context")
         if args.dry == 1:
-            pass
+            stage1()
         elif args.dry == 2:
-            pass
+            stage2(**generic_args)
         elif args.dry == 3:
-            pass
+            stage3(**generic_args)
         else:
-            pass
-
+            stage4(**generic_args, skip=True)
+        exit(0)
 
 
     if args.ctf and args.env:
@@ -121,13 +121,7 @@ def main():
         dbg_args = {k: v for k, v in dbge_args.items() if k != "ctf_fs"}
     else:
         logger.debug("Executing in non-CTF context")
-
-        kaname = KernelDownloader().run()
-        kunpacker = KernelUnpacker(kaname, **generic_args).run()
-        exit(1)
-        if not kunpacker["status_code"]:
-            KernelBuilder(**generic_args | kunpacker).run()
-        RootFSBuilder(**generic_args | kunpacker).run()
+        stage4(**generic_args, skip=False)
 
     tmux("splitw -h -p 50")
     tmux("selectp -t 0")
@@ -139,8 +133,25 @@ def main():
     tmux("selectp -t 0")
 
 
-def stage4() -> None:
-    pass
+def stage4(**kwargs, skip:bool = False) -> None:
+    kunpacker = stage3(**kwargs, skip)
+    RootFSBuilder(**kwargs | kunpacker)
+
+def stage3(**kwargs, skip:bool = False) -> None:
+    kunpacker = stage2(**kwargs)
+    if not kunpacker["status_code"] and not skip:
+        KernelBuilder(**kwargs | kunpacker)
+    return kunpacker
+
+
+def stage2(**kwargs) -> dict:
+    kaname = stage1()
+    return KernelUnpacker(kaname, **kwargs).run()
+
+
+def stage1() -> str:
+    return KernelDownloader().run()
+
 
 
 if __name__ == "__main__":
