@@ -41,7 +41,7 @@ def kill_session() -> None:
     containers = DockerRunner(kroot="foobar").list_running_containers()
     for c in containers:
         if c.status == "running" and next((s for s in c.image.tags if "like_" in s), None):
-            c.stop(timeout=2)
+            c.stop(timeout=0)
             logger.debug(f"Stopped {c.image.tags}")
     tmux("kill-pane -a -t 0")
     logger.info("Debugging session ended.")
