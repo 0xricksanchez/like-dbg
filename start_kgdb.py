@@ -50,13 +50,18 @@ def kill_session() -> None:
 
 
 def stage4(skip: bool, **kwargs) -> None:
-    kunpacker = stage3(skip, kwargs)
+    if not skip:
+        kunpacker = stage3(skip, **kwargs)
+        RootFSBuilder(**kwargs | kunpacker).run()
+    else:
+        RootFSBuilder(**kwargs, kroot="foobar").run()
+    # {'kroot': PosixPath('kernel_root/linux-5.10.77_x86_64'), 'status_code': 0, 'assume_dirty': True}
     logger.info(kunpacker)
-    RootFSBuilder(kwargs | kunpacker).run()
+    logger.info(kwargs)
 
 
 def stage3(skip: bool, **kwargs) -> dict:
-    kunpacker = stage2(kwargs)
+    kunpacker = stage2(**kwargs)
     if not kunpacker["status_code"] and not skip:
         KernelBuilder(kwargs | kunpacker).run()
     return kunpacker
@@ -84,8 +89,8 @@ def main():
     parser.add_argument("--verbose", "-v", action=argparse.BooleanOptionalAction, help="Enable debug logging")
     parser.add_argument("--kill", "-k", action=argparse.BooleanOptionalAction, help="Completely shutdown current session")
     parser.add_argument(
-        "--dry",
-        "-d",
+        "--partial",
+        "-p",
         type=int,
         choices=range(1, 5),
         help=textwrap.dedent(
@@ -116,16 +121,16 @@ def main():
     dbge_args = {} | generic_args
     dbg_args = {} | generic_args
 
-    if args.dry:
-        logger.debug("Executing in dry-run context")
-        if args.dry == 1:
+    if args.partial:
+        logger.debug("Executing in partial-run context")
+        if args.partial == 1:
             stage1()
-        elif args.dry == 2:
+        elif args.partial == 2:
             stage2(**generic_args)
-        elif args.dry == 3:
+        elif args.partial == 3:
             stage3(**generic_args)
         else:
-            stage4(**generic_args, skip=True)
+            stage4(skip=True, **generic_args)
         exit(0)
 
     if args.ctf and args.env:
