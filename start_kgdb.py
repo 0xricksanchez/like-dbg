@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import textwrap
 from pathlib import Path
 import sys
 import os
@@ -49,7 +50,7 @@ def kill_session() -> None:
 
 
 def main():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument(
         "--ctf",
         "-c",
@@ -60,6 +61,20 @@ def main():
     parser.add_argument("--yes", "-y", action=argparse.BooleanOptionalAction, help="If this is set all re-use prompts are answered with 'yes'")
     parser.add_argument("--verbose", "-v", action=argparse.BooleanOptionalAction, help="Enable debug logging")
     parser.add_argument("--kill", "-k", action=argparse.BooleanOptionalAction, help="Completely shutdown current session")
+    parser.add_argument(
+        "--dry",
+        "-d",
+        type=int,
+        choices=range(1, 5),
+        help=textwrap.dedent(
+            """\
+    Stage 1 - Kernel download only,
+    Stage 2 - Stage 1 & unpacking,
+    Stage 3 - Stage 2 & building,
+    Stage 4 - RootFS building only.
+    """
+        ),
+    )
     args = parser.parse_args()
     log_level = set_log_level(args.verbose)
 
@@ -79,6 +94,19 @@ def main():
     dbge_args = {} | generic_args
     dbg_args = {} | generic_args
 
+    if args.dry:
+        logger.debug("Executing in dry-run context")
+        if args.dry == 1:
+            pass
+        elif args.dry == 2:
+            pass
+        elif args.dry == 3:
+            pass
+        else:
+            pass
+
+
+
     if args.ctf and args.env:
         logger.debug("Executing in CTF context")
         ctf_kernel = Path(args.env[0])
@@ -96,6 +124,7 @@ def main():
 
         kaname = KernelDownloader().run()
         kunpacker = KernelUnpacker(kaname, **generic_args).run()
+        exit(1)
         if not kunpacker["status_code"]:
             KernelBuilder(**generic_args | kunpacker).run()
         RootFSBuilder(**generic_args | kunpacker).run()
@@ -108,6 +137,10 @@ def main():
     tmux("selectp -t 0")
     Debugger(**dbg_args | kunpacker).run()
     tmux("selectp -t 0")
+
+
+def stage4() -> None:
+    pass
 
 
 if __name__ == "__main__":

@@ -32,7 +32,7 @@ class KernelDownloader:
         elif self.commit:
             return self.commit
         else:
-            self._resolve_latest()
+            return self._resolve_latest()
 
     def _resolve_latest(self) -> str:
         commit_re = rb"commit\/\?id=[0-9a-z]*"
@@ -62,7 +62,7 @@ class KernelDownloader:
             self.mmp_uri = self.mmp_uri.replace("KPATCH", patch)
             return self.mmp_uri
         else:
-            return "{self.snap_uri}{self.choice}.tar.gz"
+            return f"{self.snap_uri}{self.choice}.tar.gz"
 
     def is_present(self) -> bool:
         if Path(self.archive).exists():
