@@ -114,7 +114,7 @@ python3 -m pip install -r requirements.txt
 # If you want to try a CTF challenge where you were given a compressed Linux Image and a root filesystem try:
 ./start_kgdb.py --ctf --env <Image> <RootFS>
 # If you want to kill the current debugging session
-./start_kgdb --kill
+./start_kgdb.py --kill
 ```
 
 ## Showcase
