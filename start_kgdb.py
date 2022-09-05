@@ -13,6 +13,7 @@ try:
     from src.kernel_builder import KernelBuilder
     from src.kernel_unpacker import KernelUnpacker
     from src.linux_kernel_dl import KernelDownloader
+    from src.docker_runner import DockerRunner
     from src.misc import tmux
     from src.rootfs_builder import RootFSBuilder
 except ModuleNotFoundError:
@@ -34,6 +35,19 @@ def set_log_level(verbose: bool) -> str:
     return log_level
 
 
+def kill_session() -> None:
+    tmux("selectw -t 'LIKE-DBG'")
+    tmux("selectp -t 0")
+    containers = DockerRunner(kroot="foobar").list_running_containers()
+    for c in containers:
+        if c.status == "running" and next((s for s in c.image.tags if "like_" in s), None):
+            c.stop(timeout=2)
+            logger.debug(f"Stopped {c.image.tags}")
+    tmux("kill-pane -a -t 0")
+    logger.info("Debugging session ended.")
+    exit(0)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -45,14 +59,20 @@ def main():
     parser.add_argument("--env", "-e", nargs=2, help="Expected: <kernel_image> <root_file_system>")
     parser.add_argument("--yes", "-y", action=argparse.BooleanOptionalAction, help="If this is set all re-use prompts are answered with 'yes'")
     parser.add_argument("--verbose", "-v", action=argparse.BooleanOptionalAction, help="Enable debug logging")
+    parser.add_argument("--kill", "-k", action=argparse.BooleanOptionalAction, help="Completely shutdown current session")
     args = parser.parse_args()
     log_level = set_log_level(args.verbose)
+
+    if args.kill:
+        kill_session()
+
     if args.ctf and not args.env:
         logger.error("Found --ctf but no environment was specified...")
         logger.error(f"Usage: python3 {Path(__file__).name} --ctf --env <kernel> <rootfs>")
         exit(-1)
 
     tmux("selectp -t 0")
+    tmux('rename-session "LIKE-DBG"')
     tmux('rename-window "LIKE-DBG"')
     kunpacker = {}
     generic_args = {"skip_prompts": True if args.yes else False, "ctf_ctx": True if args.ctf else False, "log_level": log_level}

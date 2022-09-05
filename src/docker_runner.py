@@ -106,6 +106,9 @@ class DockerRunner:
     def stop_container(self) -> None:
         self.container.stop()
 
+    def list_running_containers(self) -> list[docker.client.DockerClient.containers]:
+        return self.client.containers.list()
+
     def wait_for_container(self) -> None:
         ret = self.container.wait()
         if ret["StatusCode"] != 0:
