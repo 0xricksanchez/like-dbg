@@ -49,6 +49,28 @@ def kill_session() -> None:
     exit(0)
 
 
+def stage4(skip: bool, **kwargs) -> None:
+    kunpacker = stage3(skip, kwargs)
+    logger.info(kunpacker)
+    RootFSBuilder(kwargs | kunpacker).run()
+
+
+def stage3(skip: bool, **kwargs) -> dict:
+    kunpacker = stage2(kwargs)
+    if not kunpacker["status_code"] and not skip:
+        KernelBuilder(**kwargs | kunpacker).run()
+    return kunpacker
+
+
+def stage2(**kwargs) -> dict:
+    kaname = stage1()
+    return KernelUnpacker(kaname, **kwargs).run()
+
+
+def stage1() -> str:
+    return KernelDownloader().run()
+
+
 def main():
     parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument(
@@ -106,7 +128,6 @@ def main():
             stage4(**generic_args, skip=True)
         exit(0)
 
-
     if args.ctf and args.env:
         logger.debug("Executing in CTF context")
         ctf_kernel = Path(args.env[0])
@@ -131,27 +152,6 @@ def main():
     tmux("selectp -t 0")
     Debugger(**dbg_args | kunpacker).run()
     tmux("selectp -t 0")
-
-
-def stage4(**kwargs, skip:bool = False) -> None:
-    kunpacker = stage3(**kwargs, skip)
-    RootFSBuilder(**kwargs | kunpacker)
-
-def stage3(**kwargs, skip:bool = False) -> None:
-    kunpacker = stage2(**kwargs)
-    if not kunpacker["status_code"] and not skip:
-        KernelBuilder(**kwargs | kunpacker)
-    return kunpacker
-
-
-def stage2(**kwargs) -> dict:
-    kaname = stage1()
-    return KernelUnpacker(kaname, **kwargs).run()
-
-
-def stage1() -> str:
-    return KernelDownloader().run()
-
 
 
 if __name__ == "__main__":
