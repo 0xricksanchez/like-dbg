@@ -5,6 +5,7 @@ import textwrap
 from pathlib import Path
 import sys
 import os
+import signal
 
 try:
     from loguru import logger
@@ -34,6 +35,11 @@ def set_log_level(verbose: bool) -> str:
     log_level = "DEBUG" if verbose else "INFO"
     logger.add(sys.stderr, level=log_level)
     return log_level
+
+
+def signal_handler(sig, frame) -> None:
+    logger.critical("Received CTRL+C. Shutting down!")
+    kill_session()
 
 
 def kill_session() -> None:
@@ -120,6 +126,7 @@ def parse_cli() -> argparse.Namespace:
 
 
 def main():
+    signal.signal(signal.SIGINT, signal_handler)
     args = parse_cli()
     log_level = set_log_level(args.verbose)
 
