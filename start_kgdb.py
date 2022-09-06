@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import textwrap
 from pathlib import Path
 import sys
 import os
@@ -48,8 +49,49 @@ def kill_session() -> None:
     exit(0)
 
 
-def main():
-    parser = argparse.ArgumentParser()
+def stage5(skip: bool, ctf: bool, generic_args: dict, dbge_args: dict, dbg_args: dict) -> None:
+    if not ctf:
+        kunpacker = stage4(skip, **generic_args)
+    else:
+        kunpacker = {}
+    tmux("splitw -h -p 50")
+    tmux("selectp -t 0")
+    tmux("splitw -v -p 50")
+    tmux("selectp -t 0")
+    Debuggee(**dbge_args | kunpacker).run()
+    tmux("selectp -t 0")
+    Debugger(**dbg_args | kunpacker).run()
+    tmux("selectp -t 0")
+
+
+def stage4(skip: bool, **kwargs) -> dict[str, str]:
+    if not skip:
+        kunpacker = stage3(skip, **kwargs)
+        RootFSBuilder(**kwargs | kunpacker).run()
+        return kunpacker
+    else:
+        RootFSBuilder(**kwargs, kroot="foobar").run()
+        return {}
+
+
+def stage3(skip: bool, **kwargs) -> dict:
+    kunpacker = stage2(**kwargs)
+    if not kunpacker["status_code"] and not skip:
+        KernelBuilder(**kwargs | kunpacker).run()
+    return kunpacker
+
+
+def stage2(**kwargs) -> dict:
+    kaname = stage1()
+    return KernelUnpacker(kaname, **kwargs).run()
+
+
+def stage1() -> Path:
+    return KernelDownloader().run()
+
+
+def parse_cli() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument(
         "--ctf",
         "-c",
@@ -60,7 +102,25 @@ def main():
     parser.add_argument("--yes", "-y", action=argparse.BooleanOptionalAction, help="If this is set all re-use prompts are answered with 'yes'")
     parser.add_argument("--verbose", "-v", action=argparse.BooleanOptionalAction, help="Enable debug logging")
     parser.add_argument("--kill", "-k", action=argparse.BooleanOptionalAction, help="Completely shutdown current session")
-    args = parser.parse_args()
+    parser.add_argument(
+        "--partial",
+        "-p",
+        type=int,
+        choices=range(1, 5),
+        help=textwrap.dedent(
+            """\
+    Stage 1 - Kernel download only,
+    Stage 2 - Stage 1 & unpacking,
+    Stage 3 - Stage 2 & building,
+    Stage 4 - RootFS building only.
+    """
+        ),
+    )
+    return parser.parse_args()
+
+
+def main():
+    args = parse_cli()
     log_level = set_log_level(args.verbose)
 
     if args.kill:
@@ -74,10 +134,21 @@ def main():
     tmux("selectp -t 0")
     tmux('rename-session "LIKE-DBG"')
     tmux('rename-window "LIKE-DBG"')
-    kunpacker = {}
     generic_args = {"skip_prompts": True if args.yes else False, "ctf_ctx": True if args.ctf else False, "log_level": log_level}
     dbge_args = {} | generic_args
     dbg_args = {} | generic_args
+
+    if args.partial:
+        logger.debug("Executing in partial-run context")
+        if args.partial == 1:
+            stage1()
+        elif args.partial == 2:
+            stage2(**generic_args)
+        elif args.partial == 3:
+            stage3(skip=False, **generic_args)
+        else:
+            stage4(skip=True, **generic_args)
+        exit(0)
 
     if args.ctf and args.env:
         logger.debug("Executing in CTF context")
@@ -91,23 +162,12 @@ def main():
             exit(-1)
         dbge_args = generic_args | {"ctf_kernel": ctf_kernel, "ctf_fs": ctf_fs}
         dbg_args = {k: v for k, v in dbge_args.items() if k != "ctf_fs"}
+        skip = True
     else:
         logger.debug("Executing in non-CTF context")
+        skip = False
 
-        kaname = KernelDownloader().run()
-        kunpacker = KernelUnpacker(kaname, **generic_args).run()
-        if not kunpacker["status_code"]:
-            KernelBuilder(**generic_args | kunpacker).run()
-        RootFSBuilder(**generic_args | kunpacker).run()
-
-    tmux("splitw -h -p 50")
-    tmux("selectp -t 0")
-    tmux("splitw -v -p 50")
-    tmux("selectp -t 0")
-    Debuggee(**dbge_args | kunpacker).run()
-    tmux("selectp -t 0")
-    Debugger(**dbg_args | kunpacker).run()
-    tmux("selectp -t 0")
+    stage5(skip, generic_args["ctf_ctx"], generic_args, dbge_args, dbg_args)
 
 
 if __name__ == "__main__":
