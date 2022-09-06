@@ -49,8 +49,8 @@ def kill_session() -> None:
     exit(0)
 
 
-def stage5(skip: bool, ctf: bool, generic_args: dict, dbge_args: dict, dbg_args: dict) -> None:
-    if not ctf:
+def stage5(skip: bool, generic_args: dict, dbge_args: dict, dbg_args: dict) -> None:
+    if not generic_args["ctf_ctx"]:
         kunpacker = stage4(skip, **generic_args)
     else:
         kunpacker = {}
@@ -58,9 +58,9 @@ def stage5(skip: bool, ctf: bool, generic_args: dict, dbge_args: dict, dbg_args:
     tmux("selectp -t 0")
     tmux("splitw -v -p 50")
     tmux("selectp -t 0")
-    Debuggee(**dbge_args | kunpacker).run()
+    Debuggee(**dbge_args | kunpacker | generic_args).run()
     tmux("selectp -t 0")
-    Debugger(**dbg_args | kunpacker).run()
+    Debugger(**dbg_args | kunpacker | generic_args).run()
     tmux("selectp -t 0")
 
 
@@ -135,8 +135,8 @@ def main():
     tmux('rename-session "LIKE-DBG"')
     tmux('rename-window "LIKE-DBG"')
     generic_args = {"skip_prompts": True if args.yes else False, "ctf_ctx": True if args.ctf else False, "log_level": log_level}
-    dbge_args = {} | generic_args
-    dbg_args = {} | generic_args
+    dbge_args = {}
+    dbg_args = {}
 
     if args.partial:
         logger.debug("Executing in partial-run context")
@@ -167,7 +167,7 @@ def main():
         logger.debug("Executing in non-CTF context")
         skip = False
 
-    stage5(skip, generic_args["ctf_ctx"], generic_args, dbge_args, dbg_args)
+    stage5(skip, generic_args, dbge_args, dbg_args)
 
 
 if __name__ == "__main__":
