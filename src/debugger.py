@@ -47,7 +47,7 @@ class Debugger(DockerRunner):
                 exit(-1)
 
     def run_container(self) -> None:
-        entrypoint = f'/bin/bash -c "{self.script_logging}; . /home/{self.user}/debugger.sh -a {self.arch} -p {self.docker_mnt} -c {self.ctf} -g {self.custom_gdb_script}"'
+        entrypoint = f'/bin/bash -c "{self.script_logging}; . /home/{self.user}/debugger.sh -a {self.arch} -p {self.docker_mnt} -c {self.ctf} -g {self.custom_gdb_script} -e {self.ext}"'
         runner = f'docker run -it --rm --security-opt seccomp=unconfined --cap-add=SYS_PTRACE -v {self.project_dir}:/io --net="host" {self.tag} {entrypoint}'
         tmux("selectp -t 2")
         tmux_shell(runner)
