@@ -26,6 +26,7 @@ class KernelBuilder(DockerRunner):
         self.tag = self.tag + f"_{self.arch}"
         self.dirty = kwargs.get("assume_dirty", False)
         tmp_arch = adjust_arch(self.arch)
+        self.config = Path(self.config)
         self.buildargs = {
             "USER": self.user,
             "CC": self.compiler,
@@ -117,9 +118,12 @@ class KernelBuilder(DockerRunner):
 
     def run_container(self) -> None:
         try:
+            volumes = {f"{Path.cwd()}": {"bind": f"{self.docker_mnt}", "mode": "rw"}}
+            if self.mode == "config":
+                volumes |= {f"{self.config.absolute().parent}": {"bind": "/tmp/", "mode": "rw"}}
             self.container = self.client.containers.run(
                 self.image,
-                volumes=[f"{Path.cwd()}:{self.docker_mnt}"],
+                volumes=volumes,
                 ports={"22/tcp": self.ssh_fwd_port},
                 detach=True,
                 tty=True,
@@ -128,12 +132,15 @@ class KernelBuilder(DockerRunner):
             self.init_ssh()
             if self.dirty:
                 self._make_clean()
-            self._build_mrproper()
-            self._apply_patches()
-            self._build_arch()
-            if self.kvm:
-                self._build_kvm_guest()
-            self._configure_kernel()
+            if self.mode != "config":
+                self._build_mrproper()
+                self._apply_patches()
+                self._build_arch()
+                if self.kvm:
+                    self._build_kvm_guest()
+                self._configure_kernel()
+            else:
+                self._run_ssh(f"cp /tmp/{self.config.stem} .config")
             self._make()
         except Exception as e:
             logger.error(f"Oops: {e}")
