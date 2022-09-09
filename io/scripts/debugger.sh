@@ -80,18 +80,19 @@ case "$ARCH" in
 esac
 
 GDB="gdb-multiarch -q \"$VMLINUX\" -iex \"set architecture $ARCH\" \
-    -ex \"add-symbol-file $VMLINUX\" \
-    -ex \"break start_kernel\" \
-    -ex \"continue\" \
-    -ex \"lx-symbols\" \
-    -ex \"macro define offsetof(_type, _memb) ((long)(&((_type *)0)->_memb))\" \
-    -ex \"macro define containerof(_ptr, _type, _memb) ((_type *)((void *)(_ptr) - offsetof(_type, _memb)))\" \
-    -x \"$PATH_GDB_SCRIPT\""
+    -ex \"add-symbol-file $VMLINUX\""
 
 if [ "$EXT" == "gef" ]; then
     GDB="${GDB} -ex \"gef-remote --qemu-user --qemu-binary $VMLINUX localhost 1234\""
 else
     GDB="${GDB} -ex \"target remote :1234\""
 fi
+
+GDB="${GDB} -ex \"break start_kernel\" \
+    -ex \"continue\" \
+    -ex \"lx-symbols\" \
+    -ex \"macro define offsetof(_type, _memb) ((long)(&((_type *)0)->_memb))\" \
+    -ex \"macro define containerof(_ptr, _type, _memb) ((_type *)((void *)(_ptr) - offsetof(_type, _memb)))\" \
+    -x \"$PATH_GDB_SCRIPT\""
 
 eval "$GDB"
