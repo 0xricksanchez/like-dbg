@@ -72,6 +72,7 @@ class KernelBuilder(DockerRunner):
         self._run_ssh(f"{self.cc} {self.llvm_flag} ARCH={self.arch} make kvm_guest.config")
 
     def _configure_kernel(self) -> None:
+        if self.mode == "config"
         if self.mode == "syzkaller":
             params = self.syzkaller_args
         elif self.mode == "generic":
