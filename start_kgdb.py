@@ -51,7 +51,7 @@ def kill_session() -> None:
             if c.status == "running" and next((s for s in c.image.tags if "like_" in s), None):
                 c.stop(timeout=0)
                 logger.debug(f"Stopped {c.image.tags}")
-    except:
+    except Exception:
         logger.debug("Something went wrong...")
     finally:
         tmux("kill-pane -a -t 0")
