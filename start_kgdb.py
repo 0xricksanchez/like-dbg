@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
 
 import argparse
-import textwrap
-from pathlib import Path
-import sys
 import os
 import signal
+import sys
+import textwrap
+from pathlib import Path
 
 try:
     from loguru import logger
 
     from src.debuggee import Debuggee
     from src.debugger import Debugger
+    from src.docker_runner import DockerRunner
     from src.kernel_builder import KernelBuilder
     from src.kernel_unpacker import KernelUnpacker
     from src.linux_kernel_dl import KernelDownloader
-    from src.docker_runner import DockerRunner
     from src.misc import tmux
     from src.rootfs_builder import RootFSBuilder
 except ModuleNotFoundError:

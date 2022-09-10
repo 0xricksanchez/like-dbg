@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 
 import configparser
+import hashlib
 import os
 import subprocess as sp
-import hashlib
 from contextlib import contextmanager
 from pathlib import Path
 from sys import stdin
-from termios import tcflush, TCIFLUSH
+from termios import TCIFLUSH, tcflush
 
 from loguru import logger
 

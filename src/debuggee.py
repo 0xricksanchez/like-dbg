@@ -7,7 +7,7 @@ import docker
 from loguru import logger
 
 from .docker_runner import DockerRunner
-from .misc import tmux, tmux_shell, cfg_setter, adjust_qemu_arch
+from .misc import adjust_qemu_arch, cfg_setter, tmux, tmux_shell
 
 
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+

@@ -9,7 +9,7 @@ import docker
 from loguru import logger
 
 from .docker_runner import DockerRunner
-from .misc import adjust_arch, cfg_setter, cross_compile, adjust_toolchain_arch
+from .misc import adjust_arch, adjust_toolchain_arch, cfg_setter, cross_compile
 
 
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+

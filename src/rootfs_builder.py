@@ -6,7 +6,7 @@ import docker
 from loguru import logger
 
 from .docker_runner import DockerRunner
-from .misc import cfg_setter, adjust_qemu_arch, is_reuse
+from .misc import adjust_qemu_arch, cfg_setter, is_reuse
 
 
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
