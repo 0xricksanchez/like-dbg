@@ -77,11 +77,12 @@ class KernelBuilder(DockerRunner):
             params = self.syzkaller_args
         elif self.mode == "generic":
             params = self.generic_args
-        else:
+        elif self.mode == "custom":
             params = self._configure_custom()
         if self.extra_args:
             params = self._configure_extra_args(params)
-        self._run_ssh(f"./scripts/config {params}")
+        if params:
+            self._run_ssh(f"./scripts/config {params}")
 
     def _configure_extra_args(self, params: str) -> str:
         for idx, opt in enumerate(self.extra_args.split()[1::2]):
@@ -138,9 +139,9 @@ class KernelBuilder(DockerRunner):
                 self._build_arch()
                 if self.kvm:
                     self._build_kvm_guest()
-                self._configure_kernel()
             else:
                 self._run_ssh(f"cp /tmp/{self.config.stem} .config")
+            self._configure_kernel()
             self._make()
         except Exception as e:
             logger.error(f"Oops: {e}")
