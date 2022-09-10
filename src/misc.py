@@ -28,12 +28,16 @@ def cfg_setter(obj, sections: list[str], user_cfg: str, exclude_keys: list[str] 
         cfg = configparser.ConfigParser()
         cfg.read(c)
         for sect in sections:
+            if sect not in cfg:
+                continue
             for key in cfg[sect]:
                 if key not in exclude_keys:
                     tmp = cfg[sect][key]
                     val = tmp if tmp not in ["yes", "no"] else cfg[sect].getboolean(key)
                     setattr(obj, key, val)
         for entry in cherry_pick.keys():
+            if entry not in cfg:
+                continue
             for key in cfg[entry]:
                 if key in cherry_pick[entry]:
                     tmp = cfg[entry][key]
