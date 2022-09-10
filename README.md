@@ -131,6 +131,7 @@ python3 -m pip install -r requirements.txt
 # Stage 2: Stage 1 & unpack Kernel
 # Stage 3: Stage 2 & build Kernel
 # Stage 4: Only build a root file system
+# Stage 5: Stage 3+4 & start debuggee
 ./start_kgdb.py -p <stage_nr>
 ```
 

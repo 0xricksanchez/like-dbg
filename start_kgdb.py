@@ -59,19 +59,24 @@ def kill_session() -> None:
     exit(0)
 
 
-def stage5(skip: bool, generic_args: dict, dbge_args: dict, dbg_args: dict) -> None:
+def stage6(skip: bool, generic_args: dict, dbge_args: dict, dbg_args: dict) -> None:
+    kunpacker = stage5(skip, generic_args, dbge_args)
+    tmux("selectp -t 0")
+    tmux("splitw -v -p 50")
+    tmux("selectp -t 0")
+    Debugger(**dbg_args | kunpacker | generic_args).run()
+    tmux("selectp -t 0")
+
+
+def stage5(skip: bool, generic_args: dict, dbge_args: dict) -> dict[str, str]:
     if not generic_args["ctf_ctx"]:
         kunpacker = stage4(skip, **generic_args)
     else:
         kunpacker = {}
     tmux("splitw -h -p 50")
     tmux("selectp -t 0")
-    tmux("splitw -v -p 50")
-    tmux("selectp -t 0")
     Debuggee(**dbge_args | kunpacker | generic_args).run()
-    tmux("selectp -t 0")
-    Debugger(**dbg_args | kunpacker | generic_args).run()
-    tmux("selectp -t 0")
+    return kunpacker
 
 
 def stage4(skip: bool, **kwargs) -> dict[str, str]:
@@ -120,6 +125,7 @@ def parse_cli() -> argparse.Namespace:
     Stage 2 - Stage 1 & unpacking,
     Stage 3 - Stage 2 & building,
     Stage 4 - RootFS building only.
+    Stage 5 - Stage 3+4 & Starting the debugee.
     """
         ),
     )
@@ -145,6 +151,7 @@ def main():
     }
     dbge_args = {}
     dbg_args = {}
+    skip = False
 
     if args.partial:
         logger.debug("Executing in partial-run context")
@@ -154,8 +161,10 @@ def main():
             stage2(**generic_args)
         elif args.partial == 3:
             stage3(skip=False, **generic_args)
-        else:
+        elif args.partial == 4:
             stage4(skip=True, **generic_args)
+        else:
+            stage5(skip, generic_args, dbge_args)
         exit(0)
 
     if args.ctf:
@@ -173,9 +182,8 @@ def main():
         skip = True
     else:
         logger.debug("Executing in non-CTF context")
-        skip = False
 
-    stage5(skip, generic_args, dbge_args, dbg_args)
+    stage6(skip, generic_args, dbge_args, dbg_args)
 
 
 if __name__ == "__main__":
