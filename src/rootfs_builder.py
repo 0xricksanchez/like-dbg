@@ -6,7 +6,7 @@ import docker
 from loguru import logger
 
 from .docker_runner import DockerRunner
-from .misc import cfg_setter, adjust_qemu_arch, is_reuse
+from .misc import adjust_qemu_arch, cfg_setter, is_reuse
 
 
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
@@ -15,7 +15,8 @@ from .misc import cfg_setter, adjust_qemu_arch, is_reuse
 class RootFSBuilder(DockerRunner):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
-        cfg_setter(self, ["rootfs_general", "rootfs_builder", "general"])
+        user_cfg = kwargs.get("user_cfg", "")
+        cfg_setter(self, ["rootfs_general", "rootfs_builder", "general"], user_cfg)
         self.cli = docker.APIClient(base_url=self.docker_sock)
         self.fs_name = self.rootfs_base + self.arch + self.rootfs_ftype
         self.rootfs_path = self.rootfs_dir + self.fs_name

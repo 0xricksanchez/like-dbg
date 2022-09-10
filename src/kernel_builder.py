@@ -9,7 +9,7 @@ import docker
 from loguru import logger
 
 from .docker_runner import DockerRunner
-from .misc import adjust_arch, cfg_setter, cross_compile, adjust_toolchain_arch
+from .misc import adjust_arch, adjust_toolchain_arch, cfg_setter, cross_compile
 
 
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
@@ -18,7 +18,10 @@ from .misc import adjust_arch, cfg_setter, cross_compile, adjust_toolchain_arch
 class KernelBuilder(DockerRunner):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
-        cfg_setter(self, ["kernel_builder", "general", "kernel_builder_docker"], exclude_keys=["kernel_root"], cherry_pick={"debuggee": ["kvm"]})
+        user_cfg = kwargs.get("user_cfg", "")
+        cfg_setter(
+            self, ["kernel_builder", "general", "kernel_builder_docker"], user_cfg, exclude_keys=["kernel_root"], cherry_pick={"debuggee": ["kvm"]}
+        )
         self.cc = f"CC={self.compiler}" if self.compiler else ""
         self.llvm_flag = "" if "gcc" in self.cc else "LLVM=1"
         self.cli = docker.APIClient(base_url=self.docker_sock)
@@ -26,6 +29,7 @@ class KernelBuilder(DockerRunner):
         self.tag = self.tag + f"_{self.arch}"
         self.dirty = kwargs.get("assume_dirty", False)
         tmp_arch = adjust_arch(self.arch)
+        self.config = Path(self.config)
         self.buildargs = {
             "USER": self.user,
             "CC": self.compiler,
@@ -76,11 +80,12 @@ class KernelBuilder(DockerRunner):
             params = self.syzkaller_args
         elif self.mode == "generic":
             params = self.generic_args
-        else:
+        elif self.mode == "custom":
             params = self._configure_custom()
         if self.extra_args:
             params = self._configure_extra_args(params)
-        self._run_ssh(f"./scripts/config {params}")
+        if params:
+            self._run_ssh(f"./scripts/config {params}")
 
     def _configure_extra_args(self, params: str) -> str:
         for idx, opt in enumerate(self.extra_args.split()[1::2]):
@@ -117,9 +122,12 @@ class KernelBuilder(DockerRunner):
 
     def run_container(self) -> None:
         try:
+            volumes = {f"{Path.cwd()}": {"bind": f"{self.docker_mnt}", "mode": "rw"}}
+            if self.mode == "config":
+                volumes |= {f"{self.config.absolute().parent}": {"bind": "/tmp/", "mode": "rw"}}
             self.container = self.client.containers.run(
                 self.image,
-                volumes=[f"{Path.cwd()}:{self.docker_mnt}"],
+                volumes=volumes,
                 ports={"22/tcp": self.ssh_fwd_port},
                 detach=True,
                 tty=True,
@@ -128,11 +136,14 @@ class KernelBuilder(DockerRunner):
             self.init_ssh()
             if self.dirty:
                 self._make_clean()
-            self._build_mrproper()
-            self._apply_patches()
-            self._build_arch()
-            if self.kvm:
-                self._build_kvm_guest()
+            if self.mode != "config":
+                self._build_mrproper()
+                self._apply_patches()
+                self._build_arch()
+                if self.kvm:
+                    self._build_kvm_guest()
+            else:
+                self._run_ssh(f"cp /tmp/{self.config.stem} .config")
             self._configure_kernel()
             self._make()
         except Exception as e:

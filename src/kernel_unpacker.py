@@ -15,7 +15,7 @@ from .misc import cfg_setter, is_reuse
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
 class KernelUnpacker:
     def __init__(self, p: Path, **kwargs) -> None:
-        cfg_setter(self, ["general"])
+        cfg_setter(self, ["general"], "")
         self.archive = p
         self.ex_name = ".".join(self.archive.name.split(".")[:-2])  # FIXME only works for formats like .tar.gz
         if not Path(self.kernel_root).exists():
@@ -66,6 +66,7 @@ class KernelUnpacker:
             return res | {"status_code": 0}
         elif not self._is_dest_empty():
             if self._is_vmlinux():
+                logger.info(f"{self.kernel_root} exists. Skipping unpacking phase...")
                 if self.skip_prompts or self._reuse_existing_vmlinux():
                     logger.debug(f"Re-using existing {self.kernel_root}/vmlinux")
                     return res | {"status_code": 1}

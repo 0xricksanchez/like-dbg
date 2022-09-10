@@ -35,7 +35,8 @@ On the upside, despite its early stages, a couple of useful features are already
 
 * General:
   * Minimal host system requirements due to dockerization of every step
-  * A single config (`config.ini`) to allow free customization
+  * An easy to grasp `configs/user.ini` config that allows highly customizable sessions
+    * Or provide different configurations for different debgging setups via the command-line!
   * CTF runner that's specifically designed to handle Linux kernel exploitation challenges
     * `ctf/misc` that houses some nifty scripts to aid in CTFs
   * Code quality measures:
@@ -111,10 +112,26 @@ python3 -m pip install --upgrade pip
 python3 -m pip install -r requirements.txt
 # If you want to build a Linux kernel image from scratch for a specific version to debug, go ahead and run:
 ./start_kgdb.py
-# If you want to try a CTF challenge where you were given a compressed Linux Image and a root filesystem try:
-./start_kgdb.py --ctf --env <Image> <RootFS>
+```
+
+### Extended Usage:
+
+```sh
+# If you want to try a CTF challenge where you were given a (compressed) Linux Image and a root filesystem try:
+./start_kgdb.py --ctf <Image> <RootFS>
+
 # If you want to kill the current debugging session
 ./start_kgdb.py --kill
+
+# If you want to provide a custom 'user.ini' for a specific debugging setup
+./start_kgdb.py -c <path_to_cfg> [other_args]
+
+# If you want to test some partial functionality of LIKE-DBG
+# Stage 1: Download Kernel
+# Stage 2: Stage 1 & unpack Kernel
+# Stage 3: Stage 2 & build Kernel
+# Stage 4: Only build a root file system
+./start_kgdb.py -p <stage_nr>
 ```
 
 ## Showcase

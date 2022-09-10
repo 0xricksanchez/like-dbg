@@ -13,6 +13,7 @@ kernel_root
 io/rootfs*
 io/filesystem*
 patches/*
+configs/kernel_configs/*.conf*
 Dockerfile*
 android*
 ctf/bzImage
