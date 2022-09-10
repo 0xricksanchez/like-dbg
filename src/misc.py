@@ -20,16 +20,18 @@ CFGS = [SYSTEM_CFG, USER_CFG]
 # | MISC QOL functions                                                                                  |
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
 def cfg_setter(obj, sections: list[str], user_cfg: str, exclude_keys: list[str] = [], cherry_pick: dict[str, list[str]] = {}) -> None:
+    global CFGS
     cfg = configparser.ConfigParser()
-    for c in CFGS:
-        cfg.read(c)
-        _set_base_cfg(cfg, exclude_keys, obj, sections, False)
-        _cherry_pick(cfg, cherry_pick, obj, False)
+    ignore_empty = False
     if user_cfg and Path(user_cfg).exists():
-        logger.debug(f"Got custom user_cfg: {user_cfg}")
-        cfg.read(user_cfg)
-        _set_base_cfg(cfg, exclude_keys, obj, sections, True)
-        _cherry_pick(cfg, cherry_pick, obj, True)
+        CFGS.append(Path(user_cfg).absolute())
+    for c in CFGS:
+        if str(c) == user_cfg:
+            ignore_empty = True
+            logger.debug(f"Got custom user_cfg: {user_cfg}")
+        cfg.read(c)
+        _set_base_cfg(cfg, exclude_keys, obj, sections, ignore_empty)
+        _cherry_pick(cfg, cherry_pick, obj, ignore_empty)
 
 
 def _set_base_cfg(cfg, exclude_keys, obj, sections, ignore_empty) -> None:
