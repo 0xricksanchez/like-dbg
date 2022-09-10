@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
 
 import argparse
-import textwrap
-from pathlib import Path
-import sys
 import os
 import signal
+import sys
+import textwrap
+from pathlib import Path
 
 try:
     from loguru import logger
 
     from src.debuggee import Debuggee
     from src.debugger import Debugger
+    from src.docker_runner import DockerRunner
     from src.kernel_builder import KernelBuilder
     from src.kernel_unpacker import KernelUnpacker
     from src.linux_kernel_dl import KernelDownloader
-    from src.docker_runner import DockerRunner
     from src.misc import tmux
     from src.rootfs_builder import RootFSBuilder
 except ModuleNotFoundError:
@@ -88,27 +88,24 @@ def stage3(skip: bool, **kwargs) -> dict:
     kunpacker = stage2(**kwargs)
     if not kunpacker["status_code"] and not skip:
         KernelBuilder(**kwargs | kunpacker).run()
+    else:
+        logger.info("Kernel already built. Skipping building phase...")
     return kunpacker
 
 
 def stage2(**kwargs) -> dict:
-    kaname = stage1()
+    kaname = stage1(**kwargs)
     return KernelUnpacker(kaname, **kwargs).run()
 
 
-def stage1() -> Path:
-    return KernelDownloader().run()
+def stage1(**kwargs) -> Path:
+    return KernelDownloader(**kwargs).run()
 
 
 def parse_cli() -> argparse.Namespace:
     parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
-    parser.add_argument(
-        "--ctf",
-        "-c",
-        action=argparse.BooleanOptionalAction,
-        help='Use this in combination with "--env" in CTF environments where you were given a Linux kernel image and a file system',
-    )
-    parser.add_argument("--env", "-e", nargs=2, help="Expected: <kernel_image> <root_file_system>")
+    parser.add_argument("--config", "-c", required=False, nargs=1, help="Allows providing a custom 'user.ini'")
+    parser.add_argument("--ctf", nargs=2, required=False, help="Expected: <kernel_image> <root_file_system>")
     parser.add_argument("--yes", "-y", action=argparse.BooleanOptionalAction, help="If this is set all re-use prompts are answered with 'yes'")
     parser.add_argument("--verbose", "-v", action=argparse.BooleanOptionalAction, help="Enable debug logging")
     parser.add_argument("--kill", "-k", action=argparse.BooleanOptionalAction, help="Completely shutdown current session")
@@ -137,15 +134,15 @@ def main():
     if args.kill:
         kill_session()
 
-    if args.ctf and not args.env:
-        logger.error("Found --ctf but no environment was specified...")
-        logger.error(f"Usage: python3 {Path(__file__).name} --ctf --env <kernel> <rootfs>")
-        exit(-1)
-
     tmux("selectp -t 0")
     tmux('rename-session "LIKE-DBG"')
     tmux('rename-window "LIKE-DBG"')
-    generic_args = {"skip_prompts": True if args.yes else False, "ctf_ctx": True if args.ctf else False, "log_level": log_level}
+    generic_args = {
+        "skip_prompts": True if args.yes else False,
+        "ctf_ctx": True if args.ctf else False,
+        "log_level": log_level,
+        "user_cfg": args.config[0] if args.config else "",
+    }
     dbge_args = {}
     dbg_args = {}
 
@@ -161,10 +158,10 @@ def main():
             stage4(skip=True, **generic_args)
         exit(0)
 
-    if args.ctf and args.env:
+    if args.ctf:
         logger.debug("Executing in CTF context")
-        ctf_kernel = Path(args.env[0])
-        ctf_fs = Path(args.env[1])
+        ctf_kernel = Path(args.ctf[0])
+        ctf_fs = Path(args.ctf[1])
         if not ctf_kernel.exists():
             logger.critical(f"Failed to find {ctf_kernel}")
             exit(-1)

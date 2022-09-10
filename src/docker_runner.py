@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
 import os
-import time
 import subprocess as sp
+import time
 from pathlib import Path
 
 import docker

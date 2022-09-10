@@ -8,7 +8,7 @@ import docker
 from loguru import logger
 
 from .docker_runner import DockerRunner
-from .misc import cfg_setter, tmux, tmux_shell, new_context, get_sha256_from_file
+from .misc import cfg_setter, get_sha256_from_file, new_context, tmux, tmux_shell
 
 GDB_SCRIPT_HIST = Path(".gdb_hist")
 
@@ -19,7 +19,8 @@ GDB_SCRIPT_HIST = Path(".gdb_hist")
 class Debugger(DockerRunner):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        cfg_setter(self, ["general", "debugger"], exclude_keys=["kernel_root"])
+        user_cfg = kwargs.get("user_cfg", "")
+        cfg_setter(self, ["general", "debugger"], user_cfg, exclude_keys=["kernel_root"])
         ctf_ctx = kwargs.get("ctf_ctx", False)
         if ctf_ctx:
             self.ctf_kernel = Path(kwargs.get("ctf_kernel", ""))
