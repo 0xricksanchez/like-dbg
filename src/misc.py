@@ -22,7 +22,7 @@ CFGS = {SYSTEM_CFG, USER_CFG}
 def cfg_setter(obj, sections: list[str], user_cfg: str, exclude_keys: list[str] = [], cherry_pick: dict[str, list[str]] = {}) -> None:
     global CFGS
     if user_cfg and Path(user_cfg).exists():
-        CFGS |= {Path(user_cfg)}
+        CFGS |= {Path(user_cfg).absolute()}
         logger.debug(f"Got custom user_cfg: {user_cfg}")
     for c in CFGS:
         cfg = configparser.ConfigParser()
