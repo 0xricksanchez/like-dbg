@@ -18,7 +18,10 @@ from .misc import adjust_arch, cfg_setter, cross_compile, adjust_toolchain_arch
 class KernelBuilder(DockerRunner):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
-        cfg_setter(self, ["kernel_builder", "general", "kernel_builder_docker"], exclude_keys=["kernel_root"], cherry_pick={"debuggee": ["kvm"]})
+        user_cfg = kwargs.get("user_cfg", "")
+        cfg_setter(
+            self, ["kernel_builder", "general", "kernel_builder_docker"], user_cfg, exclude_keys=["kernel_root"], cherry_pick={"debuggee": ["kvm"]}
+        )
         self.cc = f"CC={self.compiler}" if self.compiler else ""
         self.llvm_flag = "" if "gcc" in self.cc else "LLVM=1"
         self.cli = docker.APIClient(base_url=self.docker_sock)
