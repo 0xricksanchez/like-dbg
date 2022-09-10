@@ -27,22 +27,30 @@ def cfg_setter(obj, sections: list[str], user_cfg: str, exclude_keys: list[str] 
     for c in CFGS:
         cfg = configparser.ConfigParser()
         cfg.read(c)
-        for sect in sections:
-            if sect not in cfg:
-                continue
-            for key in cfg[sect]:
-                if key not in exclude_keys:
-                    tmp = cfg[sect][key]
-                    val = tmp if tmp not in ["yes", "no"] else cfg[sect].getboolean(key)
-                    setattr(obj, key, val)
-        for entry in cherry_pick.keys():
-            if entry not in cfg:
-                continue
-            for key in cfg[entry]:
-                if key in cherry_pick[entry]:
-                    tmp = cfg[entry][key]
-                    val = tmp if tmp not in ["yes", "no"] else cfg[entry].getboolean(key)
-                    setattr(obj, key, val)
+        _set_base_cfg(cfg, exclude_keys, obj, sections)
+        _cherry_pick(cfg, cherry_pick, obj)
+
+
+def _set_base_cfg(cfg, exclude_keys, obj, sections):
+    for sect in sections:
+        if sect not in cfg:
+            continue
+        for key in cfg[sect]:
+            if key not in exclude_keys:
+                tmp = cfg[sect][key]
+                val = tmp if tmp not in ["yes", "no"] else cfg[sect].getboolean(key)
+                setattr(obj, key, val)
+
+
+def _cherry_pick(cfg, cherry_pick, obj):
+    for entry in cherry_pick.keys():
+        if entry not in cfg:
+            continue
+        for key in cfg[entry]:
+            if key in cherry_pick[entry]:
+                tmp = cfg[entry][key]
+                val = tmp if tmp not in ["yes", "no"] else cfg[entry].getboolean(key)
+                setattr(obj, key, val)
 
 
 def is_reuse(p: str) -> bool:
