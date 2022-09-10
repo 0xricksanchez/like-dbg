@@ -31,7 +31,7 @@ def cfg_setter(obj, sections: list[str], user_cfg: str, exclude_keys: list[str] 
         _cherry_pick(cfg, cherry_pick, obj)
 
 
-def _set_base_cfg(cfg, exclude_keys, obj, sections):
+def _set_base_cfg(cfg, exclude_keys, obj, sections) -> None:
     for sect in sections:
         if sect not in cfg:
             continue
@@ -42,7 +42,7 @@ def _set_base_cfg(cfg, exclude_keys, obj, sections):
                 setattr(obj, key, val)
 
 
-def _cherry_pick(cfg, cherry_pick, obj):
+def _cherry_pick(cfg, cherry_pick, obj) -> None:
     for entry in cherry_pick.keys():
         if entry not in cfg:
             continue
