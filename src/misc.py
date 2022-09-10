@@ -13,7 +13,7 @@ from loguru import logger
 
 SYSTEM_CFG = Path.cwd() / "configs" / "system.ini"
 USER_CFG = Path.cwd() / "configs" / "user.ini"
-CFGS = {SYSTEM_CFG, USER_CFG}
+CFGS = [SYSTEM_CFG, USER_CFG]
 
 
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
@@ -21,36 +21,43 @@ CFGS = {SYSTEM_CFG, USER_CFG}
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
 def cfg_setter(obj, sections: list[str], user_cfg: str, exclude_keys: list[str] = [], cherry_pick: dict[str, list[str]] = {}) -> None:
     global CFGS
+    cfg = configparser.ConfigParser()
+    ignore_empty = False
     if user_cfg and Path(user_cfg).exists():
-        CFGS |= {Path(user_cfg).absolute()}
-        logger.debug(f"Got custom user_cfg: {user_cfg}")
+        CFGS.append(Path(user_cfg).absolute())
     for c in CFGS:
-        cfg = configparser.ConfigParser()
+        if str(c) == user_cfg:
+            ignore_empty = True
+            logger.debug(f"Got custom user_cfg: {user_cfg}")
         cfg.read(c)
-        _set_base_cfg(cfg, exclude_keys, obj, sections)
-        _cherry_pick(cfg, cherry_pick, obj)
+        _set_base_cfg(cfg, exclude_keys, obj, sections, ignore_empty)
+        _cherry_pick(cfg, cherry_pick, obj, ignore_empty)
 
 
-def _set_base_cfg(cfg, exclude_keys, obj, sections) -> None:
+def _set_base_cfg(cfg, exclude_keys, obj, sections, ignore_empty) -> None:
     for sect in sections:
         if sect not in cfg:
             continue
         for key in cfg[sect]:
             if key not in exclude_keys:
-                tmp = cfg[sect][key]
-                val = tmp if tmp not in ["yes", "no"] else cfg[sect].getboolean(key)
-                setattr(obj, key, val)
+                _set_cfg(cfg, obj, sect, key, ignore_empty)
 
 
-def _cherry_pick(cfg, cherry_pick, obj) -> None:
-    for entry in cherry_pick.keys():
-        if entry not in cfg:
+def _cherry_pick(cfg, cherry_pick, obj, ignore_empty) -> None:
+    for sect in cherry_pick.keys():
+        if sect not in cfg:
             continue
-        for key in cfg[entry]:
-            if key in cherry_pick[entry]:
-                tmp = cfg[entry][key]
-                val = tmp if tmp not in ["yes", "no"] else cfg[entry].getboolean(key)
-                setattr(obj, key, val)
+        for key in cfg[sect]:
+            if key in cherry_pick[sect]:
+                _set_cfg(cfg, obj, sect, key, ignore_empty)
+
+
+def _set_cfg(cfg, obj, sect, key, ignore_empty) -> None:
+    tmp = cfg[sect][key]
+    if ignore_empty and not tmp:
+        return
+    val = tmp if tmp not in ["yes", "no"] else cfg[sect].getboolean(key)
+    setattr(obj, key, val)
 
 
 def is_reuse(p: str) -> bool:
