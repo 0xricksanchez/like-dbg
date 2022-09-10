@@ -17,6 +17,7 @@ from .tqdm_dlbar import DLProgressBarTQDM
 class KernelDownloader:
     def __init__(self, **kwargs) -> None:
         user_cfg = kwargs.get("user_cfg", "")
+        logger.error(user_cfg)
         cfg_setter(self, ["kernel_dl"], user_cfg)
         self.commit = self._set_commit()
         self.choice = self._set_choice()

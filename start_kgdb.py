@@ -118,7 +118,7 @@ def parse_cli() -> argparse.Namespace:
         "--partial",
         "-p",
         type=int,
-        choices=range(1, 5),
+        choices=range(1, 6),
         help=textwrap.dedent(
             """\
     Stage 1 - Kernel download only,
@@ -152,6 +152,10 @@ def main():
     dbge_args = {}
     dbg_args = {}
     skip = False
+
+    if args.partial and args.ctf:
+        logger.error("Partial runs and CTF runs are mutually exclusive!")
+        exit(-1)
 
     if args.partial:
         logger.debug("Executing in partial-run context")
