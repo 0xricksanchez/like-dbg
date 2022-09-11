@@ -46,13 +46,15 @@ pack() {
         mv "$out" "$1/tmp/"
         echo "Exploit pushed to $1/tmp/"
     fi
+    rm -rf "$1.cpio" "$1.cpio.gz"
 
     pushd . > /dev/null && pushd "$1" > /dev/null
     cmd="find . -print0 | cpio --null --format=newc -o --owner=root 2>/dev/null"
+    dst=$(basename "$1")
     if [ "$2" -eq 1 ]; then
-        cmd="${cmd} | gzip -9 > ../$1.cpio.gz"
+        cmd="${cmd} | gzip -9 > ../$dst.cpio.gz"
     else
-        cmd="${cmd} > ../$1.cpio"
+        cmd="${cmd} > ../$dst.cpio"
     fi
     eval "$cmd"
     popd > /dev/null
