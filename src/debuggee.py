@@ -43,6 +43,23 @@ class Debuggee(DockerRunner):
             logger.error(f"Unsupported rootfs type: {magic.stdout}")
             exit(-1)
 
+    def infer_panic_behavior(self) -> int:
+        if self.panic == "reboot":
+            return -1
+        elif self.panic == "halt":
+            return 0
+        elif "wait" in self.panic:
+            try:
+                ret = self.panic.split(" ")[1]
+                if not ret:
+                    return 15
+                return ret
+            except IndexError:
+                return 15
+        else:
+            logger.error("Unknown requested panic behavior...")
+            exit(-1)
+
     def run_container(self):
         dcmd = f'docker run -it --rm -v {Path.cwd()}:/io --net="host" like_debuggee '
         self.cmd = f"qemu-system-{self.qemu_arch} -m {self.memory} -smp {self.smp} -kernel {self.kernel}"
@@ -62,7 +79,7 @@ class Debuggee(DockerRunner):
             self.cmd += " nosmap"
         if not self.kpti:
             self.cmd += " nopti"
-        self.cmd += ' oops=panic panic=-1"'
+        self.cmd += f' oops=panic panic={self.infer_panic_behavior()}"'
         self.cmd += self.infer_qemu_fs_mount()
         self.cmd += " -net user,host=10.0.2.10,hostfwd=tcp:127.0.0.1:10021-:22 -net nic,model=e1000 -nographic -pidfile vm.pid"
         if self.kvm and self.qemu_arch == "x86_64":
