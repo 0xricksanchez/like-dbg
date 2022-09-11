@@ -26,9 +26,8 @@ def cfg_setter(obj, sections: list[str], user_cfg: str, exclude_keys: list[str] 
     if user_cfg and Path(user_cfg).exists():
         CFGS.append(Path(user_cfg).absolute())
     for c in CFGS:
-        if str(c) == user_cfg:
+        if user_cfg in str(c):
             ignore_empty = True
-            logger.debug(f"Got custom user_cfg: {user_cfg}")
         cfg.read(c)
         _set_base_cfg(cfg, exclude_keys, obj, sections, ignore_empty)
         _cherry_pick(cfg, cherry_pick, obj, ignore_empty)
