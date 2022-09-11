@@ -52,9 +52,10 @@ On the upside, despite its early stages, a couple of useful features are already
   * Multi-arch: `x86_64`, `arm64`
   * Choose between `gcc` and `clang` to build the kernel
   * Configuration modes:
-    * generic-mode
-    * syzkaller-mode
-    * custom-mode
+    * generic-mode,
+    * syzkaller-mode,
+    * custom-mode, or
+    * provide a usable kernel config
   * Fine-granular version control to build from:
     * Commit hash
     * Release tag (e.g.: 5.10-rc)
@@ -102,7 +103,8 @@ However, all the ones to customize the environment to your needs should be self-
 
 ## Usage
 
-Once you're set with the configuration, the usage depends on your scenario.
+Once you're set with writing/adapting a configuration, the usage depends on your scenario.
+The easiest way to get started, which is based on the `configs/user.ini` configuration is the following:
 
 ```sh
 tmux -f .tmux.conf
@@ -110,7 +112,7 @@ python3 -m venv .like-dbg
 source .like-dbg/bin/activate
 python3 -m pip install --upgrade pip
 python3 -m pip install -r requirements.txt
-# If you want to build a Linux kernel image from scratch for a specific version to debug, go ahead and run:
+# This checks out a kernel, builds it, creates a root file system and starts the debugger and debuggee eventually
 ./start_kgdb.py
 ```
 
