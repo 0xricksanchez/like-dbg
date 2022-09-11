@@ -43,8 +43,8 @@ pack() {
         is_exist "$MUSL" "-f"
         out=$(echo "$3" | awk '{ print substr( $0, 1, length($0)-2 ) }')
         musl-gcc "$3" -static -o "$out" || exit 255
-        mv "$out" "$1/tmp/"
-        echo "Exploit pushed to $1/tmp/"
+        mv "$out" "$1/bin/"
+        echo "Exploit pushed to $1/bin/"
     fi
     rm -rf "$1.cpio" "$1.cpio.gz"
 
