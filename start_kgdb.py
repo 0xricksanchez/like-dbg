@@ -63,9 +63,9 @@ def stage6(skip: bool, generic_args: dict, dbge_args: dict, dbg_args: dict) -> N
     kunpacker = stage5(skip, generic_args, dbge_args)
     tmux("selectp -t 0")
     tmux("splitw -v -p 50")
+    tmux("swap-pane -s 1 -t 2")
     tmux("selectp -t 0")
     Debugger(**dbg_args | kunpacker | generic_args).run()
-    tmux("selectp -t 0")
 
 
 def stage5(skip: bool, generic_args: dict, dbge_args: dict) -> dict[str, str]:
@@ -73,6 +73,7 @@ def stage5(skip: bool, generic_args: dict, dbge_args: dict) -> dict[str, str]:
         kunpacker = stage4(skip, **generic_args)
     else:
         kunpacker = {}
+    tmux("selectp -t 0")
     tmux("splitw -h -p 50")
     tmux("selectp -t 0")
     Debuggee(**dbge_args | kunpacker | generic_args).run()
