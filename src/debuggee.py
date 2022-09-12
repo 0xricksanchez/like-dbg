@@ -60,25 +60,39 @@ class Debuggee(DockerRunner):
             logger.error("Unknown requested panic behavior...")
             exit(-1)
 
+    def _add_smep_smap(self) -> None:
+        if self.smep:
+            self.cmd += ",+smep"
+        if self.smap:
+            self.cmd += ",+smap"
+
     def run_container(self):
         dcmd = f'docker run -it --rm -v {Path.cwd()}:/io --net="host" like_debuggee '
         self.cmd = f"qemu-system-{self.qemu_arch} -m {self.memory} -smp {self.smp} -kernel {self.kernel}"
         if self.qemu_arch == "aarch64":
-            self.cmd += ' -cpu cortex-a72 -machine type=virt -append "console=ttyAMA0 root=/dev/vda'
+            self.cmd += " -cpu cortex-a72"
+            self._add_smep_smap()
+            self.cmd += ' -machine type=virt -append "console=ttyAMA0 root=/dev/vda'
         elif self.qemu_arch == "x86_64":
-            self.cmd += ' -cpu qemu64 -append "console=ttyS0 root=/dev/sda'
+            self.cmd += " -cpu qemu64"
+            self._add_smep_smap()
+            self.cmd += ' -append "console=ttyS0 root/dev/sda'
         else:
             logger.error(f"Unsupported architecture: {self.qemu_arch}")
             exit(-1)
         self.cmd += " earlyprintk=serial net.ifnames=0"
         if not self.kaslr:
             self.cmd += " nokaslr"
+        else:
+            self.cmd += " kaslr"
         if not self.smep:
             self.cmd += " nosmep"
         if not self.smap:
             self.cmd += " nosmap"
         if not self.kpti:
             self.cmd += " nopti"
+        else:
+            self.cmd += " pti=on"
         self.cmd += f' oops=panic panic={self.infer_panic_behavior()}"'
         self.cmd += self.infer_qemu_fs_mount()
         self.cmd += " -net user,host=10.0.2.10,hostfwd=tcp:127.0.0.1:10021-:22 -net nic,model=e1000 -nographic -pidfile vm.pid"
