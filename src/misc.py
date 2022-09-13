@@ -26,7 +26,7 @@ def cfg_setter(obj, sections: list[str], user_cfg: str, exclude_keys: list[str] 
     if user_cfg and Path(user_cfg).exists():
         CFGS.append(Path(user_cfg).absolute())
     for c in CFGS:
-        if user_cfg == str(c):
+        if Path(user_cfg).name == c.name:
             ignore_empty = True
         cfg.read(c)
         _set_base_cfg(cfg, exclude_keys, obj, sections, ignore_empty)
