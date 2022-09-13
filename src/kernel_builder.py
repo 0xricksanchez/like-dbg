@@ -18,8 +18,6 @@ from .misc import adjust_arch, adjust_toolchain_arch, cfg_setter, cross_compile
 class KernelBuilder(DockerRunner):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
-        self.config = None
-        self.extra_args = None
         user_cfg = kwargs.get("user_cfg", "")
         cfg_setter(
             self, ["kernel_builder", "general", "kernel_builder_docker"], user_cfg, exclude_keys=["kernel_root"], cherry_pick={"debuggee": ["kvm"]}
@@ -31,8 +29,7 @@ class KernelBuilder(DockerRunner):
         self.tag = self.tag + f"_{self.arch}"
         self.dirty = kwargs.get("assume_dirty", False)
         tmp_arch = adjust_arch(self.arch)
-        if self.config:
-            self.config = Path(self.config)
+        self.config = Path(self.config)
         self.buildargs = {
             "USER": self.user,
             "CC": self.compiler,
