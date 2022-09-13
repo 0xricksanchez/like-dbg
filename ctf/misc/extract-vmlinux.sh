@@ -25,7 +25,7 @@ try_decompress() {
     # "grep" that report the byte offset of the line instead of the pattern.
 
     # Try to find the header ($1) and decompress from here
-    for pos in $(tr "$1\n$2" "\n$2=" < "$img" | grep -abo "^$2"); do
+    for pos in $(LC_CTYPE=C tr "$1\n$2" "\n$2=" < "$img" | grep -abo "^$2"); do
         pos=${pos%%:*}
         tail -c+"$pos" "$img" | $3 > "$tmp" 2> /dev/null
         check_vmlinux "$tmp"
