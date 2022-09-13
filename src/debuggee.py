@@ -76,7 +76,7 @@ class Debuggee(DockerRunner):
         elif self.qemu_arch == "x86_64":
             self.cmd += " -cpu qemu64"
             self._add_smep_smap()
-            self.cmd += ' -append "console=ttyS0 root/dev/sda'
+            self.cmd += ' -append "console=ttyS0 root=/dev/sda'
         else:
             logger.error(f"Unsupported architecture: {self.qemu_arch}")
             exit(-1)
