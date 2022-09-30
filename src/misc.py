@@ -30,7 +30,8 @@ def cfg_setter(obj, sections: list[str], user_cfg: str, exclude_keys: list[str] 
             ignore_empty = True
         cfg.read(c)
         _set_base_cfg(cfg, exclude_keys, obj, sections, ignore_empty)
-        _cherry_pick(cfg, cherry_pick, obj, ignore_empty)
+        if cherry_pick:
+            _cherry_pick(cfg, cherry_pick, obj, ignore_empty)
 
 
 def _set_base_cfg(cfg, exclude_keys, obj, sections, ignore_empty) -> None:

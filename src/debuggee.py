@@ -18,7 +18,9 @@ class Debuggee(DockerRunner):
         super().__init__(**kwargs)
         user_cfg = kwargs.get("user_cfg", "")
         cfg_setter(self, ["debuggee", "debuggee_docker", "general", "rootfs_general"], user_cfg, exclude_keys=["kernel_root"])
-        if kwargs.get("ctf_ctx", False):
+        self.ctf = kwargs.get("ctf_ctx", False)
+        if self.ctf:
+            self.ctf_mount = kwargs.get("ctf_mount")
             self.kernel = Path(self.docker_mnt) / kwargs.get("ctf_kernel", "")
             self.rootfs = Path(self.docker_mnt) / kwargs.get("ctf_fs", "")
         else:
@@ -34,11 +36,13 @@ class Debuggee(DockerRunner):
         super().run()
 
     def infer_qemu_fs_mount(self) -> str:
-        magic = sp.run(f"file {Path(*self.rootfs.parts[2:])}", shell=True, capture_output=True)
+        r = self.rootfs if self.ctf else Path(*self.rootfs.parts[2:])
+        magic = sp.run(f"file {r}", shell=True, capture_output=True)
+        rootfs = self.rootfs.name if self.ctf else self.rootfs
         if b"cpio archive" in magic.stdout:
-            return f" -initrd {self.rootfs}"
+            return f" -initrd {rootfs}"
         elif b"filesystem data" in magic.stdout:
-            return f" -drive file={self.rootfs},format=raw"
+            return f" -drive file={rootfs},format=raw"
         else:
             logger.error(f"Unsupported rootfs type: {magic.stdout}")
             exit(-1)
@@ -67,8 +71,10 @@ class Debuggee(DockerRunner):
             self.cmd += ",+smap"
 
     def run_container(self):
-        dcmd = f'docker run -it --rm -v {Path.cwd()}:/io --net="host" like_debuggee '
-        self.cmd = f"qemu-system-{self.qemu_arch} -m {self.memory} -smp {self.smp} -kernel {self.kernel}"
+        mount_point = self.ctf_mount if self.ctf else Path.cwd()
+        kernel = Path(self.docker_mnt) / self.kernel.name if self.ctf else self.kernel
+        dcmd = f'docker run -it --rm -v {mount_point}:/io --net="host" like_debuggee '
+        self.cmd = f"qemu-system-{self.qemu_arch} -m {self.memory} -smp {self.smp} -kernel {kernel}"
         if self.qemu_arch == "aarch64":
             self.cmd += " -cpu cortex-a72"
             self._add_smep_smap()
