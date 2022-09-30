@@ -3,8 +3,10 @@
 import argparse
 import os
 import signal
+import shutil
 import sys
 import textwrap
+import uuid
 from pathlib import Path
 
 try:
@@ -182,7 +184,13 @@ def main():
         if not ctf_fs.exists():
             logger.critical(f"Failed to find {ctf_fs}")
             exit(-1)
-        dbge_args = generic_args | {"ctf_kernel": ctf_kernel, "ctf_fs": ctf_fs}
+        tmp_dir = Path(f"/tmp/like_{uuid.uuid1().hex}")
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy(ctf_kernel, tmp_dir / ctf_kernel.name)
+        shutil.copy(ctf_fs, tmp_dir / ctf_fs.name)
+        ctf_kernel = tmp_dir / ctf_kernel.name
+        ctf_fs = tmp_dir / ctf_fs.name
+        dbge_args = generic_args | {"ctf_kernel": ctf_kernel, "ctf_fs": ctf_fs, "ctf_mount": tmp_dir}
         dbg_args = {k: v for k, v in dbge_args.items() if k != "ctf_fs"}
         skip = True
     else:

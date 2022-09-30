@@ -15,7 +15,8 @@ from .misc import cfg_setter, is_reuse
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
 class KernelUnpacker:
     def __init__(self, p: Path, **kwargs) -> None:
-        cfg_setter(self, ["general"], "")
+        user_cfg = kwargs.get("user_cfg", "")
+        cfg_setter(self, ["general"], user_cfg)
         self.archive = p
         self.ex_name = ".".join(self.archive.name.split(".")[:-2])  # FIXME only works for formats like .tar.gz
         if not Path(self.kernel_root).exists():
