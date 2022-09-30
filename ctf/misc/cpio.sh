@@ -9,7 +9,6 @@ ENC=0
 DEC=0
 EXPLOIT=
 
-
 usage() {
     cat << EOF
 This script is a helper to (un-)pack rootfs.cpio(.gz) root file systems on the fly.
@@ -39,7 +38,7 @@ is_exist() {
 compile_mac() {
     CTR=0
     while true; do
-        if [ $(basename $PWD) != "like-dbg" ] || [ ! -f "$(pwd)/.dockerfile_base" ] ; then
+        if [ $(basename $PWD) != "like-dbg" ] || [ ! -f "$(pwd)/.dockerfile_base" ]; then
             pushd .. > /dev/null
             ((CTR++))
         else
