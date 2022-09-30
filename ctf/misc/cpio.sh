@@ -36,14 +36,37 @@ is_exist() {
     fi
 }
 
+compile_mac() {
+    CTR=0
+    while true; do
+        if [ $(basename $PWD) != "like-dbg" ] || [ ! -f "$(pwd)/.dockerfile_base" ] ; then
+            pushd .. > /dev/null
+            ((CTR++))
+        else
+            break
+        fi
+
+    done
+    if [ ! $(docker images | grep -o "like_mac_compiler") ]; then
+        docker build -t "like_mac_compiler" -f .dockerfile_compiler_mac .
+    fi
+    while [ $CTR -ne 0 ]; do
+        popd > /dev/null
+        ((CTR--))
+    done
+    rsync -u $2 $1/root/ > /dev/null
+    out="/io/bin/$(basename $2)"
+    out=${out%.*}
+    docker run --rm -v "$(pwd)/$1":/io "like_mac_compiler" musl-gcc /io/root/$(basename $2) -static -o "$out"
+}
+
 pack() {
     is_exist "$1" "-d"
 
     if [ -n "$3" ]; then
         is_exist "$3" "-f"
         if [ $(uname -s) == "Darwin" ]; then
-            echo "We maccers"
-            exit 255
+            compile_mac $1 $3
         else
             MUSL=$(which musl-gcc)
             is_exist "$MUSL" "-f"
@@ -65,6 +88,7 @@ pack() {
     fi
     eval "$cmd"
     popd > /dev/null
+}
 
 unpack() {
     mkdir initramfs
