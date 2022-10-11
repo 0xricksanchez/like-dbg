@@ -27,7 +27,11 @@ class RootFSBuilder(DockerRunner):
     def run_container(self) -> None:
         try:
             qemu_arch = adjust_qemu_arch(self.arch)
-            command = f"/bin/bash -c '{self.script_logging}; . /home/{self.user}/rootfs.sh -n {self.fs_name} -a {qemu_arch} -d {self.distribution} -p {self.packages} -u {self.user}'"
+            command = f"/bin/bash -c '{self.script_logging}; . /home/{self.user}/rootfs.sh -n {self.fs_name} -a {qemu_arch} -d {self.distribution} -p {self.packages} -u {self.user}"
+            if self.hostname:
+                command += f" -h {self.hostname.strip()}'"
+            else:
+                command += "'"
             self.container = self.client.containers.run(
                 self.image,
                 volumes={f"{Path.cwd() / 'io'}": {"bind": f"{self.docker_mnt}", "mode": "rw"}},
