@@ -11,6 +11,7 @@ ARCH=$(uname -m)
 DIST=bullseye
 ROOTFS_NAME=rootfs
 USER=user
+HOSTNAME=""
 
 while (("$#")); do
     case "$1" in
@@ -44,6 +45,11 @@ while (("$#")); do
             USER=$2
             shift 2
             ;;
+        -h | --hostname)
+            # Hostname to set
+            HOSTNAME=$2
+            shift 2
+            ;;
         -*)
             echo "Error: Unknown option: $1" >&2
             exit 1
@@ -53,6 +59,14 @@ while (("$#")); do
             ;;
     esac
 done
+
+if [ ! "$HOSTNAME" ]; then
+    if [ ! "$ROOTFS_NAME" ]; then
+        HOSTNAME="LIKEDBG"
+    else
+        HOSTNAME="$ROOTFS_NAME"
+    fi
+fi
 
 # Handle cases where qemu and Debian use different arch names
 case "$ARCH" in
@@ -154,7 +168,7 @@ if [ $FOREIGN = "false" ]; then
 fi
 echo -en "127.0.0.1\tlocalhost $ROOTFS_NAME\n" | sudo tee $MNT/etc/hosts > /dev/null
 echo "nameserver 8.8.8.8" | sudo tee -a $MNT/etc/resolve.conf > /dev/null
-echo "$ROOTFS_NAME" | sudo tee $MNT/etc/hostname > /dev/null
+echo "$HOSTNAME" | sudo tee $MNT/etc/hostname > /dev/null
 dircolors -p | tee $MNT/home/"$USER"/.dircolors > /dev/null
 echo "export TERM=vt100" | tee -a $MNT/home/"$USER"/.bashrc > /dev/null
 echo "stty cols 128 rows 192" | tee -a $MNT/home/"$USER"/.bashrc > /dev/null

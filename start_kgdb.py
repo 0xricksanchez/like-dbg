@@ -88,7 +88,7 @@ def stage4(skip: bool, **kwargs) -> dict[str, str]:
         RootFSBuilder(**kwargs | kunpacker).run()
         return kunpacker
     else:
-        RootFSBuilder(**kwargs, kroot="foobar").run()
+        RootFSBuilder(partial_run=True, **kwargs, kroot="foobar").run()
         return {}
 
 
