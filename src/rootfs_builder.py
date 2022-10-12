@@ -13,10 +13,11 @@ from .misc import adjust_qemu_arch, cfg_setter, is_reuse
 # | ROOTFS BUILDER                                                                                      |
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
 class RootFSBuilder(DockerRunner):
-    def __init__(self, **kwargs) -> None:
+    def __init__(self, partial_run: bool=False, **kwargs) -> None:
         super().__init__(**kwargs)
         user_cfg = kwargs.get("user_cfg", "")
         cfg_setter(self, ["rootfs_general", "rootfs_builder", "general"], user_cfg)
+        self.partial = partial_run
         self.cli = docker.APIClient(base_url=self.docker_sock)
         self.fs_name = self.rootfs_base + self.arch + self.rootfs_ftype
         self.rootfs_path = self.rootfs_dir + self.fs_name
@@ -54,6 +55,11 @@ class RootFSBuilder(DockerRunner):
         else:
             return False
 
+    def _run(self) -> None:
+        self.image = self.get_image()
+        logger.debug(f"Found rootfs_builder: {self.image}")
+        super().run()
+
     def run(self) -> None:
         if self.force_rebuild:
             logger.info(f"Force-rebuilding {type(self).__name__}")
@@ -61,12 +67,12 @@ class RootFSBuilder(DockerRunner):
             super().run()
         else:
             e = self.is_exist()
-            if e and self.skip_prompts:
+            if self.partial or not e:
+                self._run()
+            elif e and self.skip_prompts:
                 logger.info(f"Re-using {self.rootfs_path} for file system")
                 return
             elif e and is_reuse(self.rootfs_path):
                 return
             else:
-                self.image = self.get_image()
-                logger.debug(f"Found rootfs_builder: {self.image}")
-                super().run()
+                self._run()
