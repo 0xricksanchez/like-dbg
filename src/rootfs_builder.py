@@ -16,13 +16,11 @@ class RootFSBuilder(DockerRunner):
     def __init__(self, partial_run: bool = False, **kwargs) -> None:
         super().__init__(**kwargs)
         user_cfg = kwargs.get("user_cfg", "")
-        cfg_setter(self, ["rootfs_general", "rootfs_builder", "general"], user_cfg)
+        cfg_setter(self, ["rootfs_general", "rootfs_builder"], user_cfg)
         self.partial = partial_run
-        self.cli = docker.APIClient(base_url=self.docker_sock)
         self.fs_name = self.rootfs_base + self.arch + self.rootfs_ftype
         self.rootfs_path = self.rootfs_dir + self.fs_name
         self.skip_prompts = kwargs.get("skip_prompts", False)
-        self.buildargs = {"USER": self.user}
         self.script_logging = "set -e" if kwargs.get("log_level", "INFO") == "INFO" else "set -eux"
 
     def run_container(self) -> None:
@@ -58,13 +56,15 @@ class RootFSBuilder(DockerRunner):
     def _run(self) -> None:
         self.image = self.get_image()
         logger.debug(f"Found rootfs_builder: {self.image}")
-        super().run()
+        super().run(check_existing=False)
 
     def run(self) -> None:
+        if self.update_containers:
+            super().run(check_existing=False)
         if self.force_rebuild:
             logger.info(f"Force-rebuilding {type(self).__name__}")
             self.image = None
-            super().run()
+            super().run(check_existing=False)
         else:
             e = self.is_exist()
             if self.partial or not e:

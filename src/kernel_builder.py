@@ -19,19 +19,15 @@ class KernelBuilder(DockerRunner):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         user_cfg = kwargs.get("user_cfg", "")
-        cfg_setter(
-            self, ["kernel_builder", "general", "kernel_builder_docker"], user_cfg, exclude_keys=["kernel_root"], cherry_pick={"debuggee": ["kvm"]}
-        )
+        cfg_setter(self, ["kernel_builder", "kernel_builder_docker"], user_cfg, exclude_keys=["kernel_root"], cherry_pick={"debuggee": ["kvm"]})
         self.cc = f"CC={self.compiler}" if self.compiler else ""
         self.llvm_flag = "" if "gcc" in self.cc else "LLVM=1"
-        self.cli = docker.APIClient(base_url=self.docker_sock)
         self.guarantee_ssh(self.ssh_dir)
         self.tag = self.tag + f"_{self.arch}"
         self.dirty = kwargs.get("assume_dirty", False)
         tmp_arch = adjust_arch(self.arch)
         self.config = Path(self.config)
-        self.buildargs = {
-            "USER": self.user,
+        self.buildargs = self.buildargs | {
             "CC": self.compiler,
             "LLVM": "0" if self.compiler == "gcc" else "1",
             "TOOLCHAIN_ARCH": adjust_toolchain_arch(self.arch),
@@ -121,6 +117,7 @@ class KernelBuilder(DockerRunner):
                 break
 
     def run_container(self) -> None:
+        logger.info("Building kernel. This may take a while...")
         try:
             volumes = {f"{Path.cwd()}": {"bind": f"{self.docker_mnt}", "mode": "rw"}}
             if self.mode == "config":
@@ -158,6 +155,4 @@ class KernelBuilder(DockerRunner):
             self.stop_container()
 
     def run(self) -> None:
-        logger.info("Building kernel. This may take a while...")
-        self.check_existing()
-        super().run()
+        super().run(check_existing=True)
