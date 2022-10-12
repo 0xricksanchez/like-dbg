@@ -5,7 +5,6 @@ import time
 from os import getuid
 from pathlib import Path
 
-import docker
 from loguru import logger
 
 from .docker_runner import DockerRunner

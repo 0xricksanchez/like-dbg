@@ -3,7 +3,6 @@
 import subprocess as sp
 from pathlib import Path
 
-import docker
 from loguru import logger
 
 from .docker_runner import DockerRunner
