@@ -132,6 +132,7 @@ def parse_cli() -> argparse.Namespace:
     """
         ),
     )
+    parser.add_argument("--update_containers", "-u", action=argparse.BooleanOptionalAction, help="Update all LIKE-DBG containers")
     return parser.parse_args()
 
 
@@ -151,10 +152,19 @@ def main():
         "ctf_ctx": True if args.ctf else False,
         "log_level": log_level,
         "user_cfg": args.config[0] if args.config else "",
+        "update_containers": True if args.update_containers else False,
     }
     dbge_args = {}
     dbg_args = {}
     skip = False
+
+    if args.update_containers:
+        logger.info("Updating all containers. This may take a while..!")
+        generic_args["skip_prompts"] = True
+        dr = DockerRunner(**generic_args, kroot="foobar")
+        dr.build_base_img()
+        # TODO hack each and every run() method to only build the container and exit!
+        exit(0)
 
     if args.partial and args.ctf:
         logger.error("Partial runs and CTF runs are mutually exclusive!")
