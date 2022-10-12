@@ -13,7 +13,7 @@ from .misc import adjust_qemu_arch, cfg_setter, is_reuse
 # | ROOTFS BUILDER                                                                                      |
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
 class RootFSBuilder(DockerRunner):
-    def __init__(self, partial_run: bool=False, **kwargs) -> None:
+    def __init__(self, partial_run: bool = False, **kwargs) -> None:
         super().__init__(**kwargs)
         user_cfg = kwargs.get("user_cfg", "")
         cfg_setter(self, ["rootfs_general", "rootfs_builder", "general"], user_cfg)
