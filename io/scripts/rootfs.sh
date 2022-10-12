@@ -45,7 +45,7 @@ while (("$#")); do
             USER=$2
             shift 2
             ;;
-        -h | --hostname)
+        -h | --hostname)
             # Hostname to set
             HOSTNAME=$2
             shift 2
