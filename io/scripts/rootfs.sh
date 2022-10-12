@@ -60,8 +60,8 @@ while (("$#")); do
     esac
 done
 
-if [ ! $HOSTNAME ]; then
-    if [ ! $ROOTFS_NAME ]; then
+if [ ! "$HOSTNAME" ]; then
+    if [ ! "$ROOTFS_NAME" ]; then
         HOSTNAME="LIKEDBG"
     else
         HOSTNAME="$ROOTFS_NAME"
