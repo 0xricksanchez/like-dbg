@@ -61,6 +61,7 @@ On the upside, despite its early stages, a couple of useful features are already
     * Release tag (e.g.: 5.10-rc)
     * Major-Minor-Patch (e.g.: 5.10.77)
   * Ability to automatically apply patch files
+  * Basic ability to add custom kernel modules
 * Root file system builder:
   * Powered by [debootstrap](https://wiki.debian.org/Debootstrap)
   * Automatic generation of file system that matches the kernels architecture
@@ -123,7 +124,7 @@ python3 -m pip install -r requirements.txt
 ./start_kgdb.py --ctf <Image> <RootFS>
 
 # If you want to kill the current debugging session
-./start_kgdb.py --kill
+./start_kgdb.py -k
 
 # If you want to provide a custom 'user.ini' for a specific debugging setup
 ./start_kgdb.py -c <path_to_cfg> [other_args]

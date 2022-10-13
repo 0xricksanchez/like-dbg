@@ -4,11 +4,14 @@ import re
 import time
 from os import getuid
 from pathlib import Path
+import subprocess as sp
 
 from loguru import logger
 
 from .docker_runner import DockerRunner
 from .misc import adjust_arch, adjust_toolchain_arch, cfg_setter, cross_compile
+
+MISC_DRVS_PATH = Path("drivers/misc/")
 
 
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
@@ -115,8 +118,29 @@ class KernelBuilder(DockerRunner):
             else:
                 break
 
+    def _add_modules(self) -> None:
+        for d in Path(self.custom_modules).iterdir():
+            logger.error(d)
+            dst = f"{Path(self.kernel_root) / MISC_DRVS_PATH}"
+            logger.error(f"dst {dst}")
+            sp.run(f"cp -fr {d} {dst}", shell=True)
+            ctx = (d / "INSTALL").read_text()
+            (mkfile, kcfg) = ctx.split("------")
+            # TODO Add sanity checks that ensure the stuff is not already inserted in these two files!!!
+            with open(f"{dst}/Makefile", "a") as g:
+                g.write(mkfile)
+            with open(f"{dst}/Kconfig", "r") as f:
+                contents = f.readlines()
+            contents.insert(len(contents) - 1, kcfg.replace('"', '"') + "\n")
+            with open(f"{dst}/Kconfig", "w") as kc:
+                kc.writelines(contents)
+            exit(-1)
+
     def run_container(self) -> None:
         logger.info("Building kernel. This may take a while...")
+        if self.custom_modules:
+            self._add_modules()
+
         try:
             volumes = {f"{Path.cwd()}": {"bind": f"{self.docker_mnt}", "mode": "rw"}}
             if self.mode == "config":
@@ -142,8 +166,10 @@ class KernelBuilder(DockerRunner):
                 self._run_ssh(f"cp /tmp/{self.config.stem} .config")
             self._configure_kernel()
             self._make()
+        except FileNotFoundError as f:
+            logger.error("Failed to find file: {f}")
         except Exception as e:
-            logger.error(f"Oops: {e}")
+            logger.error(f"General oops: {e}")
             exit(-1)
         else:
             logger.info("Successfully build the kernel")
