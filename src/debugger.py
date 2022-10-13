@@ -4,7 +4,6 @@ import subprocess as sp
 from glob import glob
 from pathlib import Path
 
-import docker
 from loguru import logger
 
 from .docker_runner import DockerRunner
@@ -20,7 +19,7 @@ class Debugger(DockerRunner):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         user_cfg = kwargs.get("user_cfg", "")
-        cfg_setter(self, ["general", "debugger"], user_cfg, exclude_keys=["kernel_root"])
+        cfg_setter(self, ["debugger"], user_cfg, exclude_keys=["kernel_root"])
         ctf_ctx = kwargs.get("ctf_ctx", False)
         if ctf_ctx:
             self.ctf_kernel = Path(kwargs.get("ctf_kernel", ""))
@@ -34,8 +33,6 @@ class Debugger(DockerRunner):
         self.custom_gdb_script = Path("/home/") / self.user / Path(self.gdb_script).name
         self.script_logging = "set -e" if kwargs.get("log_level", "INFO") == "INFO" else "set -eux"
         self.skip_prompts = kwargs.get("skip_prompts", False)
-        self.buildargs = {"USER": self.user}
-        self.cli = docker.APIClient(base_url=self.docker_sock)
 
     def _extract_vmlinux(self) -> None:
         with new_context(self.ctf_dir):
@@ -62,7 +59,7 @@ class Debugger(DockerRunner):
         if self._is_gdb_script_hist():
             dst = GDB_SCRIPT_HIST.read_text()
             if dst != src:
-                logger.info(f"Detected changes in {self.gdb_script}. Rebuilding debugger!")
+                logger.debug(f"Detected changes in {self.gdb_script}. Rebuilding debugger!")
                 self.force_rebuild = True
                 GDB_SCRIPT_HIST.write_text(src)
         else:
@@ -70,5 +67,4 @@ class Debugger(DockerRunner):
 
     def run(self) -> None:
         self._handle_gdb_change()
-        self.check_existing()
-        super().run()
+        super().run(check_existing=True)

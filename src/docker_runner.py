@@ -9,7 +9,7 @@ import docker
 from fabric import Connection
 from loguru import logger
 
-from .misc import is_reuse
+from .misc import is_reuse, cfg_setter
 
 
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
@@ -18,14 +18,18 @@ from .misc import is_reuse
 class DockerRunner:
     def __init__(self, **kwargs) -> None:
         self.skip_prompts = kwargs.get("skip_prompts", False)
-        self.dockerfile_ctx = Path.cwd()
-        self.client = docker.from_env()
+        self.update_containers = kwargs.get("update_containers", False)
+        self.ctf = kwargs.get("ctf_ctx", False)
         self.ssh_conn = None
         self.image = None
         self.tag = None
-        self.user = None
         self.ssh_fwd_port = None
         self.container = None
+        cfg_setter(self, ["general"], user_cfg="", exclude_keys=[])
+        self.buildargs = {"USER": self.user}
+        self.dockerfile_ctx = Path.cwd()
+        self.client = docker.from_env()
+        self.cli = docker.APIClient(base_url=self.docker_sock)
         if not kwargs.get("ctf_ctx", False):
             self.kernel_root = kwargs.get("kroot", None)
             if not self.kernel_root:
@@ -58,20 +62,23 @@ class DockerRunner:
                 logger.debug("Established SSH connection!")
                 break
 
-    def build_image_hl(self):
-        image = self.client.images.build(path=str(self.dockerfile_ctx), dockerfile=self.dockerfile_path, tag=self.tag)[0]
-        return image
-
     def build_image(self, dockerfile=None, buildargs=None, image_tag=None):
         dockerfile = dockerfile if dockerfile else self.dockerfile
         buildargs = buildargs if buildargs else self.buildargs
         tag = image_tag if image_tag else self.tag
-        for log_entry in self.cli.build(path=str(self.dockerfile_ctx), dockerfile=dockerfile, tag=tag, decode=True, buildargs=buildargs):
+        nocache = True if self.update_containers else False
+        for log_entry in self.cli.build(
+            path=str(self.dockerfile_ctx), dockerfile=dockerfile, tag=tag, decode=True, buildargs=buildargs, nocache=nocache, rm=True
+        ):
             v = next(iter(log_entry.values()))
             if isinstance(v, str):
                 v = " ".join(v.strip().split())
-                if v:
+                if v and not self.update_containers:
                     logger.debug(v)
+                elif v and self.update_containers:
+                    logger.info(v)
+        if self.update_containers:
+            self.cli.prune_images(filters={"dangling": True})
 
     def get_image(self, tag=None):
         to_check = tag if tag else self.tag
@@ -90,7 +97,12 @@ class DockerRunner:
     def build_base_img(self) -> None:
         self.build_image(dockerfile=self.dockerfile_base_img, image_tag=self.tag_base_image)
 
-    def run(self) -> None:
+    def run(self, check_existing: bool = False) -> None:
+        if self.update_containers:
+            self.build_image()
+            return
+        if check_existing:
+            self.check_existing()
         if not self.image:
             if not self.is_base_image():
                 logger.debug("Could not find 'like-dbg'-base image! Building it!")
@@ -116,6 +128,8 @@ class DockerRunner:
             exit(-1)
 
     def check_existing(self) -> None:
+        if self.update_containers:
+            return
         if self.force_rebuild:
             logger.info(f"Force-rebuilding {type(self).__name__}")
             self.image = None

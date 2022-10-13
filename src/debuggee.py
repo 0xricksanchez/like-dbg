@@ -3,7 +3,6 @@
 import subprocess as sp
 from pathlib import Path
 
-import docker
 from loguru import logger
 
 from .docker_runner import DockerRunner
@@ -17,8 +16,7 @@ class Debuggee(DockerRunner):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         user_cfg = kwargs.get("user_cfg", "")
-        cfg_setter(self, ["debuggee", "debuggee_docker", "general", "rootfs_general"], user_cfg, exclude_keys=["kernel_root"])
-        self.ctf = kwargs.get("ctf_ctx", False)
+        cfg_setter(self, ["debuggee", "debuggee_docker", "rootfs_general"], user_cfg, exclude_keys=["kernel_root"])
         if self.ctf:
             self.ctf_mount = kwargs.get("ctf_mount")
             self.kernel = Path(self.docker_mnt) / kwargs.get("ctf_kernel", "")
@@ -28,12 +26,9 @@ class Debuggee(DockerRunner):
             self.rootfs = Path(self.docker_mnt) / self.rootfs_dir / (self.rootfs_base + self.arch + self.rootfs_ftype)
         self.qemu_arch = adjust_qemu_arch(self.arch)
         self.cmd = None
-        self.buildargs = {"USER": self.user}
-        self.cli = docker.APIClient(base_url=self.docker_sock)
 
     def run(self):
-        self.check_existing()
-        super().run()
+        super().run(check_existing=True)
 
     def infer_qemu_fs_mount(self) -> str:
         r = self.rootfs if self.ctf else Path(*self.rootfs.parts[2:])
