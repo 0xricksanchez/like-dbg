@@ -20,17 +20,16 @@ class DockerRunner:
         self.skip_prompts = kwargs.get("skip_prompts", False)
         self.update_containers = kwargs.get("update_containers", False)
         self.ctf = kwargs.get("ctf_ctx", False)
+        self.ssh_conn = None
+        self.image = None
+        self.tag = None
+        self.ssh_fwd_port = None
+        self.container = None
         cfg_setter(self, ["general"], user_cfg="", exclude_keys=[])
         self.buildargs = {"USER": self.user}
         self.dockerfile_ctx = Path.cwd()
         self.client = docker.from_env()
         self.cli = docker.APIClient(base_url=self.docker_sock)
-        self.ssh_conn = None
-        self.image = None
-        self.tag = None
-        self.user = None
-        self.ssh_fwd_port = None
-        self.container = None
         if not kwargs.get("ctf_ctx", False):
             self.kernel_root = kwargs.get("kroot", None)
             if not self.kernel_root:
@@ -69,13 +68,17 @@ class DockerRunner:
         tag = image_tag if image_tag else self.tag
         nocache = True if self.update_containers else False
         for log_entry in self.cli.build(
-            path=str(self.dockerfile_ctx), dockerfile=dockerfile, tag=tag, decode=True, buildargs=buildargs, nocache=nocache
+            path=str(self.dockerfile_ctx), dockerfile=dockerfile, tag=tag, decode=True, buildargs=buildargs, nocache=nocache, rm=True
         ):
             v = next(iter(log_entry.values()))
             if isinstance(v, str):
                 v = " ".join(v.strip().split())
-                if v:
+                if v and not self.update_containers:
                     logger.debug(v)
+                elif v and self.update_containers:
+                    logger.info(v)
+        if self.update_containers:
+            self.cli.prune_images(filters={"dangling": True})
 
     def get_image(self, tag=None):
         to_check = tag if tag else self.tag

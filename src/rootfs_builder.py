@@ -60,6 +60,7 @@ class RootFSBuilder(DockerRunner):
     def run(self) -> None:
         if self.update_containers:
             super().run(check_existing=False)
+            return
         if self.force_rebuild:
             logger.info(f"Force-rebuilding {type(self).__name__}")
             self.image = None

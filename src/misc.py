@@ -21,11 +21,12 @@ CFGS = [SYSTEM_CFG, USER_CFG]
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
 def cfg_setter(obj, sections: list[str], user_cfg: str, exclude_keys: list[str] = [], cherry_pick: dict[str, list[str]] = {}) -> None:
     global CFGS
+    cfgs = list(CFGS)
     cfg = configparser.ConfigParser()
     ignore_empty = False
     if user_cfg and Path(user_cfg).exists():
-        CFGS.append(Path(user_cfg).absolute())
-    for c in CFGS:
+        cfgs.append(Path(user_cfg).absolute())
+    for c in cfgs:
         if Path(user_cfg).name == c.name:
             ignore_empty = True
         cfg.read(c)
