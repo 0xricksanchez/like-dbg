@@ -61,6 +61,7 @@ On the upside, despite its early stages, a couple of useful features are already
     * Release tag (e.g.: 5.10-rc)
     * Major-Minor-Patch (e.g.: 5.10.77)
   * Ability to automatically apply patch files
+  * Basic ability to add custom kernel modules
 * Root file system builder:
   * Powered by [debootstrap](https://wiki.debian.org/Debootstrap)
   * Automatic generation of file system that matches the kernels architecture
@@ -123,7 +124,7 @@ python3 -m pip install -r requirements.txt
 ./start_kgdb.py --ctf <Image> <RootFS>
 
 # If you want to kill the current debugging session
-./start_kgdb.py --kill
+./start_kgdb.py -k
 
 # If you want to provide a custom 'user.ini' for a specific debugging setup
 ./start_kgdb.py -c <path_to_cfg> [other_args]
@@ -140,10 +141,12 @@ python3 -m pip install -r requirements.txt
 ./start_kgdb.py -u
 ```
 
-## Showcase
+### Examples
 
-As a first-time user, you will see a lot of docker building messages race across the screen.
-In the end, your experience should look similar to this:
+The `examples` subdirectory houses samples on how `LIKE_DBG` may aid you in specific kernel debugging tasks.
+Each example contains a dedicated `README.md` as well that contains the necessary information to reproduce the examples.
+
+## Showcase
 
 ![img/example.png](img/example.png)
 

@@ -4,11 +4,14 @@ import re
 import time
 from os import getuid
 from pathlib import Path
+import subprocess as sp
 
 from loguru import logger
 
 from .docker_runner import DockerRunner
 from .misc import adjust_arch, adjust_toolchain_arch, cfg_setter, cross_compile
+
+MISC_DRVS_PATH = Path("drivers/misc/")
 
 
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
@@ -115,8 +118,32 @@ class KernelBuilder(DockerRunner):
             else:
                 break
 
+    def _add_modules(self) -> None:
+        for d in Path(self.custom_modules).iterdir():
+            dst = f"{Path(self.kernel_root) / MISC_DRVS_PATH}"
+            sp.run(f"cp -fr {d} {dst}", shell=True)
+            kcfg_mod_path = Path(dst) / d.name / "Kconfig"
+            mod_kcfg_content = kcfg_mod_path.read_text()
+            tmp = "_".join(re.search(r"config .*", mod_kcfg_content)[0].upper().split())
+            ins = f"obj-$({tmp}) += {d.name}/\n"
+            if ins not in Path(f"{dst}/Makefile").read_text():
+                with open(f"{dst}/Makefile", "a") as g:
+                    g.write(ins)
+            with open(f"{dst}/Kconfig", "r") as f:
+                contents = f.readlines()
+            ins = f"""source "{MISC_DRVS_PATH / d.name / 'Kconfig'}"\n"""
+            if ins not in contents:
+                contents.insert(len(contents) - 1, ins)
+                with open(f"{dst}/Kconfig", "w") as kc:
+                    kc.writelines(contents)
+
     def run_container(self) -> None:
         logger.info("Building kernel. This may take a while...")
+        if self.custom_modules:
+            try:
+                self._add_modules()
+            except FileNotFoundError as f:
+                logger.error(f"Failed to find file: {f}")
         try:
             volumes = {f"{Path.cwd()}": {"bind": f"{self.docker_mnt}", "mode": "rw"}}
             if self.mode == "config":
@@ -143,7 +170,7 @@ class KernelBuilder(DockerRunner):
             self._configure_kernel()
             self._make()
         except Exception as e:
-            logger.error(f"Oops: {e}")
+            logger.error(f"General oops: {e}")
             exit(-1)
         else:
             logger.info("Successfully build the kernel")
