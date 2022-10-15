@@ -141,10 +141,12 @@ python3 -m pip install -r requirements.txt
 ./start_kgdb.py -u
 ```
 
-## Showcase
+### Examples
 
-As a first-time user, you will see a lot of docker building messages race across the screen.
-In the end, your experience should look similar to this:
+The `examples` subdirectory houses samples on how `LIKE_DBG` may aid you in specific kernel debugging tasks.
+Each example contains a dedicated `README.md` as well that contains the necessary information to reproduce the examples.
+
+## Showcase
 
 ![img/example.png](img/example.png)
 
