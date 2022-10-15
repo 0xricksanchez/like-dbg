@@ -120,27 +120,30 @@ class KernelBuilder(DockerRunner):
 
     def _add_modules(self) -> None:
         for d in Path(self.custom_modules).iterdir():
-            logger.error(d)
             dst = f"{Path(self.kernel_root) / MISC_DRVS_PATH}"
-            logger.error(f"dst {dst}")
             sp.run(f"cp -fr {d} {dst}", shell=True)
-            ctx = (d / "INSTALL").read_text()
-            (mkfile, kcfg) = ctx.split("------")
-            # TODO Add sanity checks that ensure the stuff is not already inserted in these two files!!!
-            with open(f"{dst}/Makefile", "a") as g:
-                g.write(mkfile)
+            kcfg_mod_path = Path(dst) / d.name / "Kconfig"
+            mod_kcfg_content = kcfg_mod_path.read_text()
+            tmp = "_".join(re.search(r"config .*", mod_kcfg_content)[0].upper().split())
+            ins = f"obj-$({tmp}) += {d.name}/\n"
+            if ins not in Path(f"{dst}/Makefile").read_text():
+                with open(f"{dst}/Makefile", "a") as g:
+                    g.write(ins)
             with open(f"{dst}/Kconfig", "r") as f:
                 contents = f.readlines()
-            contents.insert(len(contents) - 1, kcfg.replace('"', '"') + "\n")
-            with open(f"{dst}/Kconfig", "w") as kc:
-                kc.writelines(contents)
-            exit(-1)
+            ins = f"""source "{MISC_DRVS_PATH / d.name / 'Kconfig'}"\n"""
+            if ins not in contents:
+                contents.insert(len(contents) - 1, ins)
+                with open(f"{dst}/Kconfig", "w") as kc:
+                    kc.writelines(contents)
 
     def run_container(self) -> None:
         logger.info("Building kernel. This may take a while...")
         if self.custom_modules:
-            self._add_modules()
-
+            try:
+                self._add_modules()
+            except FileNotFoundError as f:
+                logger.error(f"Failed to find file: {f}")
         try:
             volumes = {f"{Path.cwd()}": {"bind": f"{self.docker_mnt}", "mode": "rw"}}
             if self.mode == "config":
@@ -166,8 +169,6 @@ class KernelBuilder(DockerRunner):
                 self._run_ssh(f"cp /tmp/{self.config.stem} .config")
             self._configure_kernel()
             self._make()
-        except FileNotFoundError as f:
-            logger.error("Failed to find file: {f}")
         except Exception as e:
             logger.error(f"General oops: {e}")
             exit(-1)

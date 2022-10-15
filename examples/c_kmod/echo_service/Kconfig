@@ -1,10 +1,5 @@
-# This is to be placed in drivers/misc/Makefile
-obj-$(CONFIG_ECHO_SERVICE_MODULE) += echo_service/
-
-------
-
 # This is to be placed in drivers/misc/Kconfig
-config ECHO_SERVICE_MODULE
+config LIKEDBG_ECHO_DEMO
     tristate "A Simple echo service module"
     default y
     help

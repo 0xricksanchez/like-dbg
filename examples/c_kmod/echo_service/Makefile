@@ -1,2 +1,2 @@
-obj-$(CONFIG_ECHO_SERVICE_MODULE) := echoservice.o
+obj-$(CONFIG_LIKEDBG_ECHO_DEMO) := echoservice.o
 
