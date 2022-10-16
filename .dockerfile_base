@@ -1,4 +1,4 @@
-FROM debian:bullseye-slim
+FROM ubuntu:22.04
 LABEL maintainer="Christopher Krah <admin@0x434b.dev>"
 
 ENV DEBIAN_FRONTEND noninteractive

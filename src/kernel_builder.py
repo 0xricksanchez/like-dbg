@@ -5,6 +5,7 @@ import time
 from os import getuid
 from pathlib import Path
 import subprocess as sp
+from invoke.exceptions import UnexpectedExit
 
 from loguru import logger
 
@@ -120,13 +121,15 @@ class KernelBuilder(DockerRunner):
 
     def _add_modules(self) -> None:
         for d in Path(self.custom_modules).iterdir():
+            if not d.is_dir():
+                continue
             dst = f"{Path(self.kernel_root) / MISC_DRVS_PATH}"
             sp.run(f"cp -fr {d} {dst}", shell=True)
             kcfg_mod_path = Path(dst) / d.name / "Kconfig"
             mod_kcfg_content = kcfg_mod_path.read_text()
             tmp = "_".join(re.search(r"config .*", mod_kcfg_content)[0].upper().split())
             ins = f"obj-$({tmp}) += {d.name}/\n"
-            if ins not in Path(f"{dst}/Makefile").read_text():
+            if ins.strip() not in Path(f"{dst}/Makefile").read_text():
                 with open(f"{dst}/Makefile", "a") as g:
                     g.write(ins)
             with open(f"{dst}/Kconfig", "r") as f:
@@ -136,15 +139,13 @@ class KernelBuilder(DockerRunner):
                 contents.insert(len(contents) - 1, ins)
                 with open(f"{dst}/Kconfig", "w") as kc:
                     kc.writelines(contents)
+            logger.debug(f"Added module {d} to the kernel")
 
     def run_container(self) -> None:
         logger.info("Building kernel. This may take a while...")
-        if self.custom_modules:
-            try:
-                self._add_modules()
-            except FileNotFoundError as f:
-                logger.error(f"Failed to find file: {f}")
         try:
+            if self.custom_modules:
+                self._add_modules()
             volumes = {f"{Path.cwd()}": {"bind": f"{self.docker_mnt}", "mode": "rw"}}
             if self.mode == "config":
                 volumes |= {f"{self.config.absolute().parent}": {"bind": "/tmp/", "mode": "rw"}}
@@ -169,8 +170,11 @@ class KernelBuilder(DockerRunner):
                 self._run_ssh(f"cp /tmp/{self.config.stem} .config")
             self._configure_kernel()
             self._make()
-        except Exception as e:
-            logger.error(f"General oops: {e}")
+        except FileNotFoundError as e:
+            logger.error(f"Failed to find file: {e}")
+            exit(-1)
+        except UnexpectedExit as e:
+            logger.error(f"A command caused an unexpected exit: {e}")
             exit(-1)
         else:
             logger.info("Successfully build the kernel")

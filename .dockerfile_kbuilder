@@ -17,7 +17,6 @@ RUN apt-get update && \
         libssl-dev \
         xz-utils \
         ccache \
-        linux-headers-$(uname -r) \
         bc \
         gcc-$TOOLCHAIN_ARCH-linux-gnu \
         binutils-$TOOLCHAIN_ARCH-linux-gnu \
