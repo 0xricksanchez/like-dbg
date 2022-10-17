@@ -1,3 +1,10 @@
 [tool.black]
 line-length = 150
-target-version = ['py37']
+target-version = ['py39']
+
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["src"]
+console_output_style = ["progress"]
+

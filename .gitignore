@@ -1,5 +1,6 @@
 .idea/*
 .venv
+.coverage
 .like-dbg
 .git
 .gdb_hist
