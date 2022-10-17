@@ -9,6 +9,7 @@
 .gdb_history
 tags
 src/__pycache__
+src/tests/__pycache__/*
 linux-*
 kernel_root
 io/rootfs*

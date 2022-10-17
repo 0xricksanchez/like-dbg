@@ -1,6 +1,7 @@
 from ..linux_kernel_dl import KernelDownloader
 from pathlib import Path
 import requests
+import hashlib
 
 
 def test_uris():
@@ -64,4 +65,4 @@ def test_run(tmp_path):
     lkdl.archive = Path(lkdl.kernel_dl_path) / f"linux-{lkdl._set_choice()}.tar.gz"
     lkdl.dl_uri = "https://file-examples.com/wp-content/uploads/2017/02/zip_2MB.zip"
     lkdl.run()
-    assert Path(lkdl.archive).is_file() == True
+    assert hashlib.md5(lkdl.archive.read_bytes()).hexdigest() == "3bcc73cf17293dae9ae3003bc82bd11f"
