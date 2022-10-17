@@ -3,11 +3,9 @@ name: codecov
 on: [push, pull_request]
 jobs:
   run:
-    runs-on: ${{ matrix.os }}
-      matrix:
-        os: [ubuntu-latest]
+    runs-on: ubuntu-22.04
     env:
-      OS: ${{ matrix.os }}
+      OS: ubuntu-22.04
       PYTHON: '3.9'
     steps:
     - uses: actions/checkout@master
