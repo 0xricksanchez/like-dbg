@@ -94,8 +94,10 @@ def stage4(skip: bool, **kwargs) -> dict[str, str]:
 
 def stage3(skip: bool, **kwargs) -> dict:
     kunpacker = stage2(**kwargs)
-    if not kunpacker["status_code"] and not skip:
+    if kunpacker["status"] == "unpack" and not skip:
         KernelBuilder(**kwargs | kunpacker).run()
+    elif kunpacker["status"] == "error":
+        exit(-1)
     else:
         logger.info("Kernel already built. Skipping building phase...")
     return kunpacker
