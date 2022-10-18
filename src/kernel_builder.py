@@ -64,8 +64,6 @@ class KernelBuilder(DockerRunner):
         self._run_ssh(f"{self.cc} ARCH={self.arch} make mrproper")
 
     def _build_arch(self) -> None:
-        # TODO check how we need to sanitize the [general] config arch field to reflect the make options
-        # All i know is it works if arch is x86_64
         if self.arch == "x86_64":
             self._run_ssh(f"{self.cc} {self.llvm_flag} make {self.arch}_defconfig")
         else:

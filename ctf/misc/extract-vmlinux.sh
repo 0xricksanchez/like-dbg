@@ -12,8 +12,6 @@
 
 check_vmlinux() {
     # Use readelf to check if it's a valid ELF
-    # TODO: find a better to way to check that it's really vmlinux
-    #       and not just an elf
     readelf -h "$1" > /dev/null 2>&1 || return 1
 
     cat "$1"
