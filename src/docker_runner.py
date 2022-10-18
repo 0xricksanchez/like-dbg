@@ -112,7 +112,7 @@ class DockerRunner:
             self.image = self.get_image()
         self.run_container()
 
-    def run_container(self):
+    def run_container(self) -> None:
         pass
 
     def stop_container(self) -> None:
@@ -121,11 +121,12 @@ class DockerRunner:
     def list_running_containers(self) -> list[docker.client.DockerClient.containers]:
         return self.client.containers.list()
 
-    def wait_for_container(self) -> None:
+    def wait_for_container(self) -> dict:
         ret = self.container.wait()
         if ret["StatusCode"] != 0:
             logger.critical(f"Failed to run {type(self).__name__}")
             exit(-1)
+        return ret
 
     def check_existing(self) -> None:
         if self.update_containers:

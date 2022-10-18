@@ -138,38 +138,6 @@ def parse_cli() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main():
-    signal.signal(signal.SIGINT, signal_handler)
-    args = parse_cli()
-    log_level = set_log_level(args.verbose)
-
-    if args.kill:
-        kill_session()
-
-    dbg_args = {}
-    dbge_args = {}
-    skip = False
-    generic_args = set_generic_ctx(args, log_level)
-
-    if args.update_containers:
-        update_containers(dbg_args, dbge_args, generic_args)
-
-    if args.partial and args.ctf:
-        logger.error("Partial runs and CTF runs are mutually exclusive!")
-        exit(-1)
-
-    if args.partial:
-        partial(args, dbge_args, generic_args, skip)
-
-    if args.ctf:
-        dbg_args, dbge_args = set_ctf_ctx(args, generic_args)
-        skip = True
-    else:
-        logger.debug("Executing in non-CTF context")
-
-    stage6(skip, generic_args, dbge_args, dbg_args)
-
-
 def set_generic_ctx(args, log_level):
     tmux("selectp -t 0")
     tmux('rename-session "LIKE-DBG"')
@@ -228,7 +196,7 @@ def partial(args, dbge_args, generic_args, skip):
 def update_containers(dbg_args, dbge_args, generic_args):
     logger.info("Updating all containers. This may take a while..!")
     generic_args["skip_prompts"] = True
-    mock_kunpacker = {"kroot": "mock_path", "status_code": 0}
+    mock_kunpacker = {"kroot": "mock_path", "status": "unpack"}
     try:
         DockerRunner(**generic_args | mock_kunpacker).build_base_img()
         KernelBuilder(**generic_args | mock_kunpacker).run()
@@ -241,6 +209,38 @@ def update_containers(dbg_args, dbge_args, generic_args):
         exit(-1)
     finally:
         exit(0)
+
+
+def main():
+    signal.signal(signal.SIGINT, signal_handler)
+    args = parse_cli()
+    log_level = set_log_level(args.verbose)
+
+    if args.kill:
+        kill_session()
+
+    dbg_args = {}
+    dbge_args = {}
+    skip = False
+    generic_args = set_generic_ctx(args, log_level)
+
+    if args.update_containers:
+        update_containers(dbg_args, dbge_args, generic_args)
+
+    if args.partial and args.ctf:
+        logger.error("Partial runs and CTF runs are mutually exclusive!")
+        exit(-1)
+
+    if args.partial:
+        partial(args, dbge_args, generic_args, skip)
+
+    if args.ctf:
+        dbg_args, dbge_args = set_ctf_ctx(args, generic_args)
+        skip = True
+    else:
+        logger.debug("Executing in non-CTF context")
+
+    stage6(skip, generic_args, dbge_args, dbg_args)
 
 
 if __name__ == "__main__":
