@@ -1,0 +1,3 @@
+FROM busybox:latest
+LABEL maintainer="Christopher Krah <admin@0x434b.dev>"
+
