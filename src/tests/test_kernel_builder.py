@@ -1,9 +1,9 @@
+import os
 from ..kernel_builder import KernelBuilder
 from pathlib import Path
 import collections
 import configparser
 from unittest.mock import patch
-import os
 
 
 USER_INI = Path("configs/user.ini")
@@ -22,15 +22,16 @@ def are_lists_equal(x, y) -> bool:
     return collections.Counter(x) == collections.Counter(y)
 
 
-def test_make_sudo_fail() -> None:
-    assert KernelBuilder.make_sudo("test") == "test"
+@patch("os.getuid", return_value=1)
+def test_make_sudo_user(self) -> None:
+    kb = KernelBuilder(**{"kroot": "foo"})
+    assert kb.make_sudo("test") == "test"
 
 
-@patch("os.getuid", return_value=42)
-def test_make_sudo_success(self) -> None:
-    assert os.getuid() == 42
-    # kb = KernelBuilder(**{"kroot": "foo"})
-    # assert kb.make_sudo("test") == "sudo test"
+@patch("os.getuid", return_value=0)
+def test_make_sudo_root(self) -> None:
+    kb = KernelBuilder(**{"kroot": "foo"})
+    assert kb.make_sudo("test") == "sudo test"
 
 
 def test_custom_args() -> None:

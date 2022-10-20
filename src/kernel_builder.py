@@ -2,7 +2,7 @@
 
 import re
 import time
-from os import getuid
+import os
 from pathlib import Path
 import subprocess as sp
 from invoke.exceptions import UnexpectedExit
@@ -41,7 +41,7 @@ class KernelBuilder(DockerRunner):
 
     @staticmethod
     def make_sudo(cmd: str) -> str:
-        if getuid() == 0:
+        if os.getuid() == 0:
             return f"sudo {cmd}"
         else:
             return cmd
