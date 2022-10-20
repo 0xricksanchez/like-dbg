@@ -18,6 +18,10 @@ def fetch_cfg_value_from_section_and_key(sect: str, key: str) -> str:
         return ""
 
 
+def are_lists_equal(x, y) -> bool:
+    return collections.Counter(x) == collections.Counter(y)
+
+
 def test_make_sudo_fail() -> None:
     assert KernelBuilder.make_sudo("test") == "test"
 
@@ -41,8 +45,7 @@ def test_extra_args() -> None:
     kb.extra_args = "-e FOO -d BAR"
     expected = "-e FOO -d BAR".split()
     actual = kb._extra_args("-e BAR").split()
-    compare = lambda x, y: collections.Counter(x) == collections.Counter(y)
-    assert compare(expected, actual) == True
+    assert are_lists_equal(expected, actual) is True
 
 
 @patch("src.kernel_builder.KernelBuilder._run_ssh", return_value=0)
