@@ -12,10 +12,7 @@ USER_INI = Path("configs/user.ini")
 def fetch_cfg_value_from_section_and_key(sect: str, key: str) -> str:
     cfg = configparser.ConfigParser()
     cfg.read(USER_INI)
-    try:
-        return cfg[sect][key]
-    except KeyError:
-        return ""
+    return cfg[sect][key]
 
 
 def are_lists_equal(x, y) -> bool:
