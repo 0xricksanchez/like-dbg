@@ -90,7 +90,7 @@ It may work fine but in general I highly encourage creating a dedicated non-root
 
 ### Optional
 
-This section covers tools that are *not* required to run LIKE-DBG but are nice to have and assist heavily when debugging or writing an exploit
+This section covers tools that are *not* required to run LIKE-DBG but are nice to have and assist heavily when debugging or writing an exploit.
 
 * [musl-gcc](https://www.musl-libc.org/how.html)
 * [ctags](https://github.com/universal-ctags/ctags)

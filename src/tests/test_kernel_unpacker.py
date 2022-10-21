@@ -1,7 +1,6 @@
 from ..kernel_unpacker import KernelUnpacker
 from pathlib import Path
 from unittest.mock import patch
-import uuid
 
 
 EMPTY_TARGZ = Path("src/tests/files/empty.tar.gz")

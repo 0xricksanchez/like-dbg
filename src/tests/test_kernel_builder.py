@@ -1,4 +1,3 @@
-import os
 from ..kernel_builder import KernelBuilder
 from pathlib import Path
 import collections

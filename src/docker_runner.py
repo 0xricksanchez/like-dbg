@@ -150,6 +150,4 @@ class DockerRunner:
             return self.image
         if self.image and not is_reuse(self.image.tags[0]):
             self.image = None
-            return self.image
-        else:
-            return self.image
+        return self.image
