@@ -1,6 +1,10 @@
 from docker.models.containers import Container
 from ..docker_runner import DockerRunner
 from pathlib import Path
+from unittest.mock import patch
+import pytest
+import uuid
+import shutil
 
 GENERIC_ARGS = {
     "skip_prompts": False,
@@ -67,7 +71,7 @@ def test_list_running_containers_is_empty() -> None:
     assert dr.list_running_containers() == []
 
 
-def test_run_container_sucess() -> None:
+def test_run_container_success() -> None:
     mdr = MockDockerRunner(**GENERIC_ARGS | MOCK_UNPACKER_RES)
     assert mdr.run_container("busybox", "latest", "/bin/true") is not None
 
@@ -145,9 +149,55 @@ def test_run_check_existing() -> None:
     assert dr.run(check_existing=True) == 0
 
 
+@patch("termios.tcflush", return_value=True)
+@patch("builtins.input", lambda *args: "y")
+def test_check_existing_is_reuse(self) -> None:
+    mdr = MockDockerRunner(**GENERIC_ARGS | MOCK_UNPACKER_RES)
+    mdr.skip_prompts = False
+    mdr.force_rebuild = False
+    mdr.update_containers = False
+    mdr.tag = "busybox"
+    assert mdr.check_existing().tags == ["busybox:latest"]
+
+
+@patch("termios.tcflush", return_value=True)
+@patch("builtins.input", lambda *args: "n")
+def test_check_existing_no_reuse(self) -> None:
+    mdr = MockDockerRunner(**GENERIC_ARGS | MOCK_UNPACKER_RES)
+    mdr.skip_prompts = False
+    mdr.force_rebuild = False
+    mdr.update_containers = False
+    mdr.tag = "busybox"
+    assert mdr.check_existing() is None
+
+
 def test_run_no_image() -> None:
     dr = DockerRunner(**GENERIC_ARGS | MOCK_UNPACKER_RES)
     dr.dockerfile = str(DOCKERFILE)
     dr.tag = "busybox"
     dr.update_containers = False
     assert dr.run(check_existing=False) == 0
+
+
+@patch("src.docker_runner.DockerRunner.is_base_image", return_value=False)
+def test_run_no_base_image(self) -> None:
+    dr = DockerRunner(**GENERIC_ARGS | MOCK_UNPACKER_RES)
+    dr.dockerfile = str(DOCKERFILE)
+    dr.tag = "busybox"
+    dr.update_containers = False
+    dr.image = False
+    assert dr.run(check_existing=False) == 0
+
+
+def test_guarantee_new_ssh() -> None:
+    dr = DockerRunner(**GENERIC_ARGS | MOCK_UNPACKER_RES)
+    p = Path(f"/tmp/{uuid.uuid1().hex}")
+    assert dr.guarantee_ssh(p) == p
+    shutil.rmtree(p)
+
+
+def test_no_kroot() -> None:
+    with pytest.raises(SystemExit) as ext:
+        _ = DockerRunner(**GENERIC_ARGS)
+    assert ext.type == SystemExit
+    assert ext.value.code == -1

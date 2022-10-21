@@ -37,14 +37,15 @@ class DockerRunner:
                 logger.critical(f"{type(self).__name__} got invalid kernel root: '{self.kernel_root}'")
                 exit(-1)
 
-    def guarantee_ssh(self, ssh_dir: Path) -> None:
-        if Path(ssh_dir).exists() and os.listdir(ssh_dir):
+    def guarantee_ssh(self, ssh_dir: Path) -> str:
+        if Path(ssh_dir).exists() and "like.id_rsa" in os.listdir(ssh_dir):
             logger.debug(f"Reusing local ssh keys from {ssh_dir}...")
         else:
             logger.debug("Generating new ssh key pair...")
             if not Path(ssh_dir).exists():
                 Path(ssh_dir).mkdir()
             sp.run(f'ssh-keygen -f {Path(ssh_dir) / "like.id_rsa"} -t rsa -N ""', shell=True)
+        return ssh_dir
 
     def init_ssh(self):
         tries = 0
@@ -147,6 +148,8 @@ class DockerRunner:
         self.image = self.get_image()
         if self.image and self.skip_prompts:
             return self.image
-        elif self.image and not is_reuse(self.image.tags[0]):
+        if self.image and not is_reuse(self.image.tags[0]):
             self.image = None
+            return self.image
+        else:
             return self.image
