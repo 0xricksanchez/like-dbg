@@ -7,7 +7,7 @@ import subprocess as sp
 from contextlib import contextmanager
 from pathlib import Path
 from sys import stdin
-from termios import TCIFLUSH, tcflush
+import termios
 
 from loguru import logger
 
@@ -64,7 +64,7 @@ def _set_cfg(cfg, obj, sect, key, ignore_empty) -> None:
 def is_reuse(p: str) -> bool:
     choice = "y"
     logger.info(f"Found {p}. Re-use it? [Y/n]")
-    tcflush(stdin, TCIFLUSH)
+    termios.tcflush(stdin, termios.TCIFLUSH)
     tmp = input().lower()
     if tmp != "":
         choice = tmp

@@ -1,5 +1,6 @@
 from ..kernel_unpacker import KernelUnpacker
 from pathlib import Path
+from unittest.mock import patch
 
 
 EMPTY_TARGZ = Path("src/tests/files/empty.tar.gz")
@@ -122,3 +123,17 @@ def test_run_dirty_unpack(tmp_path) -> None:
     ret = ku.run()
     assert ret["status"] == "unpack"
     assert ret["assume_dirty"] is False
+
+
+@patch("termios.tcflush", return_value=True)
+@patch("builtins.input", lambda *args: "y")
+def test_reuse_existing_vmlinux(self, tmp_path) -> None:
+    ku = MockUnpacker(VALID_TARGZ, tmp_path / "fresh_unpack")
+    assert ku._reuse_existing_vmlinux() is True
+
+
+@patch("termios.tcflush", return_value=True)
+@patch("builtins.input", lambda *args: "n")
+def test_no_reuse_existing_vmlinux(self, tmp_path) -> None:
+    ku = MockUnpacker(VALID_TARGZ, tmp_path / "fresh_unpack")
+    assert ku._reuse_existing_vmlinux() is False
