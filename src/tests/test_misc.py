@@ -136,5 +136,5 @@ def test_set_base_cfg_ignore_empty() -> None:
     cfg.read(CFG_INI)
     _set_base_cfg(cfg, [], m, ["debuggee", "kernel_dl"], ignore_empty=True)
     assert "tag" not in vars(m)
-    assert "mmp" not in vars(m)
+    assert "mmp" in vars(m)
     assert "commit" not in vars(m)
