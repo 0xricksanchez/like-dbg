@@ -1,10 +1,12 @@
 from src.misc import (
+    cfg_setter,
     cross_compile,
     adjust_toolchain_arch,
     adjust_arch,
     adjust_qemu_arch,
     get_sha256_from_file,
     is_reuse,
+    new_context,
     tmux,
     tmux_shell,
     _set_cfg,
@@ -20,6 +22,7 @@ from unittest.mock import MagicMock, patch, Mock
 
 MMP_INI = Path("src/tests/confs/lkdl_mmp.ini")
 CFG_INI = Path("src/tests/confs/cfg_setter.ini")
+USR_INI = Path("src/tests/confs/user.ini")
 
 
 def test_cross_compile() -> None:
@@ -138,3 +141,23 @@ def test_set_base_cfg_ignore_empty() -> None:
     assert "tag" not in vars(m)
     assert "mmp" in vars(m)
     assert "commit" not in vars(m)
+
+
+@patch("src.misc.CFGS", [CFG_INI])
+def test_cfg_setter() -> None:
+    m = Mock()
+    cfg_setter(m, sections=["kernel_dl"], user_cfg=str(USR_INI), exclude_keys=["ignore_me"], cherry_pick={"debuggee": ["baz"]})
+    assert "ignore_me" not in vars(m)
+    assert m.mmp == "5.15.67"
+    assert m.baz == "False"
+
+
+def test_new_context(tmp_path) -> None:
+    initial_path = Path.cwd()
+
+    @new_context(tmp_path)
+    def with_decorator():
+        return Path.cwd()
+
+    assert with_decorator() == tmp_path
+    assert Path.cwd() == initial_path
