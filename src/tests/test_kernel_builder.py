@@ -3,6 +3,7 @@ from pathlib import Path
 import collections
 import configparser
 from unittest.mock import patch
+import pytest
 import uuid
 
 
@@ -83,12 +84,15 @@ def test_get_params_extra_override(self) -> None:
     kb = KernelBuilder(**{"kroot": "foo"})
     kb.mode = "generic"
     kb.extra_args = "-d DEBUG_KERNEL"
-    assert kb._get_params() == fetch_cfg_value_from_section_and_key(USER_INI, "kernel_builder", "generic_args").replace("-e DEBUG_KERNEL", kb.extra_args)
+    assert kb._get_params() == fetch_cfg_value_from_section_and_key(USER_INI, "kernel_builder", "generic_args").replace(
+        "-e DEBUG_KERNEL", kb.extra_args
+    )
+
 
 def test_add_modules() -> None:
-    kb = KernelBuilder(**{"kroot": "foo"})
-    kb.custom_modules = fetch_cfg_value_from_section_and_key(CUSTOM_MODULE, "kernel_builder", "custom_modules")
     p = Path(f"/tmp/{uuid.uuid1().hex}")
+    kb = KernelBuilder(**{"kroot": p})
+    kb.custom_modules = fetch_cfg_value_from_section_and_key(CUSTOM_MODULE, "kernel_builder", "custom_modules")
     Path(p / MISC_DRVS_PATH).mkdir(parents=True)
     fst = "This is the 1st line.\n"
     lst = "This is the last line.\n"
@@ -97,7 +101,7 @@ def test_add_modules() -> None:
     q.write_text(fst)
     r = Path(p / MISC_DRVS_PATH / "Kconfig")
     r.touch()
-    r.write_text(f"{fst}\n{lst}!")
+    r.write_text(f"{fst}\n{lst}")
     kb._add_modules()
     with open(q, "r") as f:
         data = f.readlines()
@@ -105,7 +109,76 @@ def test_add_modules() -> None:
     with open(r, "r") as f:
         data = f.readlines()
     assert data[-1] == lst
-    assert data[-2] != fst 
+    assert data[-2] != fst
 
 
+@patch.object(KernelBuilder, "_run_ssh")
+def test_build_arch_no_args(mock_m) -> None:
+    kb = KernelBuilder(**{"kroot": "foo"})
+    kb._build_arch()
+    mock_m.assert_called_with("CC=gcc  make x86_64_defconfig")
 
+
+@patch.object(KernelBuilder, "_run_ssh")
+def test_build_arch_llvm(mock_m) -> None:
+    kb = KernelBuilder(**{"kroot": "foo"})
+    kb.arch = "x86_64"
+    kb.cc = "CC=clang"
+    kb.llvm_flag = "LLVM=1"
+    kb._build_arch()
+    mock_m.assert_called_with("CC=clang LLVM=1 make x86_64_defconfig")
+
+
+@patch.object(KernelBuilder, "_run_ssh")
+def test_build_arch_arm(mock_m) -> None:
+    kb = KernelBuilder(**{"kroot": "foo"})
+    kb.arch = "aarch64"
+    kb._build_arch()
+    mock_m.assert_called_with(f"CC=gcc  ARCH={kb.arch} make defconfig")
+
+
+@patch.object(KernelBuilder, "_run_ssh")
+def test_build_kvm_guest(mock_m) -> None:
+    kb = KernelBuilder(**{"kroot": "foo"})
+    kb._build_kvm_guest()
+    mock_m.assert_called_with(f"CC=gcc  ARCH={kb.arch} make kvm_guest.config")
+
+
+@patch.object(KernelBuilder, "_run_ssh")
+def test_configure_kernel(mock_m) -> None:
+    kb = KernelBuilder(**{"kroot": "foo"})
+    kb.mode = ""
+    kb.extra_args = "-e FOO -d BAR"
+    kb._configure_kernel()
+    mock_m.assert_called_with(f"./scripts/config {kb.extra_args}")
+
+
+@patch.object(KernelBuilder, "_run_ssh")
+def test_build_mrproper(mock_m) -> None:
+    kb = KernelBuilder(**{"kroot": "foo"})
+    kb._build_mrproper()
+    mock_m.assert_called_with("CC=gcc ARCH=x86_64 make mrproper")
+
+
+@patch.object(KernelBuilder, "_run_ssh")
+def test_make_clean(mock_m) -> None:
+    kb = KernelBuilder(**{"kroot": "foo"})
+    kb._make_clean()
+    mock_m.assert_called_with("make clean")
+
+
+@patch.object(KernelBuilder, "_run_ssh", return_value=0)
+def test_make_sucess(mock_m) -> None:
+    kb = KernelBuilder(**{"kroot": "foo"})
+    kb._make()
+    mock_m.assert_called_with("CC=gcc ARCH=x86_64  make -j$(nproc) modules")
+
+
+@patch.object(KernelBuilder, "_run_ssh", return_value=1)
+@patch.object(KernelBuilder, "stop_container", return_value=0)
+def test_make_fail(mock_m, mock_k) -> None:
+    with pytest.raises(SystemExit) as ext:
+        kb = KernelBuilder(**{"kroot": "foo"})
+        kb._make()
+    assert ext.type == SystemExit
+    assert ext.value.code == -1

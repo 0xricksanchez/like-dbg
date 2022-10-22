@@ -68,7 +68,7 @@ class KernelBuilder(DockerRunner):
         if self.arch == "x86_64":
             cmd += f"make {self.arch}_defconfig"
         else:
-            cmd += f" ARCH={self.arch} make defconfig"
+            cmd += f"ARCH={self.arch} make defconfig"
         return self._run_ssh(f"{cmd}")
 
     def _build_kvm_guest(self) -> int:
