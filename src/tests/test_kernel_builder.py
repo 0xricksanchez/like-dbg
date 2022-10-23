@@ -2,7 +2,8 @@ from ..kernel_builder import KernelBuilder, MISC_DRVS_PATH
 from pathlib import Path
 import collections
 import configparser
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch, Mock
+import docker
 import pytest
 import uuid
 
@@ -48,21 +49,21 @@ def test_extra_args() -> None:
     assert are_lists_equal(expected, actual) is True
 
 
-@patch("src.kernel_builder.KernelBuilder._run_ssh", return_value=0)
+@patch.object(KernelBuilder, "_run_ssh", return_value=0)
 def test_get_params_syzkaller(self) -> None:
     kb = KernelBuilder(**{"kroot": "foo"})
     kb.mode = "syzkaller"
     assert kb._get_params() == fetch_cfg_value_from_section_and_key(USER_INI, "kernel_builder", "syzkaller_args")
 
 
-@patch("src.kernel_builder.KernelBuilder._run_ssh", return_value=0)
+@patch.object(KernelBuilder, "_run_ssh", return_value=0)
 def test_get_params_generic(self) -> None:
     kb = KernelBuilder(**{"kroot": "foo"})
     kb.mode = "generic"
     assert kb._get_params() == fetch_cfg_value_from_section_and_key(USER_INI, "kernel_builder", "generic_args")
 
 
-@patch("src.kernel_builder.KernelBuilder._run_ssh", return_value=0)
+@patch.object(KernelBuilder, "_run_ssh", return_value=0)
 def test_get_params_custom(self) -> None:
     kb = KernelBuilder(**{"kroot": "foo"})
     kb.mode = "custom"
@@ -71,7 +72,7 @@ def test_get_params_custom(self) -> None:
     assert kb._get_params() == "-e FOO -e BAR -d BAZ -d QUX"
 
 
-@patch("src.kernel_builder.KernelBuilder._run_ssh", return_value=0)
+@patch.object(KernelBuilder, "_run_ssh", return_value=0)
 def test_get_params_extra(self) -> None:
     kb = KernelBuilder(**{"kroot": "foo"})
     kb.mode = ""
@@ -79,7 +80,7 @@ def test_get_params_extra(self) -> None:
     assert kb._get_params() == kb.extra_args
 
 
-@patch("src.kernel_builder.KernelBuilder._run_ssh", return_value=0)
+@patch.object(KernelBuilder, "_run_ssh", return_value=0)
 def test_get_params_extra_override(self) -> None:
     kb = KernelBuilder(**{"kroot": "foo"})
     kb.mode = "generic"
@@ -182,3 +183,91 @@ def test_make_fail(mock_m, mock_k) -> None:
         kb._make()
     assert ext.type == SystemExit
     assert ext.value.code == -1
+
+
+@patch.object(KernelBuilder, "_run_ssh", return_value=0)
+def test_apply_patches(mock_m, tmp_path) -> None:
+    kb = KernelBuilder(**{"kroot": "foo"})
+    kb.patch_dir = tmp_path
+    Path(tmp_path / "patch_a").touch()
+    Path(tmp_path / "patch_b").touch()
+    assert kb._apply_patches() == 0
+
+
+@patch.object(KernelBuilder, "_run_ssh", return_value=1)
+def test_apply_patches_fail(mock_m, tmp_path) -> None:
+    kb = KernelBuilder(**{"kroot": "foo"})
+    kb.patch_dir = tmp_path
+    Path(tmp_path / "patch_a").touch()
+    assert kb._apply_patches() == 1
+
+
+def test_run_ssh_success() -> None:
+    kb = KernelBuilder(**{"kroot": "foo"})
+    kb.ssh_conn = MagicMock()
+    cmd = "foobar --baz"
+    expected = f"cd {kb.docker_mnt}/{kb.kernel_root} && {cmd}"
+    kb._run_ssh(cmd)
+    assert kb.ssh_conn.run.assert_called_with(expected, echo=True, warn=False) is None
+
+
+def get_run_kbuilder(mode: str) -> KernelBuilder:
+    kb = KernelBuilder(**{"kroot": "foo"})
+    kb.custom_modules = True
+    kb.ssh_fwd_port = 2222
+    kb.client = docker.DockerClient()
+    kb.ssh_conn = Mock()
+    kb.mode = mode
+    kb.kvm = True
+    kb.image = "busybox"
+    kb.dirty = True
+    return kb
+
+
+@patch.object(KernelBuilder, "_add_modules", return_value=0)
+@patch.object(KernelBuilder, "_make_clean", return_value=0)
+@patch.object(KernelBuilder, "_build_mrproper", return_value=0)
+@patch.object(KernelBuilder, "_apply_patches", return_value=0)
+@patch.object(KernelBuilder, "_build_arch", return_value=0)
+@patch.object(KernelBuilder, "_build_kvm_guest", return_value=0)
+@patch.object(KernelBuilder, "_configure_kernel", return_value=0)
+@patch.object(KernelBuilder, "_make", return_value=0)
+@patch.object(KernelBuilder, "_wait_for_container", return_value=0)
+@patch.object(KernelBuilder, "init_ssh", return_value=0)
+@patch.object(KernelBuilder, "_run_ssh", return_value=0)
+@patch("termios.tcflush", return_value=True)
+@patch("builtins.input", lambda *args: "y")
+def test_run_no_config_mode(a, b, c, d, e, f, g, h, j, k, lvname, m):
+    kb = get_run_kbuilder("noconfig")
+    kb.run()
+    expected = f"cd {kb.docker_mnt}/{kb.kernel_root}/arch/{kb.arch}/boot && ln -s bzImage Image"
+    assert kb.ssh_conn.run.assert_called_with(expected, echo=True) is None
+
+
+@patch.object(KernelBuilder, "_add_modules", return_value=0)
+@patch.object(KernelBuilder, "_make_clean", return_value=0)
+@patch.object(KernelBuilder, "_build_mrproper", return_value=0)
+@patch.object(KernelBuilder, "_apply_patches", return_value=0)
+@patch.object(KernelBuilder, "_build_arch", return_value=0)
+@patch.object(KernelBuilder, "_build_kvm_guest", return_value=0)
+@patch.object(KernelBuilder, "_configure_kernel", return_value=0)
+@patch.object(KernelBuilder, "_make", return_value=0)
+@patch.object(KernelBuilder, "_wait_for_container", return_value=0)
+@patch.object(KernelBuilder, "init_ssh", return_value=0)
+@patch.object(KernelBuilder, "_run_ssh", return_value=0)
+@patch("termios.tcflush", return_value=True)
+@patch("builtins.input", lambda *args: "y")
+def test_run_config_mode(a, b, c, d, e, f, g, h, j, k, lvname, m):
+    kb = get_run_kbuilder("config")
+    kb.run()
+    expected = f"cd {kb.docker_mnt}/{kb.kernel_root}/arch/{kb.arch}/boot && ln -s bzImage Image"
+    assert kb.ssh_conn.run.assert_called_with(expected, echo=True) is None
+
+
+def test_wait_for_container() -> None:
+    kb = KernelBuilder(**{"kroot": "foo"})
+    kb.container = Mock()
+    kb.container.id = 42
+    kb.cli = Mock()
+    kb.cli.inspect_container.return_value = {"State": {"Health": {"Status": "healthy"}}}
+    kb._wait_for_container()

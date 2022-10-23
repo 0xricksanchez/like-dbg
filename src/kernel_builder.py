@@ -51,7 +51,8 @@ class KernelBuilder(DockerRunner):
         warn = kwargs.get("warn", False)
         return self.ssh_conn.run(f"cd {self.docker_mnt}/{self.kernel_root} && {cmd}", echo=True, warn=warn).exited
 
-    def _apply_patches(self):
+    def _apply_patches(self) -> int:
+        ret = 0
         if self.patch_dir and Path(self.patch_dir).exists():
             patch_files = [x for x in Path(self.patch_dir).iterdir()]
             if patch_files:
@@ -59,6 +60,8 @@ class KernelBuilder(DockerRunner):
                     logger.debug(f"Patching: {pfile}")
                     if self._run_ssh(f"patch -p1 < ../../{self.patch_dir}/{pfile.name} > /dev/null", warn=True) != 0:
                         logger.error(f"Failed to apply patch: {pfile}... Continuing anyway!")
+                        ret = 1
+        return ret
 
     def _build_mrproper(self) -> int:
         return self._run_ssh(f"{self.cc} ARCH={self.arch} make mrproper")
