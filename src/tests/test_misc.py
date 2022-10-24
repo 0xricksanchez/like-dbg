@@ -13,6 +13,11 @@ from src.misc import (
     _set_base_cfg,
     _cherry_pick,
 )
+
+from src.debuggee import Debuggee
+from src.debugger import Debugger
+from src.kernel_builder import KernelBuilder
+from src.rootfs_builder import RootFSBuilder
 import pytest
 import uuid
 from pathlib import Path
@@ -127,7 +132,7 @@ def test_set_base_cfg() -> None:
     cfg.read(CFG_INI)
     _set_base_cfg(cfg, ["mmp", "tag"], m, ["debuggee", "kernel_dl", "foobar"], ignore_empty=False)
     assert m.foo == "Bar"
-    assert m.baz == "False"
+    assert m.panic == "foo"
     assert "tag" not in vars(m)
     assert "mmp" not in vars(m)
     assert "commit" in vars(m)
@@ -146,10 +151,10 @@ def test_set_base_cfg_ignore_empty() -> None:
 @patch("src.misc.CFGS", [CFG_INI])
 def test_cfg_setter() -> None:
     m = Mock()
-    cfg_setter(m, sections=["kernel_dl"], user_cfg=str(USR_INI), exclude_keys=["ignore_me"], cherry_pick={"debuggee": ["baz"]})
+    cfg_setter(m, sections=["kernel_dl"], user_cfg=str(USR_INI), exclude_keys=["ignore_me"], cherry_pick={"debuggee": ["panic"]})
     assert "ignore_me" not in vars(m)
     assert m.mmp == "5.15.67"
-    assert m.baz == "False"
+    assert m.panic == "foo"
 
 
 def test_new_context(tmp_path) -> None:
@@ -161,3 +166,28 @@ def test_new_context(tmp_path) -> None:
 
     assert with_decorator() == tmp_path
     assert Path.cwd() == initial_path
+
+
+def test_cfg_setter_kbuilder() -> None:
+    kb = KernelBuilder(**{"kroot": "foo", "user_cfg": CFG_INI})
+    assert kb.arch == "arm64"
+    assert kb.compiler == "compiler"
+
+
+def test_cfg_setter_rootfs() -> None:
+    rfs = RootFSBuilder(**{"kroot": "foo", "user_cfg": CFG_INI})
+    assert rfs.rootfs_ftype == "ext4"
+    assert rfs.arch == "arm64"
+
+
+def test_cfg_setter_debugger() -> None:
+    d = Debugger(**{"kroot": "foo", "user_cfg": CFG_INI})
+    assert d.gdb_script == "some/path"
+    assert d.arch == "arm64"
+
+
+def test_cfg_setter_debuggee() -> None:
+    d = Debuggee(**{"kroot": "foo", "user_cfg": CFG_INI})
+    assert d.rootfs_ftype == "ext4"
+    assert d.arch == "arm64"
+    assert d.panic == "foo"
