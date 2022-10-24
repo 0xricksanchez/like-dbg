@@ -22,7 +22,9 @@ class KernelBuilder(DockerRunner):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         user_cfg = kwargs.get("user_cfg", "")
-        cfg_setter(self, ["kernel_builder", "kernel_builder_docker"], user_cfg, exclude_keys=["kernel_root"], cherry_pick={"debuggee": ["kvm"]})
+        cfg_setter(
+            self, ["general", "kernel_builder", "kernel_builder_docker"], user_cfg, exclude_keys=["kernel_root"], cherry_pick={"debuggee": ["kvm"]}
+        )
         self.cc = f"CC={self.compiler}" if self.compiler else ""
         self.llvm_flag = "" if "gcc" in self.cc else "LLVM=1"
         self.guarantee_ssh(self.ssh_dir)
