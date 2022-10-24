@@ -16,7 +16,7 @@ class Debuggee(DockerRunner):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         user_cfg = kwargs.get("user_cfg", "")
-        cfg_setter(self, ["debuggee", "debuggee_docker", "rootfs_general"], user_cfg, exclude_keys=["kernel_root"])
+        cfg_setter(self, ["general", "debuggee", "debuggee_docker", "rootfs_general"], user_cfg, exclude_keys=["kernel_root"])
         if self.ctf:
             self.ctf_mount = kwargs.get("ctf_mount")
             self.kernel = Path(self.docker_mnt) / kwargs.get("ctf_kernel", "")

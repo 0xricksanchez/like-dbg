@@ -19,7 +19,7 @@ class Debugger(DockerRunner):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         user_cfg = kwargs.get("user_cfg", "")
-        cfg_setter(self, ["debugger"], user_cfg, exclude_keys=["kernel_root"])
+        cfg_setter(self, ["general", "debugger"], user_cfg, exclude_keys=["kernel_root"])
         ctf_ctx = kwargs.get("ctf_ctx", False)
         if ctf_ctx:
             self.ctf_kernel = Path(kwargs.get("ctf_kernel", ""))
