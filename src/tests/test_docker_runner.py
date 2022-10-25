@@ -1,7 +1,8 @@
 from docker.models.containers import Container
+from docker import DockerClient
 from ..docker_runner import DockerRunner
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 import pytest
 import uuid
 import shutil
@@ -201,3 +202,26 @@ def test_no_kroot() -> None:
         _ = DockerRunner(**GENERIC_ARGS)
     assert ext.type == SystemExit
     assert ext.value.code == -1
+
+
+@patch("time.sleep", return_value=None)
+@patch("fabric.Connection", return_value=Mock)
+def test_init_ssh_fail_missing_port(fab, slp) -> None:
+    dr = DockerRunner(**GENERIC_ARGS | MOCK_UNPACKER_RES)
+    dr.client = DockerClient()
+    with pytest.raises((Exception, SystemExit)) as err:
+        dr.init_ssh()
+        assert err.type == SystemExit
+        assert err.value.code == -1
+
+
+@patch("fabric.Connection", return_value=Mock)
+@patch("time.sleep", return_value=None)
+def test_init_ssh_fail_sucess(fab, slp) -> None:
+    dr = DockerRunner(**GENERIC_ARGS | MOCK_UNPACKER_RES)
+    dr.client = DockerClient()
+    dr.ssh_fwd_port = 1337
+    dr.user = "user"
+    dr.init_ssh()
+    assert dr.ssh_conn.host == "localhost"
+    assert dr.ssh_conn.port == 1337

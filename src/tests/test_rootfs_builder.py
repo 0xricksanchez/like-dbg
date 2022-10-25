@@ -4,6 +4,7 @@ from src.rootfs_builder import RootFSBuilder
 
 def test_is_exist_fail() -> None:
     rfsb = RootFSBuilder(False, **{"kroot": "/tmp"})
+    rfsb.rootfs_path = Path("/foobar")
     assert rfsb.is_exist() is False
 
 
