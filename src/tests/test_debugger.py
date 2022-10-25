@@ -1,5 +1,5 @@
 from pathlib import Path
-from src.debugger import Debugger
+from src.debugger import GDB_SCRIPT_HIST, Debugger
 from unittest.mock import patch
 import hashlib
 
@@ -10,6 +10,7 @@ PACKED_KERNEL = Path("src/tests/files/testKernel_packed")
 
 def test_is_gdb_script_success() -> None:
     d = Debugger(**{"kroot": "foo"})
+    GDB_SCRIPT_HIST.touch()
     assert d._is_gdb_script_hist() is True
 
 
