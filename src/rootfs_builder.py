@@ -15,7 +15,7 @@ class RootFSBuilder(DockerRunner):
     def __init__(self, partial_run: bool = False, **kwargs) -> None:
         super().__init__(**kwargs)
         user_cfg = kwargs.get("user_cfg", "")
-        cfg_setter(self, ["rootfs_general", "rootfs_builder"], user_cfg)
+        cfg_setter(self, ["rootfs_general", "rootfs_builder", "general"], user_cfg)
         self.partial = partial_run
         self.fs_name = self.rootfs_base + self.arch + self.rootfs_ftype
         self.rootfs_path = self.rootfs_dir + self.fs_name
@@ -40,7 +40,7 @@ class RootFSBuilder(DockerRunner):
             )
             gen = self.container.logs(stream=True, follow=True)
             [logger.info(log.strip().decode()) for log in gen]
-            self.wait_for_container()
+            # self.wait_for_container()
         except Exception as e:
             logger.critical(f"Oops: {e}")
             exit(-1)

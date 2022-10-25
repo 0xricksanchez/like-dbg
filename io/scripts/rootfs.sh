@@ -103,9 +103,11 @@ if [ "$ARCH" != "$(uname -m)" ]; then
         find /proc/sys/fs/binfmt_misc -type f -name 'qemu-*' -exec sh -c 'echo -1 > $1' shell {} \; > /dev/null
 
         # Grab qemu binfmt register script
-        wget -q https://raw.githubusercontent.com/qemu/qemu/master/scripts/qemu-binfmt-conf.sh &&
-            chmod 777 qemu-binfmt-conf.sh &&
-            ./qemu-binfmt-conf.sh --qemu-suffix "-static" --qemu-path "/usr/bin" > /dev/null
+	if [ ! -f "qemu-binfmt-conf.sh" ]; then
+	    wget -q https://raw.githubusercontent.com/qemu/qemu/master/scripts/qemu-binfmt-conf.sh &&
+            chmod 777 qemu-binfmt-conf.sh
+	fi
+        ./qemu-binfmt-conf.sh --qemu-suffix "-static" --qemu-path "/usr/bin" > /dev/null
     fi
 fi
 
