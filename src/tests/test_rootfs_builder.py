@@ -25,7 +25,7 @@ def test_run_container_full_cfg() -> None:
     assert (
         rfsb.client.containers.run.assert_called_with(
             None,
-            volumes={f"{Path.cwd() / 'io'}": {"bind": f"{rfsb.docker_mnt}", "mode": "rw"}}, 
+            volumes={f"{Path.cwd() / 'io'}": {"bind": f"{rfsb.docker_mnt}", "mode": "rw"}},
             detach=True,
             privileged=True,
             remove=True,
@@ -43,7 +43,7 @@ def test_run_container_no_hostname() -> None:
     assert (
         rfsb.client.containers.run.assert_called_with(
             None,
-            volumes={f"{Path.cwd() / 'io'}": {"bind": f"{rfsb.docker_mnt}", "mode": "rw"}}, 
+            volumes={f"{Path.cwd() / 'io'}": {"bind": f"{rfsb.docker_mnt}", "mode": "rw"}},
             detach=True,
             privileged=True,
             remove=True,
@@ -66,6 +66,7 @@ def test__run(mock) -> None:
 @patch("builtins.input", lambda *args: "y")
 def test_run_is_reuse(tflush, gimg) -> None:
     rfsb = RootFSBuilder(False, **{"kroot": "/tmp"})
+    rfsb.client = MagicMock()
     assert rfsb.run() is None
 
 
