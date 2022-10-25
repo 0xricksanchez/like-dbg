@@ -25,7 +25,7 @@ def test_run_container_full_cfg() -> None:
     assert (
         rfsb.client.containers.run.assert_called_with(
             None,
-            volumes={"/home/raven/Git/like-dbg/io": {"bind": "/io", "mode": "rw"}},
+            volumes={f"{Path.cwd() / 'io'}": {"bind": f"{rfsb.docker_mnt}", "mode": "rw"}}, 
             detach=True,
             privileged=True,
             remove=True,
@@ -43,7 +43,7 @@ def test_run_container_no_hostname() -> None:
     assert (
         rfsb.client.containers.run.assert_called_with(
             None,
-            volumes={"/home/raven/Git/like-dbg/io": {"bind": "/io", "mode": "rw"}},
+            volumes={f"{Path.cwd() / 'io'}": {"bind": f"{rfsb.docker_mnt}", "mode": "rw"}}, 
             detach=True,
             privileged=True,
             remove=True,
