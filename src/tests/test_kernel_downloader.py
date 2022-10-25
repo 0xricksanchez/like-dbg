@@ -65,4 +65,4 @@ def test_run(tmp_path):
     lkdl.archive = Path(lkdl.kernel_dl_path) / f"linux-{lkdl._set_choice()}.tar.gz"
     lkdl.dl_uri = "https://file-examples.com/wp-content/uploads/2017/02/zip_2MB.zip"
     lkdl.run()
-    assert hashlib.md5(lkdl.archive.read_bytes()).hexdigest() == "3bcc73cf17293dae9ae3003bc82bd11f"
+    assert hashlib.md5(lkdl.archive.read_bytes()).hexdigest() == "805b6db3298f838d1998466e54471490"

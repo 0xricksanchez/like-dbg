@@ -49,11 +49,9 @@ class Debuggee(DockerRunner):
             return 0
         elif "wait" in self.panic:
             try:
-                ret = self.panic.split(" ")[1]
-                if not ret:
-                    return 15
+                ret = int(self.panic.split(" ")[1])
                 return ret
-            except IndexError:
+            except (IndexError, ValueError):
                 return 15
         else:
             logger.error("Unknown requested panic behavior...")
@@ -72,7 +70,6 @@ class Debuggee(DockerRunner):
         self.cmd = f"qemu-system-{self.qemu_arch} -m {self.memory} -smp {self.smp} -kernel {kernel}"
         if self.qemu_arch == "aarch64":
             self.cmd += " -cpu cortex-a72"
-            # self._add_smep_smap()
             self.cmd += ' -machine type=virt -append "console=ttyAMA0 root=/dev/vda'
         elif self.qemu_arch == "x86_64":
             self.cmd += " -cpu qemu64"
