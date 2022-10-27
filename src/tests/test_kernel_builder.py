@@ -208,7 +208,7 @@ def test_run_ssh_success() -> None:
     cmd = "foobar --baz"
     expected = f"cd {kb.docker_mnt}/{kb.kernel_root} && {cmd}"
     kb._run_ssh(cmd)
-    assert kb.ssh_conn.run.assert_called_with(expected, echo=True, warn=False) is None
+    kb.ssh_conn.run.assert_called_with(expected, echo=True, warn=False)
 
 
 def get_run_kbuilder(mode: str) -> KernelBuilder:
@@ -241,7 +241,7 @@ def test_run_no_config_mode(a, b, c, d, e, f, g, h, j, k, lvname, m):
     kb = get_run_kbuilder("noconfig")
     kb.run()
     expected = f"cd {kb.docker_mnt}/{kb.kernel_root}/arch/{kb.arch}/boot && ln -s bzImage Image"
-    assert kb.ssh_conn.run.assert_called_with(expected, echo=True) is None
+    kb.ssh_conn.run.assert_called_with(expected, echo=True)
 
 
 @patch.object(KernelBuilder, "_add_modules", return_value=0)
@@ -261,7 +261,7 @@ def test_run_config_mode(a, b, c, d, e, f, g, h, j, k, lvname, m):
     kb = get_run_kbuilder("config")
     kb.run()
     expected = f"cd {kb.docker_mnt}/{kb.kernel_root}/arch/{kb.arch}/boot && ln -s bzImage Image"
-    assert kb.ssh_conn.run.assert_called_with(expected, echo=True) is None
+    kb.ssh_conn.run.assert_called_with(expected, echo=True)
 
 
 def test_wait_for_container() -> None:

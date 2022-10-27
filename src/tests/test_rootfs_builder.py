@@ -22,16 +22,13 @@ def test_run_container_full_cfg() -> None:
     rfsb = RootFSBuilder(False, **{"kroot": "/tmp"})
     rfsb.client = MagicMock()
     rfsb.run_container()
-    assert (
-        rfsb.client.containers.run.assert_called_with(
-            None,
-            volumes={f"{Path.cwd() / 'io'}": {"bind": f"{rfsb.docker_mnt}", "mode": "rw"}},
-            detach=True,
-            privileged=True,
-            remove=True,
-            command=f"/bin/bash -c 'set -e; . /home/{rfsb.user}/rootfs.sh -n {rfsb.fs_name} -a x86_64 -d {rfsb.distribution} -p {rfsb.packages} -u {rfsb.user} -h {rfsb.hostname.strip()}'",
-        )
-        is None
+    rfsb.client.containers.run.assert_called_with(
+        None,
+        volumes={f"{Path.cwd() / 'io'}": {"bind": f"{rfsb.docker_mnt}", "mode": "rw"}},
+        detach=True,
+        privileged=True,
+        remove=True,
+        command=f"/bin/bash -c 'set -e; . /home/{rfsb.user}/rootfs.sh -n {rfsb.fs_name} -a x86_64 -d {rfsb.distribution} -p {rfsb.packages} -u {rfsb.user} -h {rfsb.hostname.strip()}'",
     )
 
 
@@ -40,16 +37,13 @@ def test_run_container_no_hostname() -> None:
     rfsb.hostname = ""
     rfsb.client = MagicMock()
     rfsb.run_container()
-    assert (
-        rfsb.client.containers.run.assert_called_with(
-            None,
-            volumes={f"{Path.cwd() / 'io'}": {"bind": f"{rfsb.docker_mnt}", "mode": "rw"}},
-            detach=True,
-            privileged=True,
-            remove=True,
-            command=f"/bin/bash -c 'set -e; . /home/{rfsb.user}/rootfs.sh -n {rfsb.fs_name} -a x86_64 -d {rfsb.distribution} -p {rfsb.packages} -u {rfsb.user}'",
-        )
-        is None
+    rfsb.client.containers.run.assert_called_with(
+        None,
+        volumes={f"{Path.cwd() / 'io'}": {"bind": f"{rfsb.docker_mnt}", "mode": "rw"}},
+        detach=True,
+        privileged=True,
+        remove=True,
+        command=f"/bin/bash -c 'set -e; . /home/{rfsb.user}/rootfs.sh -n {rfsb.fs_name} -a x86_64 -d {rfsb.distribution} -p {rfsb.packages} -u {rfsb.user}'",
     )
 
 
