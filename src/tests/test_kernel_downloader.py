@@ -63,6 +63,6 @@ def test_run(tmp_path):
     lkdl = KernelDownloader(**{"user_cfg": str(Path("./src/tests/confs/lkdl_tag.ini").absolute())})
     lkdl.kernel_dl_path = tmp_path
     lkdl.archive = Path(lkdl.kernel_dl_path) / f"linux-{lkdl._set_choice()}.tar.gz"
-    lkdl.dl_uri = "https://file-examples.com/wp-content/uploads/2017/02/zip_2MB.zip"
+    lkdl.dl_uri = "https://github.com/0xricksanchez/like-dbg/blob/main/src/tests/files/empty.tar.gz?raw=true"
     lkdl.run()
-    assert hashlib.md5(lkdl.archive.read_bytes()).hexdigest() == "805b6db3298f838d1998466e54471490"
+    assert hashlib.md5(lkdl.archive.read_bytes()).hexdigest() == "b1f3f40af1e5c64dbf4a1302ca94ac12"
