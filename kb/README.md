@@ -3,20 +3,34 @@
 This is a knowledge base about all things kernel debugging.
 By curating various sources, the framework development as well as debugging kernel panics should become a lot easier.
 
-## Tools of Interest
+## Tools of interest
 
 * [drgn - Programmable debugger](https://github.com/osandov/drgn)
 * [HadesDbg- The Linux x86/x86-64 last chance debugging tool](https://github.com/h311d1n3r/HadesDbg)
 
-## General
+## General information
 
 * [Ubuntu Debugging](https://wiki.ubuntu.com/Kernel/Debugging)
 * [FreeBSD - Chapter 10. Kernel Debugging](https://docs.freebsd.org/en/books/developers-handbook/kerneldebug/)
   * [kgdb](https://www.freebsd.org/cgi/man.cgi?query=kgdb&sektion=1), [dumpon](https://www.freebsd.org/cgi/man.cgi?query=dumpon&sektion=8), [savecore](https://www.freebsd.org/cgi/man.cgi?query=savecore&sektion=8)
+
+## Learning collection
+
+* [Linux Kernel Teaching](https://linux-kernel-labs.github.io/refs/heads/master/)
 * [Linux Kernel Learning](https://github.com/ocastejon/linux-kernel-learning)
+* [Linux Kernel Hacking](https://github.com/xcellerator/linux_kernel_hacking)
 
 ## Write-Ups
 
+Section to dump good write-ups that either feature an actual exploit, a new technique, or general vulnerability discovery.
+
+### Vulnerability discovery
+
+* [Ruffling the penguin! How to fuzz the Linux kernel](https://hackmag.com/security/linux-fuzzing/)
+
+### Exploits
+
+* [Writing a Linux Kernel Remote in 2022](https://blog.immunityinc.com/p/writing-a-linux-kernel-remote-in-2022/)
 * [CVE-2022-0185 - Winning a $31337 Bounty after Pwning Ubuntu and Escaping Google's KCTF Containers](https://www.willsroot.io/2022/01/cve-2022-0185.html)
   * [CVE-2022-0185: Linux kernel slab out-of-bounds write: exploit and writeup](https://www.openwall.com/lists/oss-security/2022/01/25/14)
 * [[corCTF 2022] CoRJail: From Null Byte Overflow To Docker Escape Exploiting poll_list Objects In The Linux Kernel](https://syst3mfailure.io/corjail)
