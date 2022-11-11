@@ -26,6 +26,8 @@ By curating various sources, the framework development as well as debugging kern
 
 ### Technical blog posts touching basics
 
+* [Linux Kernel universal heap spray](https://duasynt.com/blog/linux-kernel-heap-spray)
+* [A collection of structures that can be used in kernel exploits](https://ptr-yudai.hatenablog.com/entry/2020/03/16/165628)
 * [Linux kernel heap feng shui in 2022](https://duasynt.com/blog/linux-kernel-heap-feng-shui-2022)
 * [Looking at kmalloc() and the SLUB Memory Allocator](https://ruffell.nz/programming/writeups/2019/02/15/looking-at-kmalloc-and-the-slub-memory-allocator.html)
 * [The Slab Allocator in the Linux kernel](https://hammertux.github.io/slab-allocator)
