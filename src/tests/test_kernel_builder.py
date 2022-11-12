@@ -1,12 +1,13 @@
-from ..kernel_builder import KernelBuilder, MISC_DRVS_PATH
-from pathlib import Path
 import collections
 import configparser
-from unittest.mock import MagicMock, patch, Mock
+import uuid
+from pathlib import Path
+from unittest.mock import MagicMock, Mock, patch
+
 import docker
 import pytest
-import uuid
 
+from ..kernel_builder import MISC_DRVS_PATH, KernelBuilder
 
 USER_INI = Path("configs/user.ini")
 CUSTOM_MODULE = Path("examples/like_dbg_confs/echo_module_x86.ini")
@@ -54,6 +55,24 @@ def test_get_params_syzkaller(self) -> None:
     kb = KernelBuilder(**{"kroot": "foo"})
     kb.mode = "syzkaller"
     assert kb._get_params() == fetch_cfg_value_from_section_and_key(USER_INI, "kernel_builder", "syzkaller_args")
+
+
+@patch.object(KernelBuilder, "_run_ssh", return_value=0)
+def test_build_arch_llvm_params(self) -> None:
+    kb = KernelBuilder(**{"kroot": "foo"})
+    kb.arch = "x86_64"
+    kb.cc = "CC=clang"
+    kb.llvm_flag = "LLVM=1"
+    kb.mode = "generic"
+    assert "-e LTO_NONE -d LTO_CLANG_FULL -d LTO_CLANG_THIN " in kb._get_params()
+
+
+@patch.object(KernelBuilder, "_run_ssh", return_value=0)
+def test_build_arch_not_llvm_params(self) -> None:
+    kb = KernelBuilder(**{"kroot": "foo"})
+    kb.arch = "x86_64"
+    kb.mode = "generic"
+    assert "-e LTO_NONE -d LTO_CLANG_FULL -d LTO_CLANG_THIN " not in kb._get_params()
 
 
 @patch.object(KernelBuilder, "_run_ssh", return_value=0)
