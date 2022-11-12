@@ -1,7 +1,6 @@
 # README
 
-This directory houses example kernel modules that can automatically be compiled into a kernel by
-tweaking your `LIKE_DBG` config:
+This directory houses example kernel modules that can automatically be compiled into a kernel by tweaking your `LIKE_DBG` config:
 
 ```ini
 [kernel_builder]
@@ -9,7 +8,9 @@ tweaking your `LIKE_DBG` config:
 custom_modules = examples/c_kmod/
 ```
 
-Every module located in `examples/c_kmod` is to be placed in a proper subdirectory, each with a sound `Makefile` and `Kconfig`.
+You can either provide a path to a folder housing a single kernel module such as `examples/c_kmod/ioctl_test_drv/`.
+Alternatively, you can provide a path to a folder housing multiple kernel modules as well, e.g.: `examples/c_kmod/`.
+Then, every module located in `examples/c_kmod` is to be placed in a proper subdirectory, each with a sound `Makefile` and `Kconfig`.
 For example like so:
 
 ```bash
