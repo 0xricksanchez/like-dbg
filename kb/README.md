@@ -10,6 +10,8 @@ By curating various sources, the framework development as well as debugging kern
 * [Systemtap](https://sourceware.org/systemtap/documentation.html)
   * Does not seem to work out of the box within a container setup
   * As it behaves similarly to what we may can do with eBPF it might be fun to write some PoC tooling with [redbpf](https://github.com/foniod/redbpf)
+* [casr - Collect crash reports, triage, and estimate severity.](https://github.com/ispras/casr)
+* [crash - Linux kernel crash utility](https://github.com/crash-utility/crash)
 
 ## General information on kernel debugging
 
@@ -23,6 +25,7 @@ By curating various sources, the framework development as well as debugging kern
 * [Linux Kernel Teaching](https://linux-kernel-labs.github.io/refs/heads/master/)
 * [Linux Kernel Learning](https://github.com/ocastejon/linux-kernel-learning)
 * [Linux Kernel Hacking](https://github.coqm/xcellerator/linux_kernel_hacking)
+* [Pawnyable - Exploitation challenges](https://github.com/ptr-yudai/pawnyable)
 
 ### Technical blog posts touching basics
 
