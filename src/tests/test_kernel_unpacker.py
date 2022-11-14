@@ -1,4 +1,3 @@
-import configparser
 from pathlib import Path
 from unittest.mock import patch
 
@@ -8,18 +7,6 @@ EMPTY_TARGZ = Path("src/tests/files/empty.tar.gz")
 VALID_TARGZ = Path("src/tests/files/valid.tar.gz")
 INVALID_TARGZ = Path("src/tests/files/invalid.tar.gz")
 USER_INI = Path("src/tests/confs/user.ini")
-
-
-def mock_cfg_setter(obj, c: Path, sections: list[str]):
-    cfg = configparser.ConfigParser()
-    cfg.read(c)
-    for sect in sections:
-        if sect not in cfg:
-            continue
-        for key in cfg[sect]:
-            tmp = cfg[sect][key]
-            val = tmp if tmp not in ["yes", "no"] else cfg[sect].getboolean(key)
-            setattr(obj, key, val)
 
 
 class MockUnpacker(KernelUnpacker):
