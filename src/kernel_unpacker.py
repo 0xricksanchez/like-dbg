@@ -21,7 +21,7 @@ class KernelUnpacker:
         self.ex_name = ".".join(self.archive.name.split(".")[:-2])
         if not Path(self.kernel_root).exists():
             Path(self.kernel_root).mkdir()
-        self.kernel_root = Path(self.kernel_root) / (self.ex_name + f"_{self.arch}")
+        self.kernel_root = Path(self.kernel_root) / (self.ex_name + f"_{self.arch}" + f"_{self.kernel_tag}")
         self.dst_content = None
         self.skip_prompts = kwargs.get("skip_prompts", False)
 
