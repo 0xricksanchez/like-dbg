@@ -1,17 +1,21 @@
-from ..kernel_unpacker import KernelUnpacker
 from pathlib import Path
 from unittest.mock import patch
 
+from ..kernel_unpacker import KernelUnpacker
 
 EMPTY_TARGZ = Path("src/tests/files/empty.tar.gz")
 VALID_TARGZ = Path("src/tests/files/valid.tar.gz")
 INVALID_TARGZ = Path("src/tests/files/invalid.tar.gz")
+USER_INI = Path("src/tests/confs/user.ini")
 
 
 class MockUnpacker(KernelUnpacker):
-    def __init__(self, archive: Path, kroot: Path) -> None:
-        super().__init__(archive)
-        self.kernel_root = kroot
+    def __init__(self, archive: Path, kroot: Path, **kwargs) -> None:
+        if kwargs.get("cfg", ""):
+            super().__init__(archive, **{"user_cfg": USER_INI})
+        else:
+            super().__init__(archive)
+            self.kernel_root = kroot
 
     def set_no_unpack_opts(self, tmp_path: Path, is_vmlinux: bool, skip_prompts: bool):
         p = Path(tmp_path / "nounpack")
@@ -22,6 +26,16 @@ class MockUnpacker(KernelUnpacker):
         self.archive = self.archive.absolute()
         self.ex_name = ".".join(self.archive.name.split(".")[:-2])
         self.skip_prompts = skip_prompts
+
+
+def test_tag(tmp_path) -> None:
+    ku = MockUnpacker(EMPTY_TARGZ, tmp_path, **{"cfg": True})
+    assert ku.kernel_root == Path("kernel_root/empty_foobar_tag")
+
+
+def test_no_tag(tmp_path) -> None:
+    ku = MockUnpacker(EMPTY_TARGZ, tmp_path)
+    assert ku.kernel_root == tmp_path
 
 
 def test_dst_empty(tmp_path) -> None:

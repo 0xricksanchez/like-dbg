@@ -5,7 +5,6 @@ import time
 import os
 from pathlib import Path
 import subprocess as sp
-from invoke.exceptions import UnexpectedExit
 
 from loguru import logger
 
@@ -85,12 +84,15 @@ class KernelBuilder(DockerRunner):
 
     def _get_params(self) -> str:
         params = ""
+        if self.llvm_flag:
+            # TODO: Allow LTO_CLANG_FULL & LTO_CLANG_THIN options once they're not experiment anymore
+            params += "-e LTO_NONE -d LTO_CLANG_FULL -d LTO_CLANG_THIN "
         if self.mode == "syzkaller":
-            params = self.syzkaller_args
+            params += self.syzkaller_args
         elif self.mode == "generic":
-            params = self.generic_args
+            params += self.generic_args
         elif self.mode == "custom":
-            params = self._custom_args()
+            params += self._custom_args()
         if self.extra_args:
             params = self._extra_args(params)
         if params:
@@ -138,27 +140,39 @@ class KernelBuilder(DockerRunner):
             else:
                 break
 
-    def _add_modules(self) -> None:
-        for d in Path(self.custom_modules).iterdir():
+    def _add_multiple_mods(self, modules: list[Path]) -> None:
+        for d in modules:
             if not d.is_dir():
                 continue
-            dst = f"{Path(self.kernel_root) / MISC_DRVS_PATH}"
-            sp.run(f"cp -fr {d} {dst}", shell=True)
-            kcfg_mod_path = Path(dst) / d.name / "Kconfig"
-            mod_kcfg_content = kcfg_mod_path.read_text()
-            tmp = "_".join(re.search(r"config .*", mod_kcfg_content)[0].upper().split())
-            ins = f"obj-$({tmp}) += {d.name}/\n"
-            if ins.strip() not in Path(f"{dst}/Makefile").read_text():
-                with open(f"{dst}/Makefile", "a") as g:
-                    g.write(ins)
-            with open(f"{dst}/Kconfig", "r") as f:
-                contents = f.readlines()
-            ins = f"""source "{MISC_DRVS_PATH / d.name / 'Kconfig'}"\n"""
-            if ins not in contents:
-                contents.insert(len(contents) - 1, ins)
-                with open(f"{dst}/Kconfig", "w") as kc:
-                    kc.writelines(contents)
-            logger.debug(f"Added module {d} to the kernel")
+            logger.debug(f"Adding module: {d}")
+            self._add_single_mod(Path(d))
+
+    def _add_single_mod(self, mod: Path) -> None:
+        dst = f"{Path(self.kernel_root) / MISC_DRVS_PATH}"
+        sp.run(f"cp -fr {mod} {dst}", shell=True)
+        kcfg_mod_path = Path(dst) / mod.name / "Kconfig"
+        mod_kcfg_content = kcfg_mod_path.read_text()
+        tmp = "_".join(re.search(r"config .*", mod_kcfg_content)[0].upper().split())
+        ins = f"obj-$({tmp}) += {mod.name}/\n"
+        if ins.strip() not in Path(f"{dst}/Makefile").read_text():
+            with open(f"{dst}/Makefile", "a") as g:
+                g.write(ins)
+        with open(f"{dst}/Kconfig", "r") as f:
+            contents = f.readlines()
+        ins = f"""source "{MISC_DRVS_PATH / mod.name / 'Kconfig'}"\n"""
+        if ins not in contents:
+            contents.insert(len(contents) - 1, ins)
+            with open(f"{dst}/Kconfig", "w") as kc:
+                kc.writelines(contents)
+        logger.debug(f"Added module {mod} to the kernel")
+
+    def _add_modules(self) -> None:
+        mods = list(Path(self.custom_modules).iterdir())
+        logger.error(mods)
+        if all(ele in [x.name for x in mods] for ele in ["Kconfig", "Makefile"]):
+            self._add_single_mod(Path(self.custom_modules))
+        else:
+            self._add_multiple_mods(mods)
 
     def run_container(self) -> None:
         logger.info("Building kernel. This may take a while...")
@@ -192,16 +206,19 @@ class KernelBuilder(DockerRunner):
         except FileNotFoundError as e:
             logger.error(f"Failed to find file: {e}")
             exit(-1)
-        except UnexpectedExit as e:
+        except Exception as e:
             logger.error(f"A command caused an unexpected exit: {e}")
-            exit(-1)
+            exit(-2)
         else:
             logger.info("Successfully build the kernel")
             if self.arch == "x86_64":
                 cmd = self.make_sudo("ln -s bzImage Image")
                 self.ssh_conn.run(f"cd {self.docker_mnt}/{self.kernel_root}/arch/{self.arch}/boot && {cmd}", echo=True)
         finally:
-            self.stop_container()
+            try:
+                self.stop_container()
+            except AttributeError:
+                pass
 
     def run(self) -> None:
         super().run(check_existing=True)

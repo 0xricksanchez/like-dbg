@@ -1,15 +1,16 @@
-from ..kernel_builder import KernelBuilder, MISC_DRVS_PATH
-from pathlib import Path
 import collections
 import configparser
-from unittest.mock import MagicMock, patch, Mock
+import uuid
+from pathlib import Path
+from unittest.mock import MagicMock, Mock, patch
+
 import docker
 import pytest
-import uuid
 
+from ..kernel_builder import MISC_DRVS_PATH, KernelBuilder
 
 USER_INI = Path("configs/user.ini")
-CUSTOM_MODULE = Path("examples/like_dbg_confs/echo_module.ini")
+CUSTOM_MODULE = Path("examples/like_dbg_confs/echo_module_x86.ini")
 
 
 def fetch_cfg_value_from_section_and_key(c: Path, sect: str, key: str) -> str:
@@ -57,6 +58,24 @@ def test_get_params_syzkaller(self) -> None:
 
 
 @patch.object(KernelBuilder, "_run_ssh", return_value=0)
+def test_build_arch_llvm_params(self) -> None:
+    kb = KernelBuilder(**{"kroot": "foo"})
+    kb.arch = "x86_64"
+    kb.cc = "CC=clang"
+    kb.llvm_flag = "LLVM=1"
+    kb.mode = "generic"
+    assert "-e LTO_NONE -d LTO_CLANG_FULL -d LTO_CLANG_THIN " in kb._get_params()
+
+
+@patch.object(KernelBuilder, "_run_ssh", return_value=0)
+def test_build_arch_not_llvm_params(self) -> None:
+    kb = KernelBuilder(**{"kroot": "foo"})
+    kb.arch = "x86_64"
+    kb.mode = "generic"
+    assert "-e LTO_NONE -d LTO_CLANG_FULL -d LTO_CLANG_THIN " not in kb._get_params()
+
+
+@patch.object(KernelBuilder, "_run_ssh", return_value=0)
 def test_get_params_generic(self) -> None:
     kb = KernelBuilder(**{"kroot": "foo"})
     kb.mode = "generic"
@@ -94,6 +113,30 @@ def test_add_modules() -> None:
     p = Path(f"/tmp/{uuid.uuid1().hex}")
     kb = KernelBuilder(**{"kroot": p})
     kb.custom_modules = fetch_cfg_value_from_section_and_key(CUSTOM_MODULE, "kernel_builder", "custom_modules")
+    Path(p / MISC_DRVS_PATH).mkdir(parents=True)
+    fst = "This is the 1st line.\n"
+    lst = "This is the last line.\n"
+    q = Path(p / MISC_DRVS_PATH / "Makefile")
+    q.touch()
+    q.write_text(fst)
+    r = Path(p / MISC_DRVS_PATH / "Kconfig")
+    r.touch()
+    r.write_text(f"{fst}\n{lst}")
+    kb._add_modules()
+    with open(q, "r") as f:
+        data = f.readlines()
+    assert data[-1] != fst
+    with open(r, "r") as f:
+        data = f.readlines()
+    assert data[-1] == lst
+    assert data[-2] != fst
+
+
+def test_add_module() -> None:
+    p = Path(f"/tmp/{uuid.uuid1().hex}")
+    kb = KernelBuilder(**{"kroot": p})
+    kb.custom_modules = fetch_cfg_value_from_section_and_key(CUSTOM_MODULE, "kernel_builder", "custom_modules")
+    kb.custom_modules += "echo_service"
     Path(p / MISC_DRVS_PATH).mkdir(parents=True)
     fst = "This is the 1st line.\n"
     lst = "This is the last line.\n"
@@ -173,6 +216,18 @@ def test_make_sucess(mock_m) -> None:
     kb = KernelBuilder(**{"kroot": "foo"})
     kb._make()
     mock_m.assert_called_with("CC=gcc ARCH=x86_64  make -j$(nproc) modules")
+
+
+def throw_with_cause():
+    raise Exception("Failed") from ValueError("That was unexpected.")
+
+
+def test_general_exception() -> None:
+    kb = KernelBuilder(**{"kroot": "foo"})
+    with pytest.raises(SystemExit) as ext:
+        kb.run_container()
+    assert ext.type == SystemExit
+    assert ext.value.code == -2
 
 
 @patch.object(KernelBuilder, "_run_ssh", return_value=1)
