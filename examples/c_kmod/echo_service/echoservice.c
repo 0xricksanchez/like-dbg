@@ -6,8 +6,8 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/slab.h>
+#include <linux/stddef.h>
 #include <linux/uaccess.h>
-#include <stddef.h>
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("0x434b");
