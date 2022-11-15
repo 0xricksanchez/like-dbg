@@ -14,6 +14,7 @@ linux-*
 kernel_root
 io/rootfs*
 io/filesystem*
+examples/c_kmod/compile_commands.json
 patches/*
 configs/kernel_configs/*.conf*
 Dockerfile*

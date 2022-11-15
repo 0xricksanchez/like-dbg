@@ -1,0 +1,6 @@
+# This is to be placed in drivers/misc/Kconfig
+config LIKEDBG_IOCTL_DEMO
+    tristate "A Simple ioctl service module"
+    default y
+    help
+        This enables the ioctl module.

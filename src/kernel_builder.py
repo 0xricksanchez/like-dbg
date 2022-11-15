@@ -168,7 +168,6 @@ class KernelBuilder(DockerRunner):
 
     def _add_modules(self) -> None:
         mods = list(Path(self.custom_modules).iterdir())
-        logger.error(mods)
         if all(ele in [x.name for x in mods] for ele in ["Kconfig", "Makefile"]):
             self._add_single_mod(Path(self.custom_modules))
         else:
