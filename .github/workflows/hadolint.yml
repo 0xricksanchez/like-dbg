@@ -9,7 +9,4 @@ jobs:
        - uses: actions/checkout@v2
        - uses: jbergstroem/hadolint-gh-action@v1
          with:
-           error_level: 0
-           annotate: true
-           output_format: tty
            dockerfile: ".dockerfile*"
