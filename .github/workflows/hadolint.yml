@@ -12,4 +12,4 @@ jobs:
            error_level: 0
            annotate: true
            output_format: tty
-           dockerfile: ".dockerfile_base .dockerfile_dbg .dockerfile_dbge .dockerfile_kbuilder .dockerfile_rootfs"
+           dockerfile: ".dockerfile*"
