@@ -1,7 +1,13 @@
 name: black
-
-on: [push, pull_request]
-
+on:
+  push:
+    paths:
+      - src/*
+      - .github/workflows/black.yml
+  pull_request:
+    paths:
+      - src/*
+      - .github/workflows/black.yml
 jobs:
   lint:
     runs-on: ubuntu-22.04

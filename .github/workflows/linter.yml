@@ -1,26 +1,26 @@
 name: flake8
-
 on:
+  push:
+    paths:
+      - src/*
+      - .github/workflows/linter.yml
   pull_request:
-    types: [opened, synchronize, reopened]
-
+    paths:
+      - src/*
+      - .github/workflows/linter.yml
 jobs:
   run-linters:
     name: Run linters
     runs-on: ubuntu-22.04
-
     steps:
       - name: Check out Git repository
         uses: actions/checkout@v2
-
       - name: Set up Python
         uses: actions/setup-python@v1
         with:
           python-version: 3.9
-
       - name: Install Python dependencies
         run: pip install black flake8
-
       - name: Run linters
         uses: wearerequired/lint-action@v1
         with:

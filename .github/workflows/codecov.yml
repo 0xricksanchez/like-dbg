@@ -1,6 +1,13 @@
 name: codecov
-
-on: [push, pull_request]
+on:
+  push:
+    paths:
+      - src/*
+      - .github/workflows/codecov.yml
+  pull_request:
+    paths:
+      - src/*
+      - .github/workflows/codecov.yml
 jobs:
   run:
     runs-on: ubuntu-22.04

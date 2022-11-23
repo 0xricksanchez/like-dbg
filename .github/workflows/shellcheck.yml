@@ -1,14 +1,22 @@
 name: shellcheck
-
-on: [push, pull_request]
-
+on:
+  push:
+    paths:
+      - io/scipts/*.sh
+      - ctf/misc/*.sh
+      - .github/workflows/shellcheck.yml
+  pull_request:
+    paths:
+      - io/scipts/*.sh
+      - ctf/misc/*.sh
+      - .github/workflows/shellcheck.yml
 jobs:
   shellcheck:
     name: Shellcheck
     runs-on: ubuntu-22.04
     steps:
-    - uses: actions/checkout@v2
-    - name: Run ShellCheck
-      uses: ludeeus/action-shellcheck@master
-      env:
-        SHELLCHECK_OPTS: -e SC2002,SC2016,SC1009,SC1073,SC1072
+      - uses: actions/checkout@v2
+      - name: Run ShellCheck
+        uses: ludeeus/action-shellcheck@master
+        env:
+          SHELLCHECK_OPTS: -e SC2002,SC2016,SC1009,SC1073,SC1072
