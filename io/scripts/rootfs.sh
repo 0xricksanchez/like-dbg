@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Modified version of the syzkaller script:
 #   https://raw.githubusercontent.com/google/syzkaller/master/tools/create-image.sh
+set -eux
 
 pushd /io >/dev/null || exit 255
 
