@@ -42,7 +42,7 @@ class Debugger(DockerRunner):
         vml_ext = Path(glob("**/extract-vmlinux.sh", recursive=True)[0]).resolve().absolute()
         pkernel = self.ctf_kernel.resolve().absolute()
         with new_context(self.ctf_dir):
-            cmd = f"{vml_ext} {pkernel} > vmlinux"
+            cmd = f"{vml_ext} {pkernel}"
             ret = sp.run(f"{cmd}", shell=True, capture_output=True)
             if ret.returncode == 0:
                 logger.info("Successfully extracted 'vmlinux' from compressed kernel")

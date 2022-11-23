@@ -20,8 +20,8 @@ int open_driver(const char *driver_name) {
   printf("[>] Opening %s from user-land!\n", driver_name);
   int fd_driver = open(driver_name, O_RDWR);
   if (fd_driver == -1) {
-    printf("ERROR: could not open \"%s\".\n", driver_name);
-    printf("    errno = %s\n", strerror(errno));
+    printf("[ERROR]: could not open \"%s\" - %s.\n", driver_name,
+           (strerror(errno)));
     exit(EXIT_FAILURE);
   }
 
@@ -32,8 +32,8 @@ void close_driver(const char *driver_name, int fd_driver) {
   printf("[>] Closing %s from user-land!\n", driver_name);
   int result = close(fd_driver);
   if (result == -1) {
-    printf("ERROR: could not close \"%s\".\n", driver_name);
-    printf("    errno = %s\n", strerror(errno));
+    printf("[ERROR]: could not close \"%s\" - %s.\n", driver_name,
+           (strerror(errno)));
     exit(EXIT_FAILURE);
   }
 }
@@ -43,7 +43,7 @@ void do_ioctl(unsigned long cmd, int fd) {
   case (0xdead0): {
     uint32_t value = 0;
     if (ioctl(fd, cmd, &value) < 0) {
-      perror("Error ioctl PL_AXI_DMA_GET_NUM_DEVICES");
+      perror("[ERROR] ioctl: 0xdead0\n");
       exit(EXIT_FAILURE);
     }
     printf("Value is %#08x\n", value);
@@ -51,14 +51,14 @@ void do_ioctl(unsigned long cmd, int fd) {
   }
   case (0xdead1): {
     if (ioctl(fd, cmd, NULL) < 0) {
-      perror("Error ioctl: 0xdead1\n");
+      perror("[ERROR] ioctl: 0xdead1\n");
       exit(EXIT_FAILURE);
     }
     break;
   }
   case (0xdead2): {
     if (ioctl(fd, cmd, NULL) < 0) {
-      perror("Error ioctl: 0xdead2\n");
+      perror("[ERROR] ioctl: 0xdead2\n");
       exit(EXIT_FAILURE);
     }
     break;
@@ -67,7 +67,7 @@ void do_ioctl(unsigned long cmd, int fd) {
     uint64_t sz = 0x400 / sizeof(uint64_t);
     uint64_t buf[sz];
     if (ioctl(fd, cmd, &buf) < 0) {
-      perror("Error ioctl: 0xdead3\n");
+      perror("[ERROR] ioctl: 0xdead3\n");
       exit(EXIT_FAILURE);
     }
     for (uint64_t i = 0; i <= sz; i++) {
@@ -81,7 +81,7 @@ void do_ioctl(unsigned long cmd, int fd) {
   case (0xdead4): {
     char *ptr = "Hello World Yo!\n";
     if (ioctl(fd, cmd, ptr) < 0) {
-      perror("Error ioctl: 0xdead4\n");
+      perror("[ERROR] ioctl: 0xdead4\n");
       exit(EXIT_FAILURE);
     }
   }
