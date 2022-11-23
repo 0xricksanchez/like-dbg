@@ -1,12 +1,19 @@
 name: hadolint
-
-on: [push, pull_request]
+on:
+  push:
+    paths:
+      - .dockerfile*
+      - .github/workflows/hadolint.yml
+  pull_request:
+    paths:
+      - .dockerfile*
+      - .github/workflows/hadolint.yml
 jobs:
   hadolint:
-     runs-on: ubuntu-22.04
-     name: "Hadolint"
-     steps:
-       - uses: actions/checkout@v2
-       - uses: jbergstroem/hadolint-gh-action@v1
-         with:
-           dockerfile: ".dockerfile*"
+    runs-on: ubuntu-22.04
+    name: "Hadolint"
+    steps:
+      - uses: actions/checkout@v2
+      - uses: jbergstroem/hadolint-gh-action@v1
+        with:
+          dockerfile: ".dockerfile*"
