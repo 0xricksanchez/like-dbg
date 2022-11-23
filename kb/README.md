@@ -46,6 +46,9 @@ Section to dump good write-ups that either feature an actual exploit, a new tech
 
 ### Public exploits
 
+* [[CVE-2022-101(5|6)] How The Tables Have Turned: An analysis of two new Linux vulnerabilities in nf_tables](https://blog.dbouman.nl/2022/04/02/How-The-Tables-Have-Turned-CVE-2022-1015-1016/)
+* [[CVE-2022-32250] SETTLERS OF NETLINK: Exploiting a limited UAF in nf_tables](https://research.nccgroup.com/2022/09/01/settlers-of-netlink-exploiting-a-limited-uaf-in-nf_tables-cve-2022-32250/)
+* [[CVE-2022-2586] N-day exploit for CVE-2022-2586: Linux kernel nft_object UAF](https://www.openwall.com/lists/oss-security/2022/08/29/5)
 * [[CVE-2022-1786] A Journey To The Dawn](https://blog.kylebot.net/2022/10/16/CVE-2022-1786/)
 * [Writing a Linux Kernel Remote in 2022](https://blog.immunityinc.com/p/writing-a-linux-kernel-remote-in-2022/)
 * [Four Bytes of Power: Exploiting CVE-2021-26708 in the Linux kernel](https://a13xp0p0v.github.io/2021/02/09/CVE-2021-26708.html)

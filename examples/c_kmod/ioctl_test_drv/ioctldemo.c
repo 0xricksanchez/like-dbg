@@ -1,3 +1,4 @@
+#include "linux/gfp.h"
 #include <asm-generic/errno-base.h>
 #include <asm/atomic.h>
 #include <linux/cdev.h>
@@ -33,7 +34,7 @@ typedef struct {
   struct cdev cdev;
 } likedbg_ioctl_d_iface;
 
-char *gbuf;
+char *gbuf = NULL;
 
 likedbg_ioctl_d_iface ldbg_ioctl;
 
@@ -163,34 +164,44 @@ long do_ioctl(struct file *filp, unsigned int cmd, unsigned long arg) {
   unsigned int val;
   pr_warn("<%s> ioctl: %08x\n", DEV_NAME, cmd);
   switch (cmd) {
-  case (0xdead0):
+  case (0xdead0): {
     val = 0x12345678;
     if (copy_to_user((uint32_t *)arg, &val, sizeof(val))) {
       return -EFAULT;
     }
     break;
-  case (0xdead1):
+  }
+  case (0xdead1): {
     gbuf = kmalloc(BUF_SZ, GFP_KERNEL);
+    if (!gbuf) {
+      pr_warn("gbuf kmalloc failed");
+      return -ENOMEM;
+    }
     break;
-  case (0xdead2):
+  }
+  case (0xdead2): {
     if (gbuf) {
       kfree(gbuf);
     }
     break;
-  case (0xdead3):
-    if (_copy_to_user((char __user *)arg, gbuf, BUF_SZ)) {
+  }
+  case (0xdead3): {
+    if (_copy_to_user((char __user *)arg, gbuf, BUF_SZ * 2)) {
       pr_warn("COPY_TO_USER FAILED\n");
       return -EFAULT;
     }
     break;
-  case (0xdead4):
-    if (_copy_from_user(gbuf, (char __user *)arg, BUF_SZ)) {
+  }
+  case (0xdead4): {
+    if (_copy_from_user(gbuf, (char __user *)arg, BUF_SZ + 0x100)) {
       pr_warn("COPY_from_USER FAILED\n");
       return -EFAULT;
     }
     break;
-  default:
+  }
+  default: {
     break;
+  }
   }
   return EXIT_SUCCESS;
 }
