@@ -1,0 +1,6 @@
+# This is to be placed in drivers/misc/Kconfig
+config LIKEDBG_ECHO_DEMO
+    tristate "A Simple echo service module"
+    default y
+    help
+        This enables the echo module.

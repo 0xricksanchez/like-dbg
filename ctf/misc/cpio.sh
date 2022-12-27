@@ -8,7 +8,6 @@ GZIP=0
 ENC=0
 DEC=0
 EXPLOIT=
-MUSL=$(which musl-gcc)
 
 usage() {
     cat << EOF
@@ -26,6 +25,7 @@ Usage:
         -g          : Enable gzip de-compression
         -e          : Provide a path to an exploit.c in a rootfs directory to statically compile it with musl-gcc
 EOF
+    exit 255
 }
 
 is_exist() {
@@ -35,22 +35,55 @@ is_exist() {
     fi
 }
 
+compile_mac() {
+    CTR=0
+    while true; do
+        if [ $(basename $PWD) != "like-dbg" ] || [ ! -f "$(pwd)/.dockerfile_base" ]; then
+            pushd .. > /dev/null
+            ((CTR++))
+        else
+            break
+        fi
+
+    done
+    if [ ! $(docker images | grep -o "like_mac_compiler") ]; then
+        docker build -t "like_mac_compiler" -f .dockerfile_compiler_mac .
+    fi
+    while [ $CTR -ne 0 ]; do
+        popd > /dev/null
+        ((CTR--))
+    done
+    rsync -u $2 $1/root/ > /dev/null
+    out="/io/bin/$(basename $2)"
+    out=${out%.*}
+    docker run --rm -v "$(pwd)/$1":/io "like_mac_compiler" musl-gcc /io/root/$(basename $2) -static -o "$out"
+}
+
 pack() {
     is_exist "$1" "-d"
 
     if [ -n "$3" ]; then
         is_exist "$3" "-f"
-        is_exist "$MUSL" "-f"
-        out=$(echo "$3" | awk '{ print substr( $0, 1, length($0)-2 ) }')
-        musl-gcc "$3" -static -o "$out" || exit 255
+        if [ $(uname -s) == "Darwin" ]; then
+            compile_mac $1 $3
+        else
+            MUSL=$(which musl-gcc)
+            is_exist "$MUSL" "-f"
+            out=$(echo "$3" | awk '{ print substr( $0, 1, length($0)-2 ) }')
+            $MUSL "$3" -static -o "$out" || exit 255
+            mv "$out" "$1/bin/"
+        fi
+        echo "Exploit pushed to $1/bin/"
     fi
+    rm -rf "$1.cpio" "$1.cpio.gz"
 
     pushd . > /dev/null && pushd "$1" > /dev/null
     cmd="find . -print0 | cpio --null --format=newc -o --owner=root 2>/dev/null"
+    dst=$(basename "$1")
     if [ "$2" -eq 1 ]; then
-        cmd="${cmd} | gzip -9 > ../$1.cpio.gz"
+        cmd="${cmd} | gzip -9 > ../$dst.cpio.gz"
     else
-        cmd="${cmd} > ../$1.cpio"
+        cmd="${cmd} > ../$dst.cpio"
     fi
     eval "$cmd"
     popd > /dev/null
@@ -71,8 +104,12 @@ unpack() {
     rm "$LOCAL_ROOTFS"
     LUSER=$(logname 2> /dev/null || echo $SUDO_USER)
     popd > /dev/null
-    chown -R $LUSER:$LUSER initramfs
+    chown -R $LUSER: initramfs
 }
+
+if [ $# -eq 0 ]; then
+    usage
+fi
 
 while true; do
     if [ $# -eq 0 ]; then
@@ -106,7 +143,7 @@ while true; do
             ;;
         -*)
             usage
-            exit 1
+            exit 255
             ;;
         *)
             # No more options

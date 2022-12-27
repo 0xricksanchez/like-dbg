@@ -1,4 +1,6 @@
 loguru
+pytest
+pytest-cov
 flake8
 platformdirs
 fabric

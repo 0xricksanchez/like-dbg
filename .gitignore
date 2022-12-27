@@ -1,5 +1,6 @@
 .idea/*
 .venv
+.coverage
 .like-dbg
 .git
 .gdb_hist
@@ -8,10 +9,12 @@
 .gdb_history
 tags
 src/__pycache__
+src/tests/__pycache__/*
 linux-*
 kernel_root
 io/rootfs*
 io/filesystem*
+examples/c_kmod/compile_commands.json
 patches/*
 configs/kernel_configs/*.conf*
 Dockerfile*
