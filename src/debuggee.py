@@ -38,6 +38,8 @@ class Debuggee(DockerRunner):
             return f" -initrd {rootfs}"
         elif b"filesystem data" in magic.stdout:
             return f" -drive file={rootfs},format=raw"
+        elif b"qemu qcow" in magic.stdout.lower():
+            return f" -drive file={rootfs}"
         else:
             logger.error(f"Unsupported rootfs type: {magic.stdout}")
             exit(-1)

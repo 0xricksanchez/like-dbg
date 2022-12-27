@@ -1,8 +1,9 @@
 from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 from src.debuggee import Debuggee
-from unittest.mock import patch, MagicMock
-import pytest
 
 
 @patch("subprocess.run")
@@ -21,6 +22,15 @@ def test_infer_qemu_fs_mount_filesystem(sp_mock) -> None:
     mock.configure_mock(**{"stdout": b"Some filesystem data..."})
     sp_mock.return_value = mock
     assert d.infer_qemu_fs_mount() == f" -drive file={d.rootfs},format=raw"
+
+
+@patch("subprocess.run")
+def test_infer_qemu_fs_mount_qcow2(sp_mock) -> None:
+    d = Debuggee(**{"kroot": "foo"})
+    mock = MagicMock()
+    mock.configure_mock(**{"stdout": b"filesystem.qcow2: QEMU QCOW Image (v3), 12344321 bytes (v3), 12345678 bytes"})
+    sp_mock.return_value = mock
+    assert d.infer_qemu_fs_mount() == f" -drive file={d.rootfs}"
 
 
 @patch("subprocess.run")
