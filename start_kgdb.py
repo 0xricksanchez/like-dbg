@@ -2,8 +2,8 @@
 
 import argparse
 import os
-import signal
 import shutil
+import signal
 import sys
 import textwrap
 import uuid
@@ -134,7 +134,22 @@ def parse_cli() -> argparse.Namespace:
     """
         ),
     )
-    parser.add_argument("--update_containers", "-u", action=argparse.BooleanOptionalAction, help="Update all LIKE-DBG containers")
+    parser.add_argument(
+        "--update_containers",
+        "-u",
+        type=int,
+        choices=range(1, 7),
+        default=0,
+        help=textwrap.dedent(
+            """\
+        1 - Update all containers,
+        2 - Update kernel_builder,
+        3 - Update rootfs_builder,
+        4 - Update debuggee,
+        5 - Update debugger,
+        """
+        ),
+    )
     return parser.parse_args()
 
 
@@ -147,7 +162,7 @@ def set_generic_ctx(args, log_level):
         "ctf_ctx": True if args.ctf else False,
         "log_level": log_level,
         "user_cfg": args.config[0] if args.config else "",
-        "update_containers": True if args.update_containers else False,
+        "update_containers": True if args.update_containers != 0 else False,
     }
     return generic_args
 
@@ -193,16 +208,25 @@ def partial(args, dbge_args, generic_args, skip):
     exit(0)
 
 
-def update_containers(dbg_args, dbge_args, generic_args):
-    logger.info("Updating all containers. This may take a while..!")
+def update_containers(dbg_args, dbge_args, generic_args, c_to_up):
+    logger.info("Updating requested containers. This may take a while..!")
     generic_args["skip_prompts"] = True
     mock_kunpacker = {"kroot": "mock_path", "status": "unpack"}
     try:
-        DockerRunner(**generic_args | mock_kunpacker).build_base_img()
-        KernelBuilder(**generic_args | mock_kunpacker).run()
-        RootFSBuilder(**generic_args | mock_kunpacker).run()
-        Debuggee(**generic_args | dbge_args | mock_kunpacker).run()
-        Debugger(**generic_args | dbg_args | mock_kunpacker).run()
+        if c_to_up == 1:
+            DockerRunner(**generic_args | mock_kunpacker).build_base_img()
+            KernelBuilder(**generic_args | mock_kunpacker).run()
+            RootFSBuilder(**generic_args | mock_kunpacker).run()
+            Debuggee(**generic_args | dbge_args | mock_kunpacker).run()
+            Debugger(**generic_args | dbg_args | mock_kunpacker).run()
+        elif c_to_up == 2:
+            KernelBuilder(**generic_args | mock_kunpacker).run()
+        elif c_to_up == 3:
+            RootFSBuilder(**generic_args | mock_kunpacker).run()
+        elif c_to_up == 4:
+            Debuggee(**generic_args | dbge_args | mock_kunpacker).run()
+        elif c_to_up == 5:
+            Debugger(**generic_args | dbg_args | mock_kunpacker).run()
         logger.info("Success!")
     except Exception as e:
         logger.error(f"Failed: {e}")
@@ -224,8 +248,8 @@ def main():
     skip = False
     generic_args = set_generic_ctx(args, log_level)
 
-    if args.update_containers:
-        update_containers(dbg_args, dbge_args, generic_args)
+    if generic_args["update_containers"]:
+        update_containers(dbg_args, dbge_args, generic_args, args.update_containers)
 
     if args.partial and args.ctf:
         logger.error("Partial runs and CTF runs are mutually exclusive!")
