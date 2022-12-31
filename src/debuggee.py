@@ -71,7 +71,7 @@ class Debuggee(DockerRunner):
         # FIXME: Ugly hack to make us allow getting the container object.
         time.sleep(1)
         self.container = self.client.containers.get(f"{self.tag}")
-        self.wait_for_container(running=True)
+        self.wait_for_container()
 
     def run_container(self):
         mount_point = self.ctf_mount if self.ctf else Path.cwd()
