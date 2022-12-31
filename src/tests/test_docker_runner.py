@@ -1,11 +1,13 @@
-from docker.models.containers import Container
-from docker import DockerClient
-from ..docker_runner import DockerRunner
-from pathlib import Path
-from unittest.mock import patch, Mock
-import pytest
-import uuid
 import shutil
+import uuid
+from pathlib import Path
+from unittest.mock import Mock, patch
+
+import pytest
+from docker import DockerClient
+from docker.models.containers import Container
+
+from ..docker_runner import DockerRunner
 
 GENERIC_ARGS = {
     "skip_prompts": False,
@@ -91,13 +93,6 @@ def test_stop_container() -> None:
     mdr.stop_container()
     new_len = len(mdr.list_running_containers()) > 0
     assert old_len == new_len
-
-
-def test_wait_for_container() -> None:
-    mdr = MockDockerRunner(**GENERIC_ARGS | MOCK_UNPACKER_RES)
-    mdr.run_container("busybox", "latest", "/bin/true")
-    ret = mdr.wait_for_container()
-    assert ret["StatusCode"] == 0
 
 
 def test_check_existing_ok() -> None:

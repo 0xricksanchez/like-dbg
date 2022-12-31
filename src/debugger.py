@@ -7,7 +7,7 @@ from pathlib import Path
 from loguru import logger
 
 from .docker_runner import DockerRunner
-from .misc import cfg_setter, get_sha256_from_file, new_context, tmux, tmux_shell
+from .misc import SYSTEM_CFG, cfg_setter, get_sha256_from_file, get_value_from_section_by_key, new_context, tmux, tmux_shell
 
 GDB_SCRIPT_HIST = Path(".gdb_hist")
 
@@ -29,6 +29,7 @@ class Debugger(DockerRunner):
         self.custom_gdb_script = Path("/home/") / self.user / Path(self.gdb_script).name
         self.script_logging = "set -e" if kwargs.get("log_level", "INFO") == "INFO" else "set -eux"
         self.skip_prompts = kwargs.get("skip_prompts", False)
+        self.debuggee_name = get_value_from_section_by_key(SYSTEM_CFG, "debuggee_docker", "tag")
 
     def _set_ctf_ctx(self, kwargs) -> None:
         self.ctf_kernel = Path(kwargs.get("ctf_kernel", ""))
@@ -52,8 +53,8 @@ class Debugger(DockerRunner):
                 return 1
 
     def run_container(self) -> None:
-        entrypoint = f'/bin/bash -c "{self.script_logging}; . /home/{self.user}/debugger.sh -a {self.arch} -p {self.docker_mnt} -c {int(self.ctf)} -g {self.custom_gdb_script}"'
-        runner = f'docker run -it --rm --security-opt seccomp=unconfined --cap-add=SYS_PTRACE -v {self.project_dir}:/io --net="host" {self.tag} {entrypoint}'
+        entrypoint = f'/bin/bash -c "{self.script_logging}; . /home/{self.user}/debugger.sh -a {self.arch} -p {self.docker_mnt} -c {int(self.ctf)} -g {self.custom_gdb_script} -e {self.ext}"'
+        runner = f'docker run --pid=container:{self.debuggee_name} -it --rm --security-opt seccomp=unconfined --cap-add=SYS_PTRACE -v {self.project_dir}:/io --net="host" {self.tag} {entrypoint}'
         tmux("selectp -t 2")
         tmux_shell(runner)
 

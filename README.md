@@ -73,7 +73,9 @@ On the upside, despite its early stages, a couple of useful features are already
   * Powered by [QEMU](https://github.com/qemu/qemu)
   * Customization of QEMU runtime options from within the `configs/*.ini` files.
 * Debugger:
-  * Powered by [GDB (multiarch)](https://sourceware.org/gdb/) + [GEF](https://github.com/hugsy/gef) and [GEF-extras](https://github.com/hugsy/gef-extras)
+  * Powered by [GDB (multiarch)](https://sourceware.org/gdb/) with either
+    * [GEF](https://github.com/hugsy/gef) and [GEF-extras](https://github.com/hugsy/gef-extras), or
+    * [pwndbg](https://github.com/pwndbg/pwndbg)
   * Allow users to specify GDB script in `io/scripts/gdb_script` to allow a scenario-tailored debugging experience
 
 ## Requirements
@@ -118,7 +120,7 @@ python3 -m pip install -r requirements.txt
 ./start_kgdb.py
 ```
 
-### Extended Usage:
+### Extended Usage
 
 ```sh
 # If you want to try a CTF challenge where you were given a (compressed) Linux Image and a root filesystem try:

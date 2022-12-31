@@ -65,10 +65,18 @@ class Debuggee(DockerRunner):
         if self.smap:
             self.cmd += ",+smap"
 
+    def _ensure_container_is_up(self):
+        import time
+
+        # FIXME: Ugly hack to make us allow getting the container object.
+        time.sleep(1)
+        self.container = self.client.containers.get(f"{self.tag}")
+        self.wait_for_container()
+
     def run_container(self):
         mount_point = self.ctf_mount if self.ctf else Path.cwd()
         kernel = Path(self.docker_mnt) / self.kernel.name if self.ctf else self.kernel
-        dcmd = f'docker run -it --rm -v {mount_point}:/io --net="host" like_debuggee '
+        dcmd = f'docker run --name {self.tag} -it --rm -v {mount_point}:/io --net="host" like_debuggee '
         self.cmd = f"qemu-system-{self.qemu_arch} -m {self.memory} -smp {self.smp} -kernel {kernel}"
         if self.qemu_arch == "aarch64":
             self.cmd += " -cpu cortex-a72"
@@ -103,3 +111,4 @@ class Debuggee(DockerRunner):
         tmux("selectp -t 1")
         runner = f"{dcmd} {self.cmd}"
         tmux_shell(runner)
+        self._ensure_container_is_up()

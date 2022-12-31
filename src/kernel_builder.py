@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 
-import re
-import time
 import os
-from pathlib import Path
+import re
 import subprocess as sp
+from pathlib import Path
 
 from loguru import logger
 
@@ -131,15 +130,6 @@ class KernelBuilder(DockerRunner):
             exit(-1)
         return self._run_ssh(f"{self.cc} ARCH={self.arch} {self.llvm_flag} make -j$(nproc) modules")
 
-    def _wait_for_container(self) -> None:
-        logger.info("Waiting for Container to be up...")
-        while True:
-            c = self.cli.inspect_container(self.container.id)
-            if c["State"]["Health"]["Status"] != "healthy":
-                time.sleep(1)
-            else:
-                break
-
     def _add_multiple_mods(self, modules: list[Path]) -> None:
         for d in modules:
             if not d.is_dir():
@@ -188,7 +178,7 @@ class KernelBuilder(DockerRunner):
                 detach=True,
                 tty=True,
             )
-            self._wait_for_container()
+            self.wait_for_container()
             self.init_ssh()
             if self.dirty:
                 self._make_clean()

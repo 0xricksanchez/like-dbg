@@ -4,10 +4,10 @@ import configparser
 import hashlib
 import os
 import subprocess as sp
+import termios
 from contextlib import contextmanager
 from pathlib import Path
 from sys import stdin
-import termios
 
 from loguru import logger
 
@@ -59,6 +59,12 @@ def _set_cfg(cfg, obj, sect, key, ignore_empty) -> None:
         return
     val = tmp if tmp not in ["yes", "no"] else cfg[sect].getboolean(key)
     setattr(obj, key, val)
+
+
+def get_value_from_section_by_key(config, section, key) -> str:
+    cfg = configparser.ConfigParser()
+    cfg.read(config)
+    return cfg[section][key]
 
 
 def is_reuse(p: str) -> bool:

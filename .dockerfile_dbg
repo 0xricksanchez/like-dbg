@@ -34,9 +34,15 @@ ENV LC_ALL=en_US.UTF-8
 
 USER $USER
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
-RUN wget -q -O- https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh | bash -s - && \
+RUN set -e && \
+    wget -q -O- https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh | bash -s - > /dev/null && \
+    git clone --depth=1 https://github.com/pwndbg/pwndbg && \
+    pushd pwndbg > /dev/null && \
+    chmod +x setup.sh && \
+    echo 'y' | ./setup.sh && \
+    popd > /dev/null && \
     wget -q -O ~/.gdbinit-gef.py -q https://gef.blah.cat/dev && \
-    echo source ~/.gdbinit-gef.py >> ~/.gdbinit && \
+    echo "source ~/.gdbinit-gef.py" >> ~/.gdbinit && \
     wget -q -O- https://github.com/hugsy/gef/raw/dev/scripts/gef-extras.sh | bash -s - -b dev && \
     echo "export PATH=/home/$USER/.local/bin/:${PATH}" >> /home/$USER/.zshrc
 

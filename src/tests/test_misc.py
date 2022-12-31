@@ -1,29 +1,32 @@
-from src.misc import (
-    cfg_setter,
-    cross_compile,
-    adjust_toolchain_arch,
-    adjust_arch,
-    adjust_qemu_arch,
-    get_sha256_from_file,
-    is_reuse,
-    new_context,
-    tmux,
-    tmux_shell,
-    _set_cfg,
-    _set_base_cfg,
-    _cherry_pick,
-)
+import configparser
+import subprocess as sp
+import uuid
+from pathlib import Path
+from unittest.mock import MagicMock, Mock, patch
+
+import pytest
 
 from src.debuggee import Debuggee
 from src.debugger import Debugger
 from src.kernel_builder import KernelBuilder
+from src.misc import (
+    SYSTEM_CFG,
+    _cherry_pick,
+    _set_base_cfg,
+    _set_cfg,
+    adjust_arch,
+    adjust_qemu_arch,
+    adjust_toolchain_arch,
+    cfg_setter,
+    cross_compile,
+    get_sha256_from_file,
+    get_value_from_section_by_key,
+    is_reuse,
+    new_context,
+    tmux,
+    tmux_shell,
+)
 from src.rootfs_builder import RootFSBuilder
-import pytest
-import uuid
-from pathlib import Path
-import configparser
-import subprocess as sp
-from unittest.mock import MagicMock, patch, Mock
 
 MMP_INI = Path("src/tests/confs/lkdl_mmp.ini")
 CFG_INI = Path("src/tests/confs/cfg_setter.ini")
@@ -191,3 +194,7 @@ def test_cfg_setter_debuggee() -> None:
     assert d.rootfs_ftype == "ext4"
     assert d.arch == "arm64"
     assert d.panic == "foo"
+
+
+def test_get_value_from_section_by_key() -> None:
+    assert get_value_from_section_by_key(SYSTEM_CFG, "debuggee_docker", "tag") == "like_debuggee"
