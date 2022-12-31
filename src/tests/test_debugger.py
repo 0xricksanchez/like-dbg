@@ -1,7 +1,8 @@
-from pathlib import Path
-from src.debugger import GDB_SCRIPT_HIST, Debugger
-from unittest.mock import patch
 import hashlib
+from pathlib import Path
+from unittest.mock import patch
+
+from src.debugger import GDB_SCRIPT_HIST, Debugger
 
 TPATH = Path("/tmp/.hist")
 TPATH_NEW = Path("/tmp/.hist_new")
@@ -87,6 +88,7 @@ def test_run_container(tflush, tsmock, tmock) -> None:
     d = Debugger(**{"kroot": "foo"})
     d.project_dir = "/some/project_dir"
     d.tag = "tag"
+    d.ext = "gef"
     d.run_container()
-    expected = f"send-keys 'docker run -it --rm --security-opt seccomp=unconfined --cap-add=SYS_PTRACE -v {d.project_dir}:{d.docker_mnt} --net=\"host\" {d.tag} /bin/bash -c \"set -e; . /home/user/debugger.sh -a {d.arch} -p /io -c 0 -g /home/user/gdb_script\"' 'C-m'"
+    expected = f"send-keys 'docker run --pid=container:{d.debuggee_name} -it --rm --security-opt seccomp=unconfined --cap-add=SYS_PTRACE -v {d.project_dir}:{d.docker_mnt} --net=\"host\" {d.tag} /bin/bash -c \"set -e; . /home/user/debugger.sh -a {d.arch} -p /io -c 0 -g /home/user/gdb_script -e gef\"' 'C-m'"
     tmock.assert_called_with(expected)

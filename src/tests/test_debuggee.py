@@ -147,7 +147,8 @@ def test_add_smep_smap() -> None:
 @patch("termios.tcflush", return_value=True)
 @patch("builtins.input", lambda *args: "y")
 @patch.object(Debuggee, "infer_qemu_fs_mount", return_value=" -initrd /foo/bar.cpio")
-def test_run_x86_all_mitigations_kvm_gdb(tmock, tsmock, infer_mock, flush_mock) -> None:
+@patch.object(Debuggee, "_ensure_container_is_up", return_value=0)
+def test_run_x86_all_mitigations_kvm_gdb(tmock, tsmock, flush_mock, infer_mock, up_mock) -> None:
     d = Debuggee(**{"kroot": "foo", "ctf_ctx": False})
     d.kaslr = True
     d.smep = True
@@ -169,7 +170,8 @@ def test_run_x86_all_mitigations_kvm_gdb(tmock, tsmock, infer_mock, flush_mock) 
 @patch("termios.tcflush", return_value=True)
 @patch("builtins.input", lambda *args: "y")
 @patch.object(Debuggee, "infer_qemu_fs_mount", return_value=" -initrd /foo/bar.cpio")
-def test_run_x86_no_mitigations_kvm_gdb(tmock, tsmock, infer_mock, flush_mock) -> None:
+@patch.object(Debuggee, "_ensure_container_is_up", return_value=0)
+def test_run_x86_no_mitigations_kvm_gdb(tmock, tsmock, flush_mock, infer_mock, up_mock) -> None:
     d = Debuggee(**{"kroot": "foo", "ctf_ctx": False})
     d.kaslr = False
     d.smep = False
@@ -192,7 +194,8 @@ def test_run_x86_no_mitigations_kvm_gdb(tmock, tsmock, infer_mock, flush_mock) -
 @patch("termios.tcflush", return_value=True)
 @patch("builtins.input", lambda *args: "y")
 @patch.object(Debuggee, "infer_qemu_fs_mount", return_value=" -initrd /foo/bar.cpio")
-def test_run_arm_no_mitigations_kvm_on(tmock, tsmock, infer_mock, flush_mock) -> None:
+@patch.object(Debuggee, "_ensure_container_is_up", return_value=0)
+def test_run_arm_no_mitigations_kvm_on(tmock, tsmock, flush_mock, infer_mock, up_mock) -> None:
     d = Debuggee(**{"kroot": "foo", "ctf_ctx": False})
     d.kaslr = False
     d.smep = False

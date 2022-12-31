@@ -17,3 +17,4 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /io
+HEALTHCHECK --interval=1s --timeout=2s --retries=3 --start-period=2s CMD ps aux | grep "qemu-system" | grep -v grep || exit 1

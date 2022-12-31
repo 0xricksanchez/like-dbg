@@ -287,7 +287,7 @@ def get_run_kbuilder(mode: str) -> KernelBuilder:
 @patch.object(KernelBuilder, "_build_kvm_guest", return_value=0)
 @patch.object(KernelBuilder, "_configure_kernel", return_value=0)
 @patch.object(KernelBuilder, "_make", return_value=0)
-@patch.object(KernelBuilder, "_wait_for_container", return_value=0)
+@patch.object(KernelBuilder, "wait_for_container", return_value=0)
 @patch.object(KernelBuilder, "init_ssh", return_value=0)
 @patch.object(KernelBuilder, "_run_ssh", return_value=0)
 @patch("termios.tcflush", return_value=True)
@@ -307,7 +307,7 @@ def test_run_no_config_mode(a, b, c, d, e, f, g, h, j, k, lvname, m):
 @patch.object(KernelBuilder, "_build_kvm_guest", return_value=0)
 @patch.object(KernelBuilder, "_configure_kernel", return_value=0)
 @patch.object(KernelBuilder, "_make", return_value=0)
-@patch.object(KernelBuilder, "_wait_for_container", return_value=0)
+@patch.object(KernelBuilder, "wait_for_container", return_value=0)
 @patch.object(KernelBuilder, "init_ssh", return_value=0)
 @patch.object(KernelBuilder, "_run_ssh", return_value=0)
 @patch("termios.tcflush", return_value=True)
@@ -325,4 +325,4 @@ def test_wait_for_container() -> None:
     kb.container.id = 42
     kb.cli = Mock()
     kb.cli.inspect_container.return_value = {"State": {"Health": {"Status": "healthy"}}}
-    kb._wait_for_container()
+    kb.wait_for_container()

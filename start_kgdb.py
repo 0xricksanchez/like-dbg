@@ -130,7 +130,7 @@ def parse_cli() -> argparse.Namespace:
     Stage 2 - Stage 1 & unpacking,
     Stage 3 - Stage 2 & building,
     Stage 4 - RootFS building only.
-    Stage 5 - Stage 3+4 & Starting the debugee.
+    Stage 5 - Stage 3+4 & Starting the debuggee.
     """
         ),
     )
@@ -139,7 +139,6 @@ def parse_cli() -> argparse.Namespace:
         "-u",
         type=int,
         choices=range(1, 7),
-        default=0,
         help=textwrap.dedent(
             """\
         1 - Update all containers,
@@ -162,7 +161,7 @@ def set_generic_ctx(args, log_level):
         "ctf_ctx": True if args.ctf else False,
         "log_level": log_level,
         "user_cfg": args.config[0] if args.config else "",
-        "update_containers": True if args.update_containers != 0 else False,
+        "update_containers": True if args.update_containers is not None else False,
     }
     return generic_args
 

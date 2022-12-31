@@ -46,11 +46,15 @@ Section to dump good write-ups that either feature an actual exploit, a new tech
 
 ### Public exploits
 
+* [The exploit recon 'msg_msg' and its mitigation in VED](https://hardenedvault.net/blog/2022-11-13-msg_msg-recon-mitigation-ved/)
 * [[CVE-2022-101(5|6)] How The Tables Have Turned: An analysis of two new Linux vulnerabilities in nf_tables](https://blog.dbouman.nl/2022/04/02/How-The-Tables-Have-Turned-CVE-2022-1015-1016/)
 * [[CVE-2022-32250] SETTLERS OF NETLINK: Exploiting a limited UAF in nf_tables](https://research.nccgroup.com/2022/09/01/settlers-of-netlink-exploiting-a-limited-uaf-in-nf_tables-cve-2022-32250/)
 * [[CVE-2022-2586] N-day exploit for CVE-2022-2586: Linux kernel nft_object UAF](https://www.openwall.com/lists/oss-security/2022/08/29/5)
 * [[CVE-2022-1786] A Journey To The Dawn](https://blog.kylebot.net/2022/10/16/CVE-2022-1786/)
 * [Writing a Linux Kernel Remote in 2022](https://blog.immunityinc.com/p/writing-a-linux-kernel-remote-in-2022/)
+* [CVE-2021-22555: Turning \x00\x00 into 10000$](https://google.github.io/security-research/pocs/linux/cve-2021-22555/writeup.html#escaping-the-container-and-popping-a-root-shell)
+* [A deep root in Linux's filesystem layer (CVE-2021-33909)](https://www.qualys.com/2021/07/20/cve-2021-33909/sequoia-local-privilege-escalation-linux.txt)
+* [Exploiting CVE-2021-43267](https://haxx.in/posts/pwning-tipc/)
 * [Four Bytes of Power: Exploiting CVE-2021-26708 in the Linux kernel](https://a13xp0p0v.github.io/2021/02/09/CVE-2021-26708.html)
   * [Improving the exploit for CVE-2021-26708 in the Linux kernel to bypass LKRG](https://a13xp0p0v.github.io/2021/08/25/lkrg-bypass.html)
 * [Put an io_uring on it: Exploiting the Linux Kernel](https://www.graplsecurity.com/post/iou-ring-exploiting-the-linux-kernel)
@@ -58,6 +62,7 @@ Section to dump good write-ups that either feature an actual exploit, a new tech
 * [[CVE-2021-42008] Exploiting A 16-Year-Old Vulnerability In The Linux 6pack Driver](https://syst3mfailure.io/sixpack-slab-out-of-bounds)
 * [Anatomy of an Exploit: RCE with CVE-2020-1350 SIGRed](https://www.graplsecurity.com/post/anatomy-of-an-exploit-rce-with-cve-2020-1350-sigred)
 * [[CVE-2019-15666] Ubuntu / CentOS / RHEL Linux Kernel 4.4 - 4.18 privilege escalation](https://duasynt.com/blog/ubuntu-centos-redhat-privesc)
+* [CVE-2017-11176: A step-by-step Linux Kernel exploitation (part 1/4)](https://blog.lexfo.fr/cve-2017-11176-linux-kernel-exploitation-part1.html)
 
 ### Interesting CTF exploits
 

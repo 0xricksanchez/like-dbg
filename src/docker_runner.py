@@ -10,7 +10,7 @@ from docker.models.images import Image
 from fabric import Connection
 from loguru import logger
 
-from .misc import is_reuse, cfg_setter
+from .misc import cfg_setter, is_reuse
 
 
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
@@ -127,12 +127,15 @@ class DockerRunner:
     def list_running_containers(self) -> list[docker.client.DockerClient.containers]:
         return self.client.containers.list()
 
-    def wait_for_container(self) -> dict:
-        ret = self.container.wait()
-        if ret["StatusCode"] != 0:
-            logger.critical(f"Failed to run {type(self).__name__}")
-            exit(-1)
-        return ret
+    # This one requires a HEALTHCHECK in the dockerfile
+    def wait_for_container(self) -> None:
+        logger.info("Waiting for Container to be up...")
+        while True:
+            c = self.cli.inspect_container(self.container.id)
+            if c["State"]["Health"]["Status"] != "healthy":
+                time.sleep(1)
+            else:
+                break
 
     def pull_image(self, repo: str, tag: None) -> Image:
         tag = tag if tag else self.tag
