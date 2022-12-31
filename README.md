@@ -120,6 +120,13 @@ python3 -m pip install -r requirements.txt
 ./start_kgdb.py
 ```
 
+There exist 2 users for the automatically created filesystems:
+  * `root` with no password 
+  * `user`:`user` 
+
+This is intended so you can develop and exploit from either perspective easily.
+
+
 ### Extended Usage
 
 ```sh
