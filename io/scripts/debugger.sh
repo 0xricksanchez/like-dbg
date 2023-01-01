@@ -91,7 +91,7 @@ GDB="gdb-multiarch -q \"$VMLINUX\" -iex \"set architecture $ARCH\" \
 if [ "$EXT" == "gef" ]; then
 	GDB="${GDB} -ex \"gef-remote --qemu-user --qemu-binary $VMLINUX localhost 1234\""
 else
-	GDB="${GDB} -ex \"target remote :1234\" -ex \"set kernel-vmmap page-tables\""
+	GDB="${GDB} -ex \"target remote :1234\""
 fi
 
 GDB="${GDB} -ex \"break start_kernel\" \
