@@ -29,7 +29,7 @@ EOF
 }
 
 is_exist() {
-	if [ ! "$2" "$1" ]; then
+	if ! "$2" "$1"; then
 		echo "Could not find $1"
 		exit 255
 	fi
@@ -38,7 +38,7 @@ is_exist() {
 compile_mac() {
 	CTR=0
 	while true; do
-		if [ $(basename $PWD) != "like-dbg" ] || [ ! -f "$(pwd)/.dockerfile_base" ]; then
+		if [ "$(basename "$PWD")" != "like-dbg" ] || [ ! -f "$(pwd)/.dockerfile_base" ]; then
 			pushd .. >/dev/null
 			((CTR++))
 		else
@@ -46,17 +46,17 @@ compile_mac() {
 		fi
 
 	done
-	if [ ! $(docker images | grep -o "like_mac_compiler") ]; then
+	if ! "$(docker images | grep -qo "like_mac_compiler")"; then
 		docker build -t "like_mac_compiler" -f .dockerfile_compiler_mac .
 	fi
 	while [ $CTR -ne 0 ]; do
 		popd >/dev/null
 		((CTR--))
 	done
-	rsync -u $2 $1/root/ >/dev/null
-	out="/io/bin/$(basename $2)"
+	rsync -u "$2" "$1/root/" >/dev/null
+	out="/io/bin/$(basename "$2")"
 	out=${out%.*}
-	docker run --rm -v "$(pwd)/$1":/io "like_mac_compiler" musl-gcc /io/root/$(basename $2) -static -o "$out"
+	docker run --rm -v "$(pwd)/$1":/io "like_mac_compiler" musl-gcc "/io/root/$(basename "$2")" -static -o "$out"
 }
 
 pack() {
@@ -64,8 +64,8 @@ pack() {
 
 	if [ -n "$3" ]; then
 		is_exist "$3" "-f"
-		if [ $(uname -s) == "Darwin" ]; then
-			compile_mac $1 $3
+		if [ "$(uname -s)" == "Darwin" ]; then
+			compile_mac "$1" "$3"
 		else
 			MUSL=$(which musl-gcc)
 			is_exist "$MUSL" "-f"
@@ -90,14 +90,14 @@ pack() {
 }
 
 unpack() {
-	if [ -z $(hash cpioi &>/dev/null) ]; then
+	if ! hash cpio 2>/dev/null; then
 		echo "Couldn't find 'cpio' utility... Exiting!"
 		exit 255
 	fi
 	mkdir initramfs
 	pushd . >/dev/null && pushd initramfs >/dev/null
 	cp ../"$1" .
-	LOCAL_ROOTFS="$(pwd)/$(basename $1)"
+	LOCAL_ROOTFS="$(pwd)/$(basename "$1")"
 
 	if [ "$2" -eq 1 ]; then
 
@@ -107,9 +107,9 @@ unpack() {
 	fi
 
 	rm "$LOCAL_ROOTFS"
-	LUSER=$(logname 2>/dev/null || echo $SUDO_USER)
+	LUSER=$(logname 2>/dev/null || echo "$SUDO_USER")
 	popd >/dev/null
-	chown -R $LUSER: initramfs
+	chown -R "$LUSER": initramfs
 }
 
 if [ $# -eq 0 ]; then
@@ -148,7 +148,6 @@ while true; do
 		;;
 	-*)
 		usage
-		exit 255
 		;;
 	*)
 		# No more options
