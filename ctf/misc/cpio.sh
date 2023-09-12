@@ -29,7 +29,8 @@ EOF
 }
 
 is_exist() {
-	if ! "$2" "$1"; then
+	# shellcheck disable=SC1072,1073,1009
+	if [ ! "$2" "$1" ]; then
 		echo "Could not find $1"
 		exit 255
 	fi
