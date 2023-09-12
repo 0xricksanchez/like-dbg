@@ -8,3 +8,31 @@ pythonpath = ["src"]
 testpaths = ["src"]
 console_output_style = ["progress"]
 
+
+[tool.poetry]
+name = "like-dbg"
+version = "0.1.0"
+description = "Fully dockerized Linux kernel debugging environment"
+authors = ["434b <admin@0x434b.dev>"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+loguru = "^0.7.2"
+platformdirs = "^3.10.0"
+fabric = "^3.2.2"
+docker = "^6.1.3"
+tqdm = "^4.66.1"
+requests = "^2.31.0"
+
+
+[tool.poetry.group.dev.dependencies]
+black = "^23.9.1"
+flake8 = "^6.1.0"
+pytest = "^7.4.2"
+pytest-cov = "^4.1.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

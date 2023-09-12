@@ -84,8 +84,8 @@ To get started, you have to ensure to have the following requirements set up in 
 
 * `docker`
 * `tmux`
-* `python>=3.9`
-  * `venv`
+* `python>=3.11`
+* `poetry` # <https://python-poetry.org/docs/>
 
 It is recommended to not run this as the `root` user, e.g. for testing purposes on a VPS.
 It may work fine but in general I highly encourage creating a dedicated non-root user to put in the `docker` and `sudo` group!
@@ -98,6 +98,10 @@ This section covers tools that are *not* required to run LIKE-DBG but are nice t
 * [ctags](https://github.com/universal-ctags/ctags)
 * [ropr](https://github.com/Ben-Lichtman/ropr)  
 
+## Setup
+
+Inside `like-dbg` run `poetry install`
+
 ## Configuration
 
 Fine-tuning the kernel debugging experience is one of the goals of this project.
@@ -107,25 +111,24 @@ However, all the ones to customize the environment to your needs should be self-
 
 ## Usage
 
+**Note:** On first time usage run `poetry install`.
+
 Once you're set with writing/adapting a configuration, the usage depends on your scenario.
 The easiest way to get started, which is based on the `configs/user.ini` configuration is the following:
 
 ```sh
 tmux -f .tmux.conf
-python3 -m venv .like-dbg
-source .like-dbg/bin/activate
-python3 -m pip install --upgrade pip
-python3 -m pip install -r requirements.txt
+poetry shell
 # This checks out a kernel, builds it, creates a root file system and starts the debugger and debuggee eventually
 ./start_kgdb.py
 ```
 
 There exist 2 users for the automatically created filesystems:
-  * `root` with no password 
-  * `user`:`user` 
+
+* `root` with no password
+* `user`:`user`
 
 This is intended so you can develop and exploit from either perspective easily.
-
 
 ### Extended Usage
 
