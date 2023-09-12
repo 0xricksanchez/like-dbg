@@ -66,17 +66,17 @@ pack() {
 	if [ -n "$3" ]; then
 		is_exist "$3" "-f"
 		if [ "$(uname -s)" == "Darwin" ]; then
-			compile_mac "$1" "$3"
+			compile_mac "$1" "$3" || return 1
 		else
 			MUSL=$(which musl-gcc)
 			is_exist "$MUSL" "-f"
 			out=$(echo "$3" | awk '{ print substr( $0, 1, length($0)-2 ) }')
-			$MUSL "$3" -static -o "$out" || exit 255
-			mv "$out" "$1/bin/"
+			$MUSL "$3" -static -o "$out" || return 1
+			mv "$out" "$1/bin/" || return 1
 		fi
 		echo "Exploit pushed to $1/bin/"
 	fi
-	rm -rf "$1.cpio" "$1.cpio.gz"
+	rm -rf "$1.cpio" "$1.cpio.gz" || return 1
 
 	pushd . >/dev/null && pushd "$1" >/dev/null
 	cmd="find . -print0 | cpio --null --format=newc -o --owner=root 2>/dev/null"
@@ -86,7 +86,7 @@ pack() {
 	else
 		cmd="${cmd} > ../$dst.cpio"
 	fi
-	eval "$cmd"
+	eval "$cmd" || return 1
 	popd >/dev/null
 }
 
@@ -95,9 +95,9 @@ unpack() {
 		echo "Couldn't find 'cpio' utility... Exiting!"
 		exit 255
 	fi
-	mkdir initramfs
+	mkdir initramfs || return 1
 	pushd . >/dev/null && pushd initramfs >/dev/null
-	cp ../"$1" .
+	cp "../$1" . || return 1
 	LOCAL_ROOTFS="$(pwd)/$(basename "$1")"
 
 	if [ "$2" -eq 1 ]; then
@@ -107,10 +107,10 @@ unpack() {
 		cpio -idm <"$LOCAL_ROOTFS" &>/dev/null
 	fi
 
-	rm "$LOCAL_ROOTFS"
+	rm "$LOCAL_ROOTFS" || return 1
 	LUSER=$(logname 2>/dev/null || echo "$SUDO_USER")
 	popd >/dev/null
-	chown -R "$LUSER": initramfs
+	chown -R "$LUSER": initramfs || return 1
 }
 
 if [ $# -eq 0 ]; then
@@ -167,11 +167,18 @@ if [ "$DEC" -eq 1 ]; then
 		echo "Script needs to be run with sudo when unpacking as it may fail otherwise"
 		exit 255
 	fi
-	unpack "$ROOTFS" "$GZIP"
+	unpack "$ROOTFS" "$GZIP" || {
+		echo "Unpacking failed.."
+		rm -rf initramfs
+		exit 255
+	}
 fi
 
 if [ "$ENC" -eq 1 ]; then
-	pack "$ROOTFS" "$GZIP" "$EXPLOIT"
+	pack "$ROOTFS" "$GZIP" "$EXPLOIT" || {
+		echo "Packing failed.."
+		exit 255
+	}
 fi
 
 echo "Success!"
