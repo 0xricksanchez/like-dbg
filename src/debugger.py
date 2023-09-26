@@ -1,5 +1,4 @@
 import subprocess as sp
-from glob import glob
 from pathlib import Path
 
 from loguru import logger
@@ -46,7 +45,7 @@ class Debugger(DockerRunner):
                 exit(-1)
 
     def _extract_vmlinux(self) -> int:
-        vml_ext = Path(glob("**/extract-vmlinux.sh", recursive=True)[0]).resolve().absolute()
+        vml_ext = next(Path.cwd().rglob("extract-vmlinux.sh")).resolve().absolute()
         pkernel = self.ctf_kernel.resolve().absolute()
         with new_context(self.ctf_dir):
             cmd = f"{vml_ext} {pkernel}"

@@ -123,11 +123,9 @@ def test_add_modules() -> None:
     r.touch()
     r.write_text(f"{fst}\n{lst}")
     kb._add_modules()
-    with open(q, "r") as f:
-        data = f.readlines()
+    data = Path(q).read_text().splitlines()
     assert data[-1] != fst
-    with open(r, "r") as f:
-        data = f.readlines()
+    data = Path(r).read_text().splitlines()
     assert data[-1] == lst
     assert data[-2] != fst
 
@@ -147,11 +145,9 @@ def test_add_module() -> None:
     r.touch()
     r.write_text(f"{fst}\n{lst}")
     kb._add_modules()
-    with open(q, "r") as f:
-        data = f.readlines()
+    data = Path(q).read_text().splitlines()
     assert data[-1] != fst
-    with open(r, "r") as f:
-        data = f.readlines()
+    data = Path(r).read_text().splitlines()
     assert data[-1] == lst
     assert data[-2] != fst
 

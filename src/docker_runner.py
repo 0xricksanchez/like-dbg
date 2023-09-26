@@ -52,7 +52,7 @@ class DockerRunner:
                 self.ssh_conn = Connection(
                     f"{self.user}@localhost:{self.ssh_fwd_port}", connect_kwargs={"key_filename": ".ssh/like.id_rsa"}
                 )
-            except Exception as e:
+            except Exception as e:  # noqa PERF203
                 tries += 1
                 logger.error(f"Failed to initialize SSH connection to {type(self).__name__}: {e}")
                 logger.error("Retrying in 5 seconds...")

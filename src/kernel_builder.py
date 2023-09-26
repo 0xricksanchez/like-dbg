@@ -140,22 +140,25 @@ class KernelBuilder(DockerRunner):
             self._add_single_mod(Path(d))
 
     def _add_single_mod(self, mod: Path) -> None:
-        dst = f"{Path(self.kernel_root) / MISC_DRVS_PATH}"
+        dst = Path(self.kernel_root) / MISC_DRVS_PATH
         sp.run(f"cp -fr {mod} {dst}", shell=True)
-        kcfg_mod_path = Path(dst) / mod.name / "Kconfig"
+        kcfg_mod_path = dst / mod.name / "Kconfig"
         mod_kcfg_content = kcfg_mod_path.read_text()
         tmp = "_".join(re.search(r"config .*", mod_kcfg_content)[0].upper().split())
         ins = f"obj-$({tmp}) += {mod.name}/\n"
-        if ins.strip() not in Path(f"{dst}/Makefile").read_text():
-            with open(f"{dst}/Makefile", "a") as g:
+
+        makefile_path = dst / "Makefile"
+        if ins.strip() not in makefile_path.read_text():
+            with makefile_path.open("a") as g:
                 g.write(ins)
-        with open(f"{dst}/Kconfig", "r") as f:
-            contents = f.readlines()
+
+        kconfig_path = dst / "Kconfig"
+        contents = kconfig_path.read_text().splitlines(True)
         ins = f"""source "{MISC_DRVS_PATH / mod.name / 'Kconfig'}"\n"""
         if ins not in contents:
             contents.insert(len(contents) - 1, ins)
-            with open(f"{dst}/Kconfig", "w") as kc:
-                kc.writelines(contents)
+            kconfig_path.write_text("".join(contents))
+
         logger.debug(f"Added module {mod} to the kernel")
 
     def _add_modules(self) -> None:
@@ -168,32 +171,10 @@ class KernelBuilder(DockerRunner):
     def run_container(self) -> None:
         logger.info("Building kernel. This may take a while...")
         try:
-            if self.custom_modules:
-                self._add_modules()
-            volumes = {f"{Path.cwd()}": {"bind": f"{self.docker_mnt}", "mode": "rw"}}
-            if self.mode == "config":
-                volumes |= {f"{self.config.absolute().parent}": {"bind": "/tmp/", "mode": "rw"}}
-            self.container = self.client.containers.run(
-                self.image,
-                volumes=volumes,
-                ports={"22/tcp": self.ssh_fwd_port},
-                detach=True,
-                tty=True,
-            )
-            self.wait_for_container()
-            self.init_ssh()
-            if self.dirty:
-                self._make_clean()
-            if self.mode != "config":
-                self._build_mrproper()
-                self._apply_patches()
-                self._build_arch()
-                if self.kvm:
-                    self._build_kvm_guest()
-            else:
-                self._run_ssh(f"cp /tmp/{self.config.stem} .config")
-            self._configure_kernel()
-            self._make()
+            self.prepare_volumes_and_modules()
+            self.start_container()
+            self.prepare_kernel_build()
+            self.configure_and_make_kernel()
         except FileNotFoundError as e:
             logger.error(f"Failed to find file: {e}")
             exit(-1)
@@ -201,15 +182,56 @@ class KernelBuilder(DockerRunner):
             logger.error(f"A command caused an unexpected exit: {e}")
             exit(-2)
         else:
-            logger.info("Successfully build the kernel")
-            if self.arch == "x86_64":
-                cmd = self.make_sudo("ln -s bzImage Image")
-                self.ssh_conn.run(f"cd {self.docker_mnt}/{self.kernel_root}/arch/{self.arch}/boot && {cmd}", echo=True)
+            self.post_build_tasks()
         finally:
-            try:
-                self.stop_container()
-            except AttributeError:
-                pass
+            self.cleanup_container()
+
+    def prepare_volumes_and_modules(self):
+        if self.custom_modules:
+            self._add_modules()
+        volumes = {f"{Path.cwd()}": {"bind": f"{self.docker_mnt}", "mode": "rw"}}
+        if self.mode == "config":
+            volumes |= {f"{self.config.absolute().parent}": {"bind": "/tmp/", "mode": "rw"}}
+        self.volumes = volumes
+
+    def start_container(self):
+        self.container = self.client.containers.run(
+            self.image,
+            volumes=self.volumes,
+            ports={"22/tcp": self.ssh_fwd_port},
+            detach=True,
+            tty=True,
+        )
+        self.wait_for_container()
+        self.init_ssh()
+
+    def prepare_kernel_build(self):
+        if self.dirty:
+            self._make_clean()
+        if self.mode != "config":
+            self._build_mrproper()
+            self._apply_patches()
+            self._build_arch()
+            if self.kvm:
+                self._build_kvm_guest()
+        else:
+            self._run_ssh(f"cp /tmp/{self.config.stem} .config")
+
+    def configure_and_make_kernel(self):
+        self._configure_kernel()
+        self._make()
+
+    def post_build_tasks(self):
+        logger.info("Successfully build the kernel")
+        if self.arch == "x86_64":
+            cmd = self.make_sudo("ln -s bzImage Image")
+            self.ssh_conn.run(f"cd {self.docker_mnt}/{self.kernel_root}/arch/{self.arch}/boot && {cmd}", echo=True)
+
+    def cleanup_container(self):
+        try:
+            self.stop_container()
+        except AttributeError:
+            pass
 
     def run(self) -> None:
         super().run(check_existing=True)
