@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, Mock, patch
 import docker
 import pytest
 
-from ..kernel_builder import MISC_DRVS_PATH, KernelBuilder
+from src.kernel_builder import MISC_DRVS_PATH, KernelBuilder
 
 USER_INI = Path("configs/user.ini")
 CUSTOM_MODULE = Path("examples/like_dbg_confs/echo_module_x86.ini")

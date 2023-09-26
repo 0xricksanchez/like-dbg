@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 import configparser
 import hashlib
 import os
@@ -19,7 +17,9 @@ CFGS = [SYSTEM_CFG, USER_CFG]
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
 # | MISC QOL functions                                                                                  |
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
-def cfg_setter(obj, sections: list[str], user_cfg: str, exclude_keys: list[str] = [], cherry_pick: dict[str, list[str]] = {}) -> None:
+def cfg_setter(
+    obj, sections: list[str], user_cfg: str, exclude_keys: list[str] = [], cherry_pick: dict[str, list[str]] = {}
+) -> None:
     global CFGS
     cfgs = list(CFGS)
     cfg = configparser.ConfigParser()

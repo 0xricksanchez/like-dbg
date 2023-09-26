@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 import shutil
 import tarfile
 from pathlib import Path
@@ -7,7 +5,7 @@ from pathlib import Path
 from loguru import logger
 from tqdm import tqdm
 
-from .misc import cfg_setter, is_reuse
+from src.misc import cfg_setter, is_reuse
 
 
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+

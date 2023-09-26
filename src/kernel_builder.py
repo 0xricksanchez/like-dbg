@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 import os
 import re
 import subprocess as sp
@@ -7,8 +5,8 @@ from pathlib import Path
 
 from loguru import logger
 
-from .docker_runner import DockerRunner
-from .misc import adjust_arch, adjust_toolchain_arch, cfg_setter, cross_compile
+from src.docker_runner import DockerRunner
+from src.misc import adjust_arch, adjust_toolchain_arch, cfg_setter, cross_compile
 
 MISC_DRVS_PATH = Path("drivers/misc/")
 
@@ -21,7 +19,11 @@ class KernelBuilder(DockerRunner):
         super().__init__(**kwargs)
         user_cfg = kwargs.get("user_cfg", "")
         cfg_setter(
-            self, ["general", "kernel_builder", "kernel_builder_docker"], user_cfg, exclude_keys=["kernel_root"], cherry_pick={"debuggee": ["kvm"]}
+            self,
+            ["general", "kernel_builder", "kernel_builder_docker"],
+            user_cfg,
+            exclude_keys=["kernel_root"],
+            cherry_pick={"debuggee": ["kvm"]},
         )
         self.cc = f"CC={self.compiler}" if self.compiler else ""
         self.llvm_flag = "" if "gcc" in self.cc else "LLVM=1"
@@ -54,7 +56,7 @@ class KernelBuilder(DockerRunner):
     def _apply_patches(self) -> int:
         ret = 0
         if self.patch_dir and Path(self.patch_dir).exists():
-            patch_files = [x for x in Path(self.patch_dir).iterdir()]
+            patch_files = list(Path(self.patch_dir).iterdir())
             if patch_files:
                 for pfile in patch_files:
                     logger.debug(f"Patching: {pfile}")

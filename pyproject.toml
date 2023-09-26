@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "like-dbg"
+name = "like_dbg"
 version = "0.1.0"
 description = "Fully dockerized Linux kernel debugging environment"
 authors = ["434b <admin@0x434b.dev>"]

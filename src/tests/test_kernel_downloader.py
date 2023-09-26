@@ -1,4 +1,4 @@
-from ..linux_kernel_dl import KernelDownloader
+from src.linux_kernel_dl import KernelDownloader
 from pathlib import Path
 import requests
 import hashlib
@@ -24,7 +24,9 @@ def test_tag() -> None:
     lkdl = KernelDownloader(**{"user_cfg": str(Path("./src/tests/confs/lkdl_tag.ini").absolute())})
     assert lkdl.tag == "5.15-rc2"
     dl_uri = lkdl._set_dl_uri()
-    assert dl_uri == f"https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/snapshot/linux-{lkdl.tag}.tar.gz"
+    assert (
+        dl_uri == f"https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/snapshot/linux-{lkdl.tag}.tar.gz"
+    )
     resp = requests.head(dl_uri).headers
     assert resp["Content-Type"] == "application/x-gzip; charset=UTF-8"
 
@@ -34,7 +36,10 @@ def test_commit() -> None:
     assert lkdl.commit == "e4e737bb5c170df6135a127739a9e6148ee3da82"
     assert lkdl.commit != lkdl._resolve_latest()
     dl_uri = lkdl._set_dl_uri()
-    assert dl_uri == f"https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/snapshot/linux-{lkdl.commit}.tar.gz"
+    assert (
+        dl_uri
+        == f"https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/snapshot/linux-{lkdl.commit}.tar.gz"
+    )
     resp = requests.head(dl_uri).headers
     assert resp["Content-Type"] == "application/x-gzip; charset=UTF-8"
 

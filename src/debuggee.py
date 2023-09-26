@@ -1,12 +1,10 @@
-#!/usr/bin/env python3
-
 import subprocess as sp
 from pathlib import Path
 
 from loguru import logger
 
-from .docker_runner import DockerRunner
-from .misc import adjust_qemu_arch, cfg_setter, tmux, tmux_shell
+from src.docker_runner import DockerRunner
+from src.misc import adjust_qemu_arch, cfg_setter, tmux, tmux_shell
 
 
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+
@@ -16,7 +14,9 @@ class Debuggee(DockerRunner):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         user_cfg = kwargs.get("user_cfg", "")
-        cfg_setter(self, ["general", "debuggee", "debuggee_docker", "rootfs_general"], user_cfg, exclude_keys=["kernel_root"])
+        cfg_setter(
+            self, ["general", "debuggee", "debuggee_docker", "rootfs_general"], user_cfg, exclude_keys=["kernel_root"]
+        )
         if self.ctf:
             self.ctf_mount = kwargs.get("ctf_mount")
             self.kernel = Path(self.docker_mnt) / kwargs.get("ctf_kernel", "")
@@ -25,7 +25,7 @@ class Debuggee(DockerRunner):
             self.kernel = Path(self.docker_mnt) / self.kernel_root / "arch" / self.arch / "boot" / "Image"
             self.rootfs = Path(self.docker_mnt) / self.rootfs_dir / (self.rootfs_base + self.arch + self.rootfs_ftype)
         self.qemu_arch = adjust_qemu_arch(self.arch)
-        self.cmd = None
+        self.cmd = ""
 
     def run(self):
         super().run(check_existing=True)
@@ -103,7 +103,9 @@ class Debuggee(DockerRunner):
             self.cmd += " pti=on"
         self.cmd += f' oops=panic panic={self.infer_panic_behavior()}"'
         self.cmd += self.infer_qemu_fs_mount()
-        self.cmd += " -net user,host=10.0.2.10,hostfwd=tcp:127.0.0.1:10021-:22 -net nic,model=e1000 -nographic -pidfile vm.pid"
+        self.cmd += (
+            " -net user,host=10.0.2.10,hostfwd=tcp:127.0.0.1:10021-:22 -net nic,model=e1000 -nographic -pidfile vm.pid"
+        )
         if self.kvm and self.qemu_arch == "x86_64":
             self.cmd += " -enable-kvm"
         if self.gdb:

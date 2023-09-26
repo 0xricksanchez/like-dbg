@@ -1,7 +1,7 @@
 from pathlib import Path
 from unittest.mock import patch
 
-from ..kernel_unpacker import KernelUnpacker
+from src.kernel_unpacker import KernelUnpacker
 
 EMPTY_TARGZ = Path("src/tests/files/empty.tar.gz")
 VALID_TARGZ = Path("src/tests/files/valid.tar.gz")
