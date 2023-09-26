@@ -10,7 +10,7 @@ on:
       - .github/workflows/codecov.yml
 jobs:
   run:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@master
       - name: Setup Python
