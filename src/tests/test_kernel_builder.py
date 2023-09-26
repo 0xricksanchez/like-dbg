@@ -114,8 +114,8 @@ def test_add_modules() -> None:
     kb = KernelBuilder(**{"kroot": p})
     kb.custom_modules = fetch_cfg_value_from_section_and_key(CUSTOM_MODULE, "kernel_builder", "custom_modules")
     Path(p / MISC_DRVS_PATH).mkdir(parents=True)
-    fst = "This is the 1st line.\n"
-    lst = "This is the last line.\n"
+    fst = "This is the 1st line."
+    lst = "This is the last line."
     q = Path(p / MISC_DRVS_PATH / "Makefile")
     q.touch()
     q.write_text(fst)
@@ -136,8 +136,8 @@ def test_add_module() -> None:
     kb.custom_modules = fetch_cfg_value_from_section_and_key(CUSTOM_MODULE, "kernel_builder", "custom_modules")
     kb.custom_modules += "echo_service"
     Path(p / MISC_DRVS_PATH).mkdir(parents=True)
-    fst = "This is the 1st line.\n"
-    lst = "This is the last line.\n"
+    fst = "This is the 1st line."
+    lst = "This is the last line."
     q = Path(p / MISC_DRVS_PATH / "Makefile")
     q.touch()
     q.write_text(fst)
