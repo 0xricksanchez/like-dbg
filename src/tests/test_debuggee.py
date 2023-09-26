@@ -55,7 +55,9 @@ def test_infer_qemu_fs_mount_cpio_ctf(sp_mock) -> None:
 
 
 def test_assert_ctf_ctx_mode() -> None:
-    d = Debuggee(**{"kroot": "foo", "ctf_ctx": True, "ctf_mount": "/foo", "ctf_kernel": "/a/path", "ctf_fs": "/another/path"})
+    d = Debuggee(
+        **{"kroot": "foo", "ctf_ctx": True, "ctf_mount": "/foo", "ctf_kernel": "/a/path", "ctf_fs": "/another/path"}
+    )
     assert d.ctf is True
     assert d.ctf_mount == "/foo"
     assert d.kernel == Path("/a/path")

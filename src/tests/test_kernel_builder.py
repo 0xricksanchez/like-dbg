@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, Mock, patch
 import docker
 import pytest
 
-from ..kernel_builder import MISC_DRVS_PATH, KernelBuilder
+from src.kernel_builder import MISC_DRVS_PATH, KernelBuilder
 
 USER_INI = Path("configs/user.ini")
 CUSTOM_MODULE = Path("examples/like_dbg_confs/echo_module_x86.ini")
@@ -114,8 +114,8 @@ def test_add_modules() -> None:
     kb = KernelBuilder(**{"kroot": p})
     kb.custom_modules = fetch_cfg_value_from_section_and_key(CUSTOM_MODULE, "kernel_builder", "custom_modules")
     Path(p / MISC_DRVS_PATH).mkdir(parents=True)
-    fst = "This is the 1st line.\n"
-    lst = "This is the last line.\n"
+    fst = "This is the 1st line."
+    lst = "This is the last line."
     q = Path(p / MISC_DRVS_PATH / "Makefile")
     q.touch()
     q.write_text(fst)
@@ -123,11 +123,9 @@ def test_add_modules() -> None:
     r.touch()
     r.write_text(f"{fst}\n{lst}")
     kb._add_modules()
-    with open(q, "r") as f:
-        data = f.readlines()
+    data = Path(q).read_text().splitlines()
     assert data[-1] != fst
-    with open(r, "r") as f:
-        data = f.readlines()
+    data = Path(r).read_text().splitlines()
     assert data[-1] == lst
     assert data[-2] != fst
 
@@ -138,8 +136,8 @@ def test_add_module() -> None:
     kb.custom_modules = fetch_cfg_value_from_section_and_key(CUSTOM_MODULE, "kernel_builder", "custom_modules")
     kb.custom_modules += "echo_service"
     Path(p / MISC_DRVS_PATH).mkdir(parents=True)
-    fst = "This is the 1st line.\n"
-    lst = "This is the last line.\n"
+    fst = "This is the 1st line."
+    lst = "This is the last line."
     q = Path(p / MISC_DRVS_PATH / "Makefile")
     q.touch()
     q.write_text(fst)
@@ -147,11 +145,9 @@ def test_add_module() -> None:
     r.touch()
     r.write_text(f"{fst}\n{lst}")
     kb._add_modules()
-    with open(q, "r") as f:
-        data = f.readlines()
+    data = Path(q).read_text().splitlines()
     assert data[-1] != fst
-    with open(r, "r") as f:
-        data = f.readlines()
+    data = Path(r).read_text().splitlines()
     assert data[-1] == lst
     assert data[-2] != fst
 

@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 import re
 import urllib.request
 from pathlib import Path
@@ -7,8 +5,8 @@ from pathlib import Path
 import requests
 from loguru import logger
 
-from .misc import cfg_setter
-from .tqdm_dlbar import DLProgressBarTQDM
+from src.misc import cfg_setter
+from src.tqdm_dlbar import DLProgressBarTQDM
 
 
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+

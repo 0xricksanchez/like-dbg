@@ -1,11 +1,9 @@
-#!/usr/bin/env python3
-
 from pathlib import Path
 
 from loguru import logger
 
-from .docker_runner import DockerRunner
-from .misc import adjust_qemu_arch, cfg_setter, is_reuse
+from src.docker_runner import DockerRunner
+from src.misc import adjust_qemu_arch, cfg_setter, is_reuse
 
 
 # +-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-+

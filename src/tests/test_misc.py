@@ -154,7 +154,13 @@ def test_set_base_cfg_ignore_empty() -> None:
 @patch("src.misc.CFGS", [CFG_INI])
 def test_cfg_setter() -> None:
     m = Mock()
-    cfg_setter(m, sections=["kernel_dl"], user_cfg=str(USR_INI), exclude_keys=["ignore_me"], cherry_pick={"debuggee": ["panic"]})
+    cfg_setter(
+        m,
+        sections=["kernel_dl"],
+        user_cfg=str(USR_INI),
+        exclude_keys=["ignore_me"],
+        cherry_pick={"debuggee": ["panic"]},
+    )
     assert "ignore_me" not in vars(m)
     assert m.mmp == "5.15.67"
     assert m.panic == "foo"

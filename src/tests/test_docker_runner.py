@@ -7,7 +7,7 @@ import pytest
 from docker import DockerClient
 from docker.models.containers import Container
 
-from ..docker_runner import DockerRunner
+from src.docker_runner import DockerRunner
 
 GENERIC_ARGS = {
     "skip_prompts": False,

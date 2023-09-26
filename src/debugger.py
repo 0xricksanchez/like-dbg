@@ -1,13 +1,18 @@
-#!/usr/bin/env python3
-
 import subprocess as sp
-from glob import glob
 from pathlib import Path
 
 from loguru import logger
 
-from .docker_runner import DockerRunner
-from .misc import SYSTEM_CFG, cfg_setter, get_sha256_from_file, get_value_from_section_by_key, new_context, tmux, tmux_shell
+from src.docker_runner import DockerRunner
+from src.misc import (
+    SYSTEM_CFG,
+    cfg_setter,
+    get_sha256_from_file,
+    get_value_from_section_by_key,
+    new_context,
+    tmux,
+    tmux_shell,
+)
 
 GDB_SCRIPT_HIST = Path(".gdb_hist")
 
@@ -40,7 +45,7 @@ class Debugger(DockerRunner):
                 exit(-1)
 
     def _extract_vmlinux(self) -> int:
-        vml_ext = Path(glob("**/extract-vmlinux.sh", recursive=True)[0]).resolve().absolute()
+        vml_ext = next(Path.cwd().rglob("extract-vmlinux.sh")).resolve().absolute()
         pkernel = self.ctf_kernel.resolve().absolute()
         with new_context(self.ctf_dir):
             cmd = f"{vml_ext} {pkernel}"

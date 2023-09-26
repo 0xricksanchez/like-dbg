@@ -116,9 +116,16 @@ def parse_cli() -> argparse.Namespace:
     parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("--config", "-c", required=False, nargs=1, help="Allows providing a custom 'user.ini'")
     parser.add_argument("--ctf", nargs=2, required=False, help="Expected: <kernel_image> <root_file_system>")
-    parser.add_argument("--yes", "-y", action=argparse.BooleanOptionalAction, help="If this is set all re-use prompts are answered with 'yes'")
+    parser.add_argument(
+        "--yes",
+        "-y",
+        action=argparse.BooleanOptionalAction,
+        help="If this is set all re-use prompts are answered with 'yes'",
+    )
     parser.add_argument("--verbose", "-v", action=argparse.BooleanOptionalAction, help="Enable debug logging")
-    parser.add_argument("--kill", "-k", action=argparse.BooleanOptionalAction, help="Completely shutdown current session")
+    parser.add_argument(
+        "--kill", "-k", action=argparse.BooleanOptionalAction, help="Completely shutdown current session"
+    )
     parser.add_argument(
         "--partial",
         "-p",
