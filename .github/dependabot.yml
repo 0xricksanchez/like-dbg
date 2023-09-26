@@ -1,0 +1,17 @@
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "daily"
+    open-pull-requests-limit: 10
+    target-branch: "main"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    labels:
+      - dependency-update
+    assignees:
+      - "0xricksanchez"
+    reviewers:
+      - "0xricksanchez"
