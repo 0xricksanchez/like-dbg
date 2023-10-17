@@ -23,7 +23,7 @@ requests = "^2.31.0"
 black = "^23.9.1"
 pytest = "^7.4.2"
 pytest-cov = "^4.1.0"
-ruff = "^0.0.292"
+ruff = "^0.1.0"
 
 [tool.ruff]
 # https://docs.astral.sh/ruff/settings
