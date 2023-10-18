@@ -29,7 +29,7 @@ ruff = "^0.1.0"
 # https://docs.astral.sh/ruff/settings
 select = ["E", "F", "C4", "PTH", "TID", "PERF", "N", "C90"]
 # Group violations by containing file.
-format = "grouped"
+output-format = "grouped"
 line-length = 120
 # Never enforce `E501` (line length violations).
 ignore = ["E501"]
