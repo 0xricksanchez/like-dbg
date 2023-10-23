@@ -37,7 +37,7 @@ On the upside, despite its early stages, a couple of useful features are already
 * General:
   * Minimal host system requirements due to dockerization of every step
   * An easy to grasp `configs/user.ini` config that allows highly customizable sessions
-    * Or provide different configurations for different debgging setups via the command-line!
+    * Or provide different configurations for different debugging setups via the command-line!
   * CTF runner that's specifically designed to handle Linux kernel exploitation challenges
     * `ctf/misc` that houses some nifty scripts to aid in CTFs
   * Code quality measures:
