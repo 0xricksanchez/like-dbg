@@ -15,12 +15,12 @@ I have adopted a Code of Conduct that I expect project participants to adhere to
 Please [read the full text](https://github.com/0xricksanchez/like-dbg/blob/main/CODE_OF_CONDUCT.md) so that you can understand what actions will and will not be tolerated.
 
 ## Discussions
-If you're curious about a feature, the state of development, wanting to adapt this project for another use-case, or have anything else on your mind feel free to head over to the [discusions page](https://github.com/0xricksanchez/like-dbg/discussions).
+If you're curious about a feature, the state of development, want to adapt this project for another use-case, or have anything else on your mind feel free to head over to the [discusions page](https://github.com/0xricksanchez/like-dbg/discussions).
 This will be the best place to discuss topics in detail.
 
 ## Developing with Github
 
-The typicaly [Github Flow](https://docs.github.com/en/get-started/quickstart/github-flow) is employed here.
+The typical [Github Flow](https://docs.github.com/en/get-started/quickstart/github-flow) is employed here.
 So, all code changes happen through pull requests.
 Pull requests are the best way to propose changes to the codebase. I'll actively welcome your pull requests:
 
