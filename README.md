@@ -1,3 +1,4 @@
+<div id="top"></div>
 # LIKE-DBG
 
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
@@ -169,3 +170,5 @@ The python code should be quite readable, so feel free to extend the project wit
 Otherwise, feel free to create a feature-request issue or head over to the [discussions page](https://github.com/0xricksanchez/like-dbg/discussions) to brainstorm some cool new features!
 
 PS: If you want to provide a logo, feel free to do so.
+
+<p align="right">(<a href="#top">🔼 Back to top</a>)</p>
