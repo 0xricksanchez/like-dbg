@@ -1,6 +1,3 @@
-FROM like_dbg_base:latest
-LABEL maintainer="Christopher Krah <admin@0x434b.dev>"
-
 ENV DEBIAN_FRONTEND noninteractive
 
 ARG USER
@@ -9,6 +6,7 @@ WORKDIR /home/$USER
 
 COPY io/scripts/.gdbinit .
 COPY io/scripts/debugger.sh .
+COPY io/scripts/gdb_script .
 
 RUN apt-get update && \
     set -e && \
@@ -34,17 +32,16 @@ ENV LC_ALL=en_US.UTF-8
 
 USER $USER
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
-RUN set -e && \
-    wget -q -O- https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh | bash -s - > /dev/null && \
-    git clone --depth=1 https://github.com/pwndbg/pwndbg && \
-    pushd pwndbg > /dev/null && \
-    chmod +x setup.sh && \
-    echo 'y' | ./setup.sh && \
-    popd > /dev/null && \
-    wget -q -O ~/.gdbinit-gef.py -q https://gef.blah.cat/dev && \
-    echo "source ~/.gdbinit-gef.py" >> ~/.gdbinit && \
-    wget -q -O- https://github.com/hugsy/gef/raw/dev/scripts/gef-extras.sh | bash -s - -b dev && \
-    echo "export PATH=/home/$USER/.local/bin/:${PATH}" >> /home/$USER/.zshrc
+COPY io/scripts/config.sh .
+RUN ./config.sh
 
+# Set Zsh as the default shell for the user
+USER root
+RUN chsh -s $(which zsh) $USER
+USER $USER
+
+# Copy necessary scripts
 COPY io/scripts/gdb_script .
+
+# Set working directory
 WORKDIR /io
