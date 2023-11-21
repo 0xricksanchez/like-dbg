@@ -1,3 +1,6 @@
+FROM like_dbg_base:latest
+LABEL maintainer="Christopher Krah <admin@0x434b.dev>"
+
 ENV DEBIAN_FRONTEND noninteractive
 
 ARG USER
