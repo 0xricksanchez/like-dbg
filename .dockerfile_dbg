@@ -35,8 +35,8 @@ ENV LC_ALL=en_US.UTF-8
 
 USER $USER
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
-COPY io/scripts/config.sh .
-RUN ./config.sh
+COPY io/scripts/like_debugger_tool_install.sh .
+RUN ./like_debugger_tool_install.sh
 
 # Set Zsh as the default shell for the user
 USER root
