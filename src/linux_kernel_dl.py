@@ -37,7 +37,7 @@ class KernelDownloader:
         commit_re = rb"commit\/\?id=[0-9a-z]*"
         r = requests.get(self.commit_uri)
         search_res = re.search(commit_re, r.content)
-        if search_res.group():
+        if search_res and search_res.group():
             commit = search_res.group().split(b"=")[1].decode()
             logger.debug(f"Found latest commit: {commit}")
             return commit
