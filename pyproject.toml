@@ -25,6 +25,7 @@ pytest = "^8.2.2"
 pytest-cov = "^5.0.0"
 ruff = "^0.4.10"
 
+
 [tool.ruff]
 # https://docs.astral.sh/ruff/settings
 select = ["E", "F", "C4", "PTH", "TID", "PERF", "N", "C90"]
