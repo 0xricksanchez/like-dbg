@@ -4,6 +4,7 @@ import time
 from pathlib import Path
 
 import docker
+from docker import errors as docker_errors
 from docker.models.images import Image
 from fabric import Connection
 from loguru import logger
@@ -43,7 +44,7 @@ class DockerRunner:
             if not Path(ssh_dir).exists():
                 Path(ssh_dir).mkdir()
             sp.run(f'ssh-keygen -f {Path(ssh_dir) / "like.id_rsa"} -t rsa -N ""', shell=True)
-        return ssh_dir
+        return str(ssh_dir)
 
     def init_ssh(self):
         tries = 0
@@ -89,14 +90,14 @@ class DockerRunner:
             if self.update_containers:
                 self.cli.prune_images(filters={"dangling": True})
             return 0
-        except docker.errors.APIError:
+        except docker_errors.APIError:
             return 1
 
     def get_image(self, tag=None) -> Image:
         to_check = tag if tag else self.tag
         try:
             return self.client.images.get(to_check)
-        except docker.errors.ImageNotFound:
+        except docker_errors.ImageNotFound:
             return None
 
     def is_base_image(self) -> bool:
