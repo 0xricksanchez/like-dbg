@@ -5,6 +5,7 @@ description = "Fully dockerized Linux kernel debugging environment"
 authors = ["434b <admin@0x434b.dev>"]
 license = "MIT"
 readme = "README.md"
+package-mode = false
 
 [build-system]
 requires = ["poetry-core"]
