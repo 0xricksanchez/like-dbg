@@ -17,7 +17,7 @@ loguru = "^0.7.2"
 platformdirs = "^4.2.2"
 fabric = "^3.2.2"
 docker = "^7.1.0"
-tqdm = "^4.66.4"
+tqdm = "^4.66.5"
 requests = "^2.32.3"
 
 [tool.poetry.group.dev.dependencies]
