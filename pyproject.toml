@@ -21,7 +21,7 @@ tqdm = "^4.66.4"
 requests = "^2.32.3"
 
 [tool.poetry.group.dev.dependencies]
-black = "^24.4.2"
+black = "^24.8.0"
 pytest = "^8.2.2"
 pytest-cov = "^5.0.0"
 ruff = "^0.4.10"
