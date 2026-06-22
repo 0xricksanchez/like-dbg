@@ -312,16 +312,23 @@ The only **non-blocking bonus** is the 5.15 example building under the modern to
   the full rework is validated. (`2026_rework` is a pre-existing empty branch == `main`;
   unused.)
 
-### 10.2 Milestone 1 — Walking skeleton (arm64 happy path)
+### 10.2 Milestone 1 — Full arm64 experience (with an early plumbing checkpoint)
 
-Land the typed-core scaffold (`errors`, Pydantic `config`, `HostProfile`,
-`PipelineContext`, `ContainerService`, `Session`) plus *just enough* stage porting to take
-**arm64 end-to-end on macOS**: build a modern kernel → boot under native HVF → attach the
-containerized debugger via `host.docker.internal` → hit a breakpoint. This de-risks the
-three things most likely to bite — the `(host_path, container_path)` artifact contract, the
-container→host gdbstub hop, and HVF acceleration — before any breadth is built. Tooling and
-bootstrap (uv + Python 3.12 + ruff/mypy/pre-commit + modern base image) land at the start
-of M1.
+M1 delivers the **complete arm64 experience on macOS, start to finish**: build a modern
+kernel → boot to an interactive shell under native HVF → attach the containerized debugger
+via `host.docker.internal` → set/hit breakpoints during normal operation, all wired into
+the tmux session. Tooling + bootstrap (uv + Python 3.12 + ruff/mypy/pre-commit + modern
+base image) and the typed-core scaffold (`errors`, Pydantic `config`, `HostProfile`,
+`PipelineContext`, `ContainerService`, `Session`) land first.
+
+**Early internal checkpoint (de-risk gate):** before building out the full experience, hit
+the **minimal plumbing PoC** — an early-boot breakpoint (`break start_kernel; continue`) on
+the arm64/HVF target. This exercises every risky link (the `(host_path, container_path)`
+contract, the container→host gdbstub hop, HVF acceleration, symbol loading) and fails
+loudly if any is broken, so the topology is proven before the rest of M1 is built on it.
+
+**M1 exit gate:** the full usable arm64 session above — boot-to-shell + interactive
+breakpoints in the tmux session — not just the early-boot PoC.
 
 ### 10.3 Milestone 2 — Breadth
 
