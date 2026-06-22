@@ -21,6 +21,8 @@ class PipelineContext:
     kernel_root: Path | None = None
     kernel_status: str | None = None
     rootfs_image: Path | None = None
+    vmlinux: Path | None = None
+    kernel_image: Path | None = None
 
 
 @runtime_checkable
