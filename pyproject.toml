@@ -48,6 +48,8 @@ force-single-line = true
 python_version = "3.12"
 strict = true
 files = ["src/likedbg"]
+mypy_path = "src"
+explicit_package_bases = true
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
