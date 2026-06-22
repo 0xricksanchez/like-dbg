@@ -59,3 +59,18 @@ def test_exec_raises_on_nonzero():
     svc = ContainerService(FakeClient())
     with pytest.raises(ContainerError):
         svc.exec(container, "false")
+
+
+def test_exec_wraps_command_in_shell():
+    # Build commands use $(nproc) and && — they must run through a shell, not as a bare argv.
+    captured = {}
+
+    def exec_run(cmd, workdir=None):
+        captured["cmd"] = cmd
+        captured["workdir"] = workdir
+        return SimpleNamespace(exit_code=0, output=b"")
+
+    svc = ContainerService(FakeClient())
+    svc.exec(SimpleNamespace(exec_run=exec_run), "make -j$(nproc) all", workdir="/io/linux")
+    assert captured["cmd"] == ["/bin/sh", "-c", "make -j$(nproc) all"]
+    assert captured["workdir"] == "/io/linux"
