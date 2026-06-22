@@ -1,6 +1,7 @@
 android/
 android-kernel/
 android54/
+artifacts/
 kernel_root/
 src/
 io/rootfs/
