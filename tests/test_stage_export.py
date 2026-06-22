@@ -49,7 +49,10 @@ def test_skips_in_bind_mode(tmp_path):
 def test_volume_mode_copies_and_rewrites_paths(tmp_path):
     c = FakeC()
     out = ArtifactExporter(c, kernel_volume="likedbg_ksrc", workspace=tmp_path).run(_ctx("volume", tmp_path))
-    assert any("cp" in cmd for cmd in c.execs)
+    # Image is exported to the host workspace for native QEMU.
+    assert any("cp" in cmd and "Image" in cmd for cmd in c.execs)
     assert "likedbg_ksrc" in str(c.run_kwargs["volumes"])
     assert out.kernel_image == tmp_path / "artifacts" / "linux-6.6.30" / "Image"
-    assert out.vmlinux == tmp_path / "artifacts" / "linux-6.6.30" / "vmlinux"
+    # vmlinux stays in the volume so in-container gdb can read it (spec §4.6).
+    assert out.vmlinux == Path("/ksrc/linux-6.6.30/vmlinux")
+    assert not any("vmlinux" in cmd for cmd in c.execs)

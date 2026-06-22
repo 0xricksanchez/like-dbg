@@ -1,5 +1,10 @@
 """Export stage: copy built single-file artifacts out of the kernel-source volume
-to the host workspace, so native (host) QEMU can read them. No-op in bind mode."""
+to the host workspace, so native (host) QEMU can read them. No-op in bind mode.
+
+Only ``Image`` is exported to the host.  ``vmlinux`` stays inside the volume:
+the debugger container mounts the volume read-only and reads vmlinux directly
+from there (spec §4.6), so exporting it to a host path would make it
+unreachable to in-container gdb."""
 
 from __future__ import annotations
 
@@ -34,7 +39,6 @@ class ArtifactExporter:
             raise BuildError("missing build artifacts in context", remedy="run the Build stage first")
         out_dir = host_artifact_dir(self._workspace, ctx.kernel_root)
         out_dir.mkdir(parents=True, exist_ok=True)
-        rel_vmlinux = ctx.vmlinux.relative_to(_VOLUME_MOUNT)
         rel_image = ctx.kernel_image.relative_to(_VOLUME_MOUNT)
         volumes = {
             self._volume: {"bind": _VOLUME_MOUNT, "mode": "ro"},
@@ -42,10 +46,12 @@ class ArtifactExporter:
         }
         container = self._c.run_detached(_BASE_IMAGE, volumes=volumes, detach=True, tty=True)
         try:
-            self._c.exec(container, f"cp {_VOLUME_MOUNT}/{rel_vmlinux} {_OUT_MOUNT}/vmlinux")
+            # Export only Image: native host QEMU needs it as a host file.
+            # vmlinux is NOT exported — the debugger container mounts the volume
+            # ro and reads vmlinux from /ksrc/<id>/vmlinux (spec §4.6).
             self._c.exec(container, f"cp {_VOLUME_MOUNT}/{rel_image} {_OUT_MOUNT}/Image")
         finally:
             self._c.stop(container)
-        ctx.vmlinux = out_dir / "vmlinux"
         ctx.kernel_image = out_dir / "Image"
+        # ctx.vmlinux intentionally left unchanged (container path in volume)
         return ctx
