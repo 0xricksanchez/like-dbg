@@ -26,3 +26,4 @@ ctf/root*
 ctf/vmlinux
 ctf/initramfs
 ctf/pawn*
+artifacts/

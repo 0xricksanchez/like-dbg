@@ -52,8 +52,43 @@ docker run --rm --add-host=host.docker.internal:host-gateway -v likedbg_ksrc:/ks
 5. A minimal `gdb-multiarch`-only image suffices to prove the plumbing; gef/pwndbg (the richer
    UX) come with the real debugger image (Task 8).
 
-## Open for Task 8 (boot-to-shell = M1 exit gate)
+## Task 8 — boot-to-shell + interactive breakpoint = M1 EXIT GATE ✅ (validated live)
 
-- Build the rootfs (debootstrap arm64) and boot to an interactive shell over the serial console.
-- Wire the real debugger image (gef/pwndbg) and the tmux `Session` (debuggee pane + debugger pane).
-- Set an interactive breakpoint on a userspace-reachable function and hit it from the guest shell.
+Booted the built 6.6.30 arm64 kernel WITH the debootstrap rootfs under native HVF, reached
+systemd userspace + `getty.target`, then attached gdb to the **running** kernel and hit a
+software breakpoint during normal operation:
+```
+Thread 2 hit Breakpoint 1, schedule () at kernel/sched/core.c:6767
+#0 schedule ()  #1 schedule_timeout ()  #2 kcompactd ()  #3 kthread ()
+```
+Both halves of the M1 exit gate confirmed: boot-to-(interactive)-shell + interactive runtime
+breakpoint with full source-level debugging. **M1 (Sub-project A) is complete.**
+
+Boot command (rootfs):
+```
+qemu-system-aarch64 -M virt -cpu host -accel hvf -m 2048 -smp 2 \
+  -kernel artifacts/linux-6.6.30/Image \
+  -append "console=ttyAMA0 root=/dev/vda rw nokaslr" \
+  -drive file=artifacts/rootfs-arm64.img,format=raw,if=virtio -nographic -s
+```
+Runtime breakpoint (booted kernel → software `break` works, MMU on):
+```
+gdb-multiarch -q -iex "set auto-load safe-path /" /ksrc/linux-6.6.30/vmlinux \
+  -ex "set architecture aarch64" -ex "target remote host.docker.internal:1234" \
+  -ex "break schedule" -ex "continue"
+```
+
+### rootfs bring-up findings (folded into the code)
+1. **Build the chroot container-local, not in `/io`.** `rootfs.sh` did `pushd /io`, building the
+   debootstrap tree directly in the bind-mounted (virtiofs/APFS) dir, where `mknod`/device-node
+   ops fail. Fixed: build in `$(mktemp -d)`, copy only the final (sparse) image out to `/io`.
+2. **`.dockerfile_rootfs` modernized** for Ubuntu 24.04 (the `qemu`/`yes` metapackages are gone;
+   added e2fsprogs/perl/openssh-client).
+3. **`plymouth` in the default `--include` breaks debootstrap** in a chroot; use a lean package set.
+4. **No `/dev/root` fstab entry** — it makes systemd drop to emergency mode; root is mounted from
+   the kernel `root=` cmdline + `systemd-remount-fs`. Fixed in `rootfs.sh`.
+
+### Open polish (not blocking M1)
+- Build the real debugger image with gef/pwndbg (the minimal `gdb-multiarch` image proved the
+  plumbing); wire the tmux `Session` (debuggee + debugger panes) for the one-command UX.
+- Refine the rootfs default package set in config; `binfmt_arm64()` probe (Plan 2 note).

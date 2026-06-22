@@ -3,7 +3,12 @@
 #   https://raw.githubusercontent.com/google/syzkaller/master/tools/create-image.sh
 set -eux
 
-pushd /io >/dev/null || exit 255
+# Build the chroot on the container's own (real Linux) filesystem, NOT the bind-mounted
+# /io: on macOS/colima, /io is virtiofs-backed APFS where debootstrap's mknod/device-node
+# operations fail. Only the final single-file image is copied out to /io at the end.
+OUTDIR=/io
+WORKDIR="$(mktemp -d)"
+pushd "$WORKDIR" >/dev/null || exit 255
 
 MNT=rootfs
 SEEK=3071
@@ -162,7 +167,8 @@ echo "Configuring usable defaults for root file systems..."
 sudo sed -i '/^root/ { s/:x:/::/ }' $MNT/etc/passwd >/dev/null
 echo 'T0:23:respawn:/sbin/getty -L ttyS0 115200 vt100' | sudo tee -a $MNT/etc/inittab >/dev/null
 printf '\nauto eth0\niface eth0 inet dhcp\n' | sudo tee -a $MNT/etc/network/interfaces >/dev/null
-echo '/dev/root / ext4 defaults 0 0' | sudo tee -a $MNT/etc/fstab >/dev/null
+# No root (/) fstab entry: the kernel cmdline `root=` mounts it and systemd-remount-fs
+# applies rw. A bogus '/dev/root' entry makes systemd drop to emergency mode.
 echo 'debugfs /sys/kernel/debug debugfs defaults 0 0' | sudo tee -a $MNT/etc/fstab >/dev/null
 # echo 'securityfs /sys/kernel/security securityfs defaults 0 0' | sudo tee -a $MNT/etc/fstab
 # echo 'configfs /sys/kernel/config/ configfs defaults 0 0' | sudo tee -a $MNT/etc/fstab
@@ -191,3 +197,11 @@ sudo cp -a $MNT/. /mnt/$MNT/. >/dev/null
 sudo umount /mnt/$MNT >/dev/null
 sudo rm -rf "$MNT" >/dev/null
 find "$ROOTFS_NAME"* -print0 | xargs -0 chmod 0755 >/dev/null
+
+# Copy the finished image (sparse) and its ssh key out to the mounted output dir (/io).
+echo "Copying image to $OUTDIR..."
+sudo cp --sparse=always "$ROOTFS_NAME" "$OUTDIR/$ROOTFS_NAME"
+sudo cp "$ROOTFS_NAME.id_rsa" "$OUTDIR/$ROOTFS_NAME.id_rsa" 2>/dev/null || true
+sudo chmod 0644 "$OUTDIR/$ROOTFS_NAME"
+popd >/dev/null || true
+sudo rm -rf "$WORKDIR"
