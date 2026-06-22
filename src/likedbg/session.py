@@ -35,6 +35,17 @@ class Session:
     def send_keys(self, command: str) -> None:
         self._tmux("send-keys", command, "C-m")
 
+    def start(self, name: str) -> None:
+        self._tmux("rename-session", name)
+        self._tmux("rename-window", name)
+
+    def open_debug_layout(self) -> tuple[int, int]:
+        self.select_pane(0)
+        self.split("h", 66)
+        self.split("v", 50)
+        self.select_pane(0)
+        return (1, 2)
+
     def kill(self) -> None:
         # TODO(plan-3): target panes/session by self.name; name is unused scaffolding for now
         self._tmux("kill-pane", "-a", "-t", "0")

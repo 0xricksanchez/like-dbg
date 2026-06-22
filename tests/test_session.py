@@ -36,3 +36,12 @@ def test_nonzero_runner_raises_sessionerror():
     rec = Recorder(rc=1)
     with pytest.raises(SessionError):
         Session("LIKE-DBG", runner=rec).select_pane(0)
+
+
+def test_open_debug_layout_splits_into_three_panes():
+    rec = Recorder()
+    debuggee, debugger = Session("LIKE-DBG", runner=rec).open_debug_layout()
+    assert (debuggee, debugger) == (1, 2)
+    joined = [" ".join(c) for c in rec.calls]
+    assert any("splitw" in c for c in joined)
+    assert sum("splitw" in c for c in joined) == 2  # two splits -> three panes
