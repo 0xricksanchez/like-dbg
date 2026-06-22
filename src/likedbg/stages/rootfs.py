@@ -25,11 +25,17 @@ class RootfsStage:
         self._workspace = workspace
 
     def should_skip(self, ctx: PipelineContext) -> bool:
-        return rootfs_target(self._workspace, ctx.settings.general.arch).exists()
+        # Never skip: a cached image still has to be recorded in the context so the
+        # Debuggee stage can attach it as the root disk. run() is idempotent — it
+        # records the path and only rebuilds when the image is missing.
+        return False
 
     def run(self, ctx: PipelineContext) -> PipelineContext:
         arch = ctx.settings.general.arch
         target = rootfs_target(self._workspace, arch)
+        if target.exists():
+            ctx.rootfs_image = target
+            return ctx
         target.parent.mkdir(parents=True, exist_ok=True)
         cfg = ctx.settings.rootfs
         qemu_arch = "aarch64" if arch == "arm64" else "x86_64"
