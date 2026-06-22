@@ -16,7 +16,7 @@ class LikeDbgError(Exception):
         self.remedy = remedy
 
     def __str__(self) -> str:
-        if self.remedy:
+        if self.remedy is not None:
             return f"{self.message}\n  → fix: {self.remedy}"
         return self.message
 

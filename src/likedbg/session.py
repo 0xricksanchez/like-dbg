@@ -36,4 +36,5 @@ class Session:
         self._tmux("send-keys", command, "C-m")
 
     def kill(self) -> None:
+        # TODO(plan-3): target panes/session by self.name; name is unused scaffolding for now
         self._tmux("kill-pane", "-a", "-t", "0")
