@@ -170,7 +170,7 @@ if [ $FOREIGN = "false" ]; then
 	echo 'binfmt_misc /proc/sys/fs/binfmt_misc binfmt_misc defaults 0 0' | sudo tee -a $MNT/etc/fstab >/dev/null
 fi
 echo -en "127.0.0.1\tlocalhost $ROOTFS_NAME\n" | sudo tee $MNT/etc/hosts >/dev/null
-echo "nameserver 8.8.8.8" | sudo tee -a $MNT/etc/resolve.conf >/dev/null
+echo "nameserver 8.8.8.8" | sudo tee -a $MNT/etc/resolv.conf >/dev/null
 echo "$HOSTNAME" | sudo tee $MNT/etc/hostname >/dev/null
 dircolors -p | tee $MNT/home/"$USER"/.dircolors >/dev/null
 echo "export TERM=vt100" | tee -a $MNT/home/"$USER"/.bashrc >/dev/null
