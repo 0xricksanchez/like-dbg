@@ -23,6 +23,7 @@ dev = [
     "pre-commit>=3.7",
     "types-requests",
     "types-tqdm",
+    "types-docker",
 ]
 
 [build-system]
