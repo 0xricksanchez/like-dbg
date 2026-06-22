@@ -43,7 +43,9 @@ class ContainerService:
         return self._client.containers.run(image, **kwargs)
 
     def exec(self, container: Any, cmd: str, *, workdir: str | None = None) -> ExecResult:
-        result = container.exec_run(cmd, workdir=workdir)
+        # Run via a shell so build commands using $(nproc), &&, and other shell
+        # features evaluate correctly (docker-py does not wrap a string cmd in a shell).
+        result = container.exec_run(["/bin/sh", "-c", cmd], workdir=workdir)
         output = result.output.decode() if isinstance(result.output, bytes) else str(result.output)
         if result.exit_code != 0:
             raise ContainerError(
