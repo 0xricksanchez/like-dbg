@@ -56,3 +56,41 @@ def check_prerequisites(os_name: str, probes: BootstrapProbes) -> list[Prereq]:
         )
     )
     return results
+
+
+def _real_probes() -> BootstrapProbes:
+    import shutil
+    import subprocess
+
+    def colima_running() -> bool:
+        if shutil.which("colima") is None:
+            return False
+        out = subprocess.run(["colima", "status"], capture_output=True, text=True, check=False)
+        return "running" in (out.stdout + out.stderr).lower()
+
+    def binfmt_arm64() -> bool:
+        return shutil.which("docker") is not None  # refined in Task 8 bring-up
+
+    return BootstrapProbes(
+        has=lambda cmd: shutil.which(cmd) is not None,
+        colima_running=colima_running,
+        binfmt_arm64=binfmt_arm64,
+    )
+
+
+def main() -> int:
+    import platform
+
+    results = check_prerequisites(platform.system().lower(), _real_probes())
+    failed = [r for r in results if not r.ok]
+    for r in results:
+        mark = "ok" if r.ok else "MISSING"
+        line = f"[{mark}] {r.name}"
+        if r.remedy:
+            line += f"  -> {r.remedy}"
+        print(line)
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
