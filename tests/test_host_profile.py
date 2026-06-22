@@ -49,6 +49,7 @@ def test_auto_degrades_to_tcg_when_no_accel():
     p = _probes(system="darwin", machine="arm64", hvf=False, qemu=False)
     hp = HostProfile.detect(_settings("arm64"), Path("/ws"), p)
     assert hp.accel == "tcg"
+    assert hp.debuggee_mode == "in-container"
 
 
 def test_explicit_unsatisfiable_accel_raises():
@@ -67,3 +68,20 @@ def test_storage_bind_on_linux_always():
     p = _probes(system="linux", machine="x86_64", kvm=True, case_sensitive=False)
     hp = HostProfile.detect(_settings("x86_64"), Path("/ws"), p)
     assert hp.storage_mode == "bind"
+
+
+def test_explicit_hvf_unsatisfiable_raises():
+    p = _probes(system="darwin", machine="arm64", hvf=False, qemu=False)
+    with pytest.raises(HostCapabilityError):
+        HostProfile.detect(_settings("arm64", accel="hvf"), Path("/ws"), p)
+
+
+def test_explicit_mac_storage_override_wins_over_detection():
+    # case-sensitive workspace, but override forces volume
+    p_vol = _probes(system="darwin", machine="arm64", hvf=True, qemu=True, case_sensitive=True)
+    hp_vol = HostProfile.detect(_settings("arm64", mac_storage="volume"), Path("/ws"), p_vol)
+    assert hp_vol.storage_mode == "volume"
+    # case-insensitive workspace, but override forces bind
+    p_bind = _probes(system="darwin", machine="arm64", hvf=True, qemu=True, case_sensitive=False)
+    hp_bind = HostProfile.detect(_settings("arm64", mac_storage="bind"), Path("/ws"), p_bind)
+    assert hp_bind.storage_mode == "bind"
