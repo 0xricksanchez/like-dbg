@@ -132,13 +132,20 @@ ContainerService + Session), errors as exceptions`. Linear, typed, testable.
 ### 4.4 Execution topology: debuggee, debugger & acceleration
 
 - **Debuggee — two backends, one interface**, via a factory keyed on
-  `HostProfile.debuggee_mode`:
-  - `InContainerQemu` (Linux): `qemu-system-<arch>` in the debuggee container, `/dev/kvm`
-    passthrough when accel is `kvm`.
-  - `NativeQemu` (macOS): `qemu-system-aarch64 -accel hvf -cpu host` on the host, reading
-    kernel `Image` + rootfs from the host filesystem (dockerized build bind-mounts
-    artifacts out).
-  - Both use a **typed QEMU command builder** emitting an **argv list, not a shell
+  `HostProfile.debuggee_mode`. Native HVF fires **only** for the accelerated same-arch
+  case; everything else stays in-container:
+  - **macOS + arm64 guest + HVF → `NativeQemu`** (`qemu-system-aarch64 -accel hvf -cpu
+    host` on the host, reading `Image` + rootfs from the host path via the
+    `(host_path, container_path)` contract). The *only* native path.
+  - **macOS + x86_64 guest → `InContainerQemu` (TCG).** No `qemu-system-x86_64` on the
+    host; the **debuggee container image stays in use on macOS** for x86_64.
+  - **Linux + same-arch + `/dev/kvm` → `InContainerQemu` (KVM)** via device passthrough.
+  - **Everything else (cross-arch, no-kvm) → `InContainerQemu` (TCG).**
+  - **CTF context:** the supplied image + rootfs are staged under `workspace_dir`
+    (`<workspace>/ctf/runs/<id>/`), not `/tmp`, so the mount + path-pair contract holds on
+    macOS; CTF then rides the exact resolution above (an x86_64 challenge on macOS is
+    in-container TCG — correct, slow).
+  - All backends use a **typed QEMU command builder** emitting an **argv list, not a shell
     string** (safer, unit-testable). Per-arch machine/cpu (`arm64 → -M virt -cpu host`;
     `x86_64 → -cpu qemu64,+smep,+smap`), mitigation flags (kaslr/smep/smap/kpti/panic) from
     typed config, accel from `HostProfile`, gdbstub via `-S -s`. Rootfs-type inference
@@ -153,6 +160,16 @@ ContainerService + Session), errors as exceptions`. Linear, typed, testable.
 - **Networking contract (centralized).** Publish gdbstub `:1234` + guest SSH `:10021`,
   resolved through `HostProfile` (`gdbstub_addr`, `ssh_addr`). Linux via localhost/shared
   docker network; macOS via `host.docker.internal`.
+- **Accel detection & degradation policy.** `HostProfile` resolves accel: macOS →
+  `sysctl kern.hv_support == 1` + `qemu-system-aarch64` on PATH ⇒ HVF (arm64 only);
+  Linux → `/dev/kvm` present + accessible (probe; user in `kvm` group) ⇒ KVM; override
+  `accel = auto|kvm|hvf|tcg`. **Policy by intent:** `auto` (default) **degrades gracefully
+  to in-container TCG and never crashes**; an explicit `accel = hvf|kvm|tcg` that is
+  unsatisfiable **hard-errors**. CI sets `accel = tcg` explicitly for deterministic runs.
+- **Actionable diagnostics (cross-cutting).** Degradation warnings and `LikeDbgError`s
+  follow a **"what's wrong + how to fix"** shape, e.g. `⚠ qemu-system-aarch64 not found on
+  host → falling back to in-container TCG (slow). Run 'just bootstrap' for HVF.` Every
+  fallback or failure states both the cause and the remedy.
 
 ### 4.5 Host bootstrap & tooling
 
@@ -165,6 +182,42 @@ ContainerService + Session), errors as exceptions`. Linear, typed, testable.
   format (drop black); `mypy --strict`; pre-commit hooks (ruff, mypy); Pydantic v2; keep
   loguru. CI: consolidate the four workflows, add mypy + a **build-and-boot smoke job**
   (incl. a macOS-arm64 runner for the native-HVF path).
+
+### 4.6 Workspace & storage strategy
+
+The Linux kernel tree contains files differing only by case (e.g. `xt_CONNMARK` vs
+`xt_connmark`). On a default **case-insensitive APFS** volume the tree is silently
+corrupted on unpack — so source must live on **case-sensitive storage**. We auto-select one
+of two modes (override: `mac_storage = auto|bind|volume`; `auto` is default):
+
+- **Bind mode** — Linux always; macOS when `workspace_dir` is detected on case-sensitive
+  storage. Source tree on the bind-mounted host path; uniform `(host_path, container_path)`
+  contract; **host-editable source**; native QEMU reads artifacts directly.
+- **Volume mode** — the **zero-setup macOS default** when `workspace_dir` is
+  case-insensitive. The unpacked + built kernel tree (and the rootfs chroot) live in a
+  **Docker named volume on colima's ext4** (case-sensitive by nature) — *no disk fiddling,
+  no APFS volume creation*. The host-consumable single files (`Image` + rootfs image, which
+  cannot collide) are **exported to the bind-mounted APFS workspace** for native QEMU; the
+  **debugger container mounts the source volume (ro)** for `vmlinux` + source + `lx-`
+  scripts (no export). `custom_modules`/patches are host inputs the build container applies
+  into the in-volume tree.
+
+Consequences: the unpack step moves **into a container** (consistency + always
+case-sensitive). The `(host_path, container_path)` pair generalizes to a **workspace
+strategy** that, per artifact, knows its producer store (bind path or volume) and — only in
+volume mode for host-consumed single-file artifacts — an exported host path. On macOS the
+bootstrap **detects** case-sensitivity and selects the mode (it never creates/mutates disk
+volumes); it surfaces which mode is active via the §4.4 diagnostics shape.
+
+**State layout (consolidated, gitignored).** All generated/cached state lives under one
+defined layout (on the workspace path in bind mode; in the named volume for source/build in
+volume mode): `kernels/` (download cache), `ccache/` (compiler cache — a plain dir, not an
+opaque volume, so it survives image rebuilds and is inspectable), `build/<kernel-id>/`
+(unpacked + built source), `images/` (rootfs images), `ctf/runs/<id>/` (CTF artifacts),
+`.state/` (small bookkeeping, e.g. gdb-script-hash). **The builder SSH keypair is removed
+entirely** (`docker exec` needs no keys); the only SSH keys that remain are the **guest**
+keys the rootfs generates for logging into the debuggee over the `:10021` forward — one
+fewer keypair, smaller security surface.
 
 ## 5. Module-level change map
 
@@ -204,6 +257,17 @@ is HVF-accelerated by default. Internals are the typed Pydantic → PipelineCont
 pipeline with `ContainerService` / `Session`, errors-as-exceptions, and green CI including
 mypy.
 
+**Guaranteed (not best-effort) deliverables:**
+
+- **Full native-Linux support:** x86_64 and arm64 hosts, in-container KVM acceleration.
+- **x86_64 support on every host**, including in-container TCG on the arm64 Mac.
+- **Cross-build support both directions:** x86_64 kernel *and* x86_64 rootfs built from the
+  arm64 Mac, and arm64 built from an x86_64 Linux host. (Kernel cross-build via the
+  clang-universal-cross toolchain; rootfs cross-build via foreign-arch debootstrap +
+  bootstrap-provisioned binfmt.)
+
+The only **non-blocking bonus** is the 5.15 example building under the modern toolchain.
+
 ## 8. Out of scope (this sub-project)
 
 - Sanitizer build profiles, symbolized panics, snapshot/restore, kernel-aware debugger
@@ -221,9 +285,13 @@ mypy.
   native QEMU's gdbstub must be validated under colima specifically (not just Docker
   Desktop). Mitigation: smoke test early; fallback to a published-port/shared-network
   arrangement if needed.
-- **Native QEMU artifact paths on macOS:** the debugger container needs the same `vmlinux`
-  the host QEMU booted; ensure the bind-mount/host-path contract is unambiguous across
-  in-container vs native modes.
+- **APFS case-insensitivity (resolved by §4.6):** kernel source must be on case-sensitive
+  storage. Handled by the bind/volume workspace strategy — *no* per-user disk fiddling.
+  Residual: in **volume mode**, the artifact-export step (`Image` + rootfs → APFS) must be
+  correct and kept in sync so native QEMU boots what was just built; in **bind mode**,
+  virtiofs throughput for a multi-GB source tree may slow builds (ccache mitigates).
+- **colima named-volume sizing:** a built kernel tree + ccache is several GB inside the
+  colima VM; the bootstrap must size the VM disk accordingly.
 - **Level 3 churn vs. green tests:** the overhaul is large. Sequence it so the typed
   config + pipeline scaffold land first, then port stages one at a time keeping tests
   green (detailed in the implementation plan).
