@@ -7,6 +7,12 @@ def test_qemu_pane_command_joins_argv():
     assert cmd == "qemu-system-aarch64 -accel hvf -kernel /ws/Image"
 
 
+def test_qemu_pane_command_quotes_multiword_append():
+    # A multi-word -append value must stay a single shell token through tmux send-keys.
+    cmd = qemu_pane_command(["qemu-system-aarch64", "-append", "console=ttyAMA0 nokaslr pti=on"])
+    assert "'console=ttyAMA0 nokaslr pti=on'" in cmd
+
+
 def test_gdb_pane_command_wraps_docker_run_with_addhost_and_volume():
     cmd = gdb_pane_command(
         ["gdb-multiarch", "-q", "/ksrc/linux-6.6.30/vmlinux", "-ex", "hbreak start_kernel"],

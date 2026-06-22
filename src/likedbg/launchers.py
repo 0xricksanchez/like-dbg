@@ -5,11 +5,17 @@ Session sends the result to a tmux pane."""
 
 from __future__ import annotations
 
+import shlex
+
 
 def qemu_pane_command(argv: list[str]) -> str:
-    return " ".join(argv)
+    # shlex.join shell-quotes each token, so multi-word argv elements (e.g.
+    # `-append "console=ttyAMA0 nokaslr ..."`) survive the shell that tmux
+    # send-keys feeds the command to, instead of being re-split into args.
+    return shlex.join(argv)
 
 
 def gdb_pane_command(gdb_args: list[str], *, image: str, kernel_volume: str) -> str:
     docker = f"docker run --rm -it --add-host=host.docker.internal:host-gateway -v {kernel_volume}:/ksrc:ro {image} "
-    return docker + " ".join(gdb_args)
+    # Quote the gdb argv too: `-ex "hbreak start_kernel"` must reach gdb as one arg.
+    return docker + shlex.join(gdb_args)
