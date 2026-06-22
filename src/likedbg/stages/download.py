@@ -50,12 +50,16 @@ class DownloadStage:
         return self._dl_dir / _archive_name(resolve_version(ctx.settings.kernel_dl))
 
     def should_skip(self, ctx: PipelineContext) -> bool:
-        return self._dest(ctx).exists()
+        # Never skip: a cached archive still has to be recorded in the context for the
+        # Unpack stage. run() is idempotent — it sets ctx.kernel_archive and only
+        # fetches when the file is missing.
+        return False
 
     def run(self, ctx: PipelineContext) -> PipelineContext:
         self._dl_dir.mkdir(parents=True, exist_ok=True)
         version = resolve_version(ctx.settings.kernel_dl)
         dest = self._dest(ctx)
-        self._fetch(archive_url(version), dest)
+        if not dest.exists():
+            self._fetch(archive_url(version), dest)
         ctx.kernel_archive = dest
         return ctx

@@ -41,8 +41,14 @@ def test_download_runs_fetcher_and_sets_archive(tmp_path):
     assert len(calls) == 1
 
 
-def test_download_skips_when_archive_present(tmp_path):
-    stage = DownloadStage(lambda url, dest: None, dl_dir=tmp_path)
+def test_download_idempotent_when_archive_present(tmp_path):
+    # A cached archive must not be re-fetched, but the stage must still run so it can
+    # record kernel_archive in the context for the Unpack stage.
+    calls = []
+    stage = DownloadStage(lambda url, dest: calls.append((url, dest)), dl_dir=tmp_path)
     ctx = _ctx(tmp_path, tag="6.6")
     (tmp_path / "linux-6.6.tar.gz").write_bytes(b"x")
-    assert stage.should_skip(ctx) is True
+    assert stage.should_skip(ctx) is False
+    out = stage.run(ctx)
+    assert out.kernel_archive == tmp_path / "linux-6.6.tar.gz"
+    assert calls == []  # no re-fetch
