@@ -3,7 +3,6 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from likedbg.config import Settings  # noqa: F401  – exported symbol, verified by type checkers
 from likedbg.config import load_settings
 from likedbg.errors import ConfigError
 
@@ -48,3 +47,10 @@ def test_settings_is_immutable():
     s = _load()
     with pytest.raises(ValidationError):
         s.general.arch = "x86_64"  # type: ignore[misc]
+
+
+def test_custom_ini_overrides_user(tmp_path):
+    custom = tmp_path / "custom.ini"
+    custom.write_text("[general]\narch = x86_64\n")
+    s = _load(custom_ini=custom)
+    assert s.general.arch == "x86_64"  # custom beats user.ini's arm64

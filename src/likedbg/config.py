@@ -86,16 +86,6 @@ class Settings(_Base):
     debugger: DebuggerCfg = DebuggerCfg()
 
 
-_SECTION_MODEL: dict[str, type[_Base]] = {
-    "general": GeneralCfg,
-    "kernel_dl": KernelDlCfg,
-    "kernel_builder": KernelBuilderCfg,
-    "rootfs": RootfsCfg,
-    "debuggee": DebuggeeCfg,
-    "debugger": DebuggerCfg,
-}
-
-
 def _layer(into: dict[str, dict[str, str]], cfg: configparser.ConfigParser) -> None:
     """Merge non-blank keys from a parsed INI onto the accumulator (later wins)."""
     for section in cfg.sections():
