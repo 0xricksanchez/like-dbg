@@ -21,7 +21,15 @@ def test_pwndbg_uses_target_remote_with_addr():
     s = " ".join(args)
     assert "target remote host.docker.internal:1234" in s
     assert "/w/vmlinux" in s
-    assert "break start_kernel" in s
+    # early-boot breakpoints must be hardware breakpoints (validated live)
+    assert "hbreak start_kernel" in s
+    # auto-load must be enabled before the symbol file loads
+    assert "set auto-load safe-path /" in s
+
+
+def test_safe_path_is_an_initial_command_before_the_file():
+    args = build_gdb_args(_host(), vmlinux=Path("/w/vmlinux"), ext="pwndbg", breakpoint=None)
+    assert args.index("-iex") < args.index("/w/vmlinux")
 
 
 def test_gef_uses_gef_remote_not_qemu_user():
