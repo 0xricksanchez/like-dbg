@@ -37,6 +37,7 @@ packages = ["src/likedbg"]
 line-length = 120
 target-version = "py312"
 src = ["src", "tests"]
+force-exclude = true
 extend-exclude = [
     "start_kgdb.py",
     "src/__init__.py",
