@@ -232,15 +232,33 @@ mypy.
 - **colima resource defaults:** kernel builds are heavy; the bootstrap must provision
   adequate CPU/RAM or builds will be painfully slow.
 
-## 10. Implementation sequencing (high-level; detailed plan to follow)
+## 10. Branching, integration & sequencing
 
-1. Tooling/bootstrap: uv + Python 3.12 + ruff/mypy/pre-commit; one-command host bootstrap;
-   modern base image.
-2. Core scaffold: `errors`, Pydantic `config`, `HostProfile`, `PipelineContext`,
-   `ContainerService`, `Session` — with tests, before porting stages.
-3. Port stages onto the new core one at a time (Download → Unpack → Build → Rootfs →
-   Debuggee → Debugger), keeping tests green; fold in `docker exec`, toolchain registry,
-   fragments, two QEMU backends, TCP attach, and the latent-bug fixes as each stage is
-   touched.
-4. CI: consolidate workflows; add mypy + build-and-boot smoke (incl. macOS-arm64 runner).
-5. Validate Definition of Done on both hosts; update README.
+### 10.1 Branching strategy (hard constraint)
+
+- **`main` stays untouched** for the entire rework.
+- All rework integrates on a long-lived **`dev`** branch (forked from `main`).
+- Each milestone/chunk is built on a short-lived **feature branch off `dev`** and merged
+  back into `dev`.
+- **`dev → main` happens only at the very end**, as a single deliberate replacement once
+  the full rework is validated. (`2026_rework` is a pre-existing empty branch == `main`;
+  unused.)
+
+### 10.2 Milestone 1 — Walking skeleton (arm64 happy path)
+
+Land the typed-core scaffold (`errors`, Pydantic `config`, `HostProfile`,
+`PipelineContext`, `ContainerService`, `Session`) plus *just enough* stage porting to take
+**arm64 end-to-end on macOS**: build a modern kernel → boot under native HVF → attach the
+containerized debugger via `host.docker.internal` → hit a breakpoint. This de-risks the
+three things most likely to bite — the `(host_path, container_path)` artifact contract, the
+container→host gdbstub hop, and HVF acceleration — before any breadth is built. Tooling and
+bootstrap (uv + Python 3.12 + ruff/mypy/pre-commit + modern base image) land at the start
+of M1.
+
+### 10.3 Milestone 2 — Breadth
+
+x86_64 target; all build modes (generic/syzkaller/custom/config via kconfig fragments) +
+`extra_args`; CTF context; `partial`/`update_containers` modes; full test-suite port; CI
+consolidation + mypy + build-and-boot smoke (incl. a macOS-arm64 runner); the 5.15 example
+as a non-blocking secondary check; README refresh. Same Level 3 end state — the scary
+unknowns are simply resolved in M1 rather than at the finish line.
