@@ -14,8 +14,8 @@ _VOLUME_MOUNT = "/ksrc"
 
 
 def make_command(env: dict[str, str], target: str) -> str:
-    vars_str = " ".join(f"{k}={v}" for k, v in env.items())
-    return f"make {vars_str} -j$(nproc) {target}".replace("  ", " ").strip()
+    parts = ["make", *[f"{k}={v}" for k, v in env.items()], "-j$(nproc)", target]
+    return " ".join(parts)
 
 
 def _image_path(kernel_root: Path, arch: str) -> Path:

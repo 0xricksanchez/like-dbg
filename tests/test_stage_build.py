@@ -66,6 +66,21 @@ def test_build_runs_defconfig_merge_and_make():
     assert "make" in joined and "all" in joined
 
 
+def test_build_sequence_includes_mrproper(tmp_path):
+    """Build sequence must issue mrproper before defconfig and all."""
+    c = FakeC()
+    _stage(c, ["configs/fragments/debug.config"]).run(_ctx())
+    cmds = [cmd for cmd, _ in c.execs]
+    joined = "\n".join(cmds)
+    assert "mrproper" in joined, "mrproper command not found in build sequence"
+    assert "defconfig" in joined
+    assert "all" in joined
+    # mrproper must come before defconfig
+    mrproper_idx = next(i for i, cmd in enumerate(cmds) if "mrproper" in cmd)
+    defconfig_idx = next(i for i, cmd in enumerate(cmds) if "defconfig" in cmd and "old" not in cmd)
+    assert mrproper_idx < defconfig_idx, "mrproper must run before defconfig"
+
+
 def test_build_sets_vmlinux_and_image_paths():
     out = _stage(FakeC()).run(_ctx("arm64"))
     assert out.vmlinux == Path("/io/linux-6.6/vmlinux")

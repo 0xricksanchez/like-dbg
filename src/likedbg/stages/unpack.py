@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from likedbg.container_service import ContainerService
+from likedbg.errors import UnpackError
 from likedbg.pipeline import PipelineContext
 
 _MOUNT = "/io"
@@ -34,7 +35,19 @@ class UnpackStage:
         return False
 
     def run(self, ctx: PipelineContext) -> PipelineContext:
-        assert ctx.kernel_archive is not None
+        if ctx.kernel_archive is None:
+            raise UnpackError(
+                "no kernel archive in context",
+                remedy="run the Download stage first",
+            )
+        try:
+            rel = ctx.kernel_archive.relative_to(self._workspace)
+        except ValueError as exc:
+            raise UnpackError(
+                f"kernel archive {ctx.kernel_archive} is not under the workspace {self._workspace}",
+                remedy="configure the Download stage's dl_dir to a subdirectory of the workspace so the unpack container can read it at /io",
+            ) from exc
+        archive_in = f"{_MOUNT}/{rel}"
         volume_mode = ctx.host.storage_mode == "volume"
         mount = _VOLUME_MOUNT if volume_mode else _MOUNT
         if volume_mode:
@@ -42,10 +55,8 @@ class UnpackStage:
                 str(self._workspace): {"bind": _MOUNT, "mode": "ro"},
                 self._volume: {"bind": _VOLUME_MOUNT, "mode": "rw"},
             }
-            archive_in = f"{_MOUNT}/{ctx.kernel_archive.relative_to(self._workspace)}"
         else:
             volumes = {str(self._workspace): {"bind": _MOUNT, "mode": "rw"}}
-            archive_in = f"{_MOUNT}/{ctx.kernel_archive.relative_to(self._workspace)}"
         container = self._c.run_detached(_BASE_IMAGE, volumes=volumes, detach=True, tty=True)
         try:
             self._c.exec(container, f"mkdir -p {mount}")

@@ -3,6 +3,7 @@ are done by scripts/bootstrap.sh). Each missing prerequisite carries a remedy.""
 
 from __future__ import annotations
 
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -78,9 +79,13 @@ def _real_probes() -> BootstrapProbes:
     )
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     import platform
 
+    args = sys.argv[1:] if argv is None else argv
+    if args and args[0] not in ("--check",):
+        print("usage: python -m likedbg.bootstrap [--check]", file=sys.stderr)
+        return 2
     results = check_prerequisites(platform.system().lower(), _real_probes())
     failed = [r for r in results if not r.ok]
     for r in results:
