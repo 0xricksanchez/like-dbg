@@ -11,8 +11,10 @@ from likedbg.host_profile import HostProfile
 # the requested extension is sourced explicitly here.
 _EXT_SOURCE = {"gef": "/opt/gef/gef.py", "pwndbg": "/opt/pwndbg/gdbinit.py"}
 
+_GDB_ARCH = {"arm64": "aarch64", "x86_64": "i386:x86-64"}
 
-def build_gdb_args(host: HostProfile, *, vmlinux: Path, ext: str, breakpoint: str | None) -> list[str]:
+
+def build_gdb_args(host: HostProfile, *, arch: str, vmlinux: Path, ext: str, breakpoint: str | None) -> list[str]:
     addr = host.gdbstub_addr
     # Source the chosen extension and enable auto-load BEFORE the symbol file loads
     # (mirrors ~/.gdbinit): the kernel's vmlinux-gdb.py / lx- helpers and the gef/pwndbg
@@ -20,7 +22,7 @@ def build_gdb_args(host: HostProfile, *, vmlinux: Path, ext: str, breakpoint: st
     args = ["gdb-multiarch", "-q"]
     args += ["-iex", f"source {_EXT_SOURCE[ext]}"]
     args += ["-iex", "set auto-load safe-path /", str(vmlinux)]
-    args += ["-ex", "set architecture aarch64"]
+    args += ["-ex", f"set architecture {_GDB_ARCH[arch]}"]
     if ext == "gef":
         args += ["-ex", f"gef-remote {addr} 1234"]
     else:

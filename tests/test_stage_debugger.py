@@ -16,7 +16,7 @@ def _ctx():
         gdbstub_addr="host.docker.internal",
         ssh_addr="host.docker.internal",
     )
-    ctx = PipelineContext(settings=Settings(), host=host)
+    ctx = PipelineContext(settings=Settings.model_validate({"general": {"arch": "arm64"}}), host=host)
     ctx.vmlinux = Path("/ws/artifacts/linux-6.6.30/vmlinux")
     return ctx
 
@@ -27,3 +27,4 @@ def test_debugger_builds_and_runs_gdb_with_breakpoint():
     stage.run(_ctx())
     s = " ".join(ran["args"])
     assert "gef-remote host.docker.internal 1234" in s and "break start_kernel" in s
+    assert "set architecture aarch64" in s

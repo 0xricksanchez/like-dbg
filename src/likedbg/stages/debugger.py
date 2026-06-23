@@ -23,6 +23,8 @@ class DebuggerStage:
     def run(self, ctx: PipelineContext) -> PipelineContext:
         if ctx.vmlinux is None:
             raise BuildError("no vmlinux in context", remedy="run the Build/Export stages first")
-        args = build_gdb_args(ctx.host, vmlinux=ctx.vmlinux, ext=self._ext, breakpoint=self._breakpoint)
+        args = build_gdb_args(
+            ctx.host, arch=ctx.settings.general.arch, vmlinux=ctx.vmlinux, ext=self._ext, breakpoint=self._breakpoint
+        )
         self._run_gdb(args)
         return ctx
