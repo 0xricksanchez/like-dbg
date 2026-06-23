@@ -17,13 +17,14 @@ from dataclasses import field
 from pathlib import Path
 
 from likedbg.config import Settings
+from likedbg.constants import BASE_IMAGE
+from likedbg.constants import KERNEL_VOLUME
+from likedbg.constants import VOLUME_MOUNT
 from likedbg.container_service import ContainerService
 from likedbg.errors import CacheError
 from likedbg.toolchain import resolve_toolchain
 
 _SLUG_RE = re.compile(r"[^a-z0-9._-]+")
-_BASE_IMAGE = "like_dbg_base"
-_VOLUME_MOUNT = "/ksrc"
 
 
 def cache_key(inputs: dict[str, str]) -> str:
@@ -177,9 +178,9 @@ class Locations:
     gdb_vmlinux: str
 
 
-def locations(label: str, *, arch: str, storage_mode: str, workspace: Path, volume: str = "likedbg_ksrc") -> Locations:
+def locations(label: str, *, arch: str, storage_mode: str, workspace: Path, volume: str = KERNEL_VOLUME) -> Locations:
     image_name = "bzImage" if arch == "x86_64" else "Image"
-    container_root = f"/ksrc/{label}"
+    container_root = f"{VOLUME_MOUNT}/{label}"
     image_in_tree = f"{container_root}/arch/{arch}/boot/{image_name}"
     if storage_mode == "volume":
         return Locations(
@@ -201,19 +202,19 @@ def locations(label: str, *, arch: str, storage_mode: str, workspace: Path, volu
         gdb_mount_type="bind",
         # bind mode mounts the single label dir at /ksrc, so vmlinux is at /ksrc/vmlinux
         # (no label segment); volume mode mounts the whole volume at /ksrc/<label>/vmlinux.
-        gdb_vmlinux="/ksrc/vmlinux",
+        gdb_vmlinux=f"{VOLUME_MOUNT}/vmlinux",
     )
 
 
 def remove_cached(
-    container: ContainerService, workspace: Path, manifest: Manifest, *, volume: str = "likedbg_ksrc"
+    container: ContainerService, workspace: Path, manifest: Manifest, *, volume: str = KERNEL_VOLUME
 ) -> None:
     if manifest.kind == "build":
         c = container.run_detached(
-            _BASE_IMAGE, volumes={volume: {"bind": _VOLUME_MOUNT, "mode": "rw"}}, detach=True, tty=True
+            BASE_IMAGE, volumes={volume: {"bind": VOLUME_MOUNT, "mode": "rw"}}, detach=True, tty=True
         )
         try:
-            container.exec(c, f"rm -rf {_VOLUME_MOUNT}/{manifest.label}")
+            container.exec(c, f"rm -rf {VOLUME_MOUNT}/{manifest.label}")
         finally:
             container.stop(c)
         export_dir = workspace / "artifacts" / manifest.label

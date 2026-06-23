@@ -8,10 +8,10 @@ from typing import Any
 
 from likedbg import cache
 from likedbg.cache import BuildRecipe
+from likedbg.constants import BASE_IMAGE
+from likedbg.constants import KERNEL_VOLUME
+from likedbg.constants import VOLUME_MOUNT
 from likedbg.errors import CacheError
-
-_BASE_IMAGE = "like_dbg_base"
-_VOLUME_MOUNT = "/ksrc"
 
 
 def _parse_makefile_version(text: str) -> str:
@@ -23,12 +23,12 @@ def _parse_makefile_version(text: str) -> str:
     return f"{fields.get('VERSION')}.{fields.get('PATCHLEVEL')}.{fields.get('SUBLEVEL')}"
 
 
-def adopt_legacy_build(container: Any, *, workspace: Path, recipe: BuildRecipe, volume: str = "likedbg_ksrc") -> str:
-    legacy = f"/ksrc/linux-{recipe.version}"
+def adopt_legacy_build(container: Any, *, workspace: Path, recipe: BuildRecipe, volume: str = KERNEL_VOLUME) -> str:
+    legacy = f"{VOLUME_MOUNT}/linux-{recipe.version}"
     label = recipe.label
     loc = cache.locations(label, arch=recipe.arch, storage_mode="volume", workspace=workspace, volume=volume)
     c = container.run_detached(
-        _BASE_IMAGE, volumes={volume: {"bind": _VOLUME_MOUNT, "mode": "rw"}}, detach=True, tty=True
+        BASE_IMAGE, volumes={volume: {"bind": VOLUME_MOUNT, "mode": "rw"}}, detach=True, tty=True
     )
     try:
         version = _parse_makefile_version(container.exec(c, f"cat {legacy}/Makefile").output)
@@ -44,7 +44,7 @@ def adopt_legacy_build(container: Any, *, workspace: Path, recipe: BuildRecipe, 
                 remedy="set the matching compiler, or build fresh",
             )
         container.exec(c, f"test -e {legacy}/vmlinux")
-        container.exec(c, f"mv {legacy} /ksrc/{label}")
+        container.exec(c, f"mv {legacy} {VOLUME_MOUNT}/{label}")
     finally:
         container.stop(c)
     cache.write_manifest(

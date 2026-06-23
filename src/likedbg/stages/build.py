@@ -6,12 +6,12 @@ from pathlib import Path
 
 from likedbg import cache
 from likedbg.cache import BuildRecipe
+from likedbg.constants import VOLUME_MOUNT
 from likedbg.container_service import ContainerService
 from likedbg.errors import BuildError
 from likedbg.pipeline import PipelineContext
 
 _MOUNT = "/io"
-_VOLUME_MOUNT = "/ksrc"
 
 
 def make_command(env: dict[str, str], target: str) -> str:
@@ -59,7 +59,7 @@ class BuildStage:
         env = self._recipe.env()
         volumes = {
             str(self._workspace): {"bind": _MOUNT, "mode": "ro"},
-            self._volume: {"bind": _VOLUME_MOUNT, "mode": "rw"},
+            self._volume: {"bind": VOLUME_MOUNT, "mode": "rw"},
         }
         root = loc.kernel_root
         container = self._c.run_detached(self._image, volumes=volumes, detach=True, tty=True)

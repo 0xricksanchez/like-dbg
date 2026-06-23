@@ -5,13 +5,13 @@ from __future__ import annotations
 from pathlib import Path
 
 from likedbg import cache
+from likedbg.constants import BASE_IMAGE
+from likedbg.constants import VOLUME_MOUNT
 from likedbg.container_service import ContainerService
 from likedbg.errors import UnpackError
 from likedbg.pipeline import PipelineContext
 
 _MOUNT = "/io"
-_VOLUME_MOUNT = "/ksrc"
-_BASE_IMAGE = "like_dbg_base"
 
 
 class UnpackStage:
@@ -30,7 +30,7 @@ class UnpackStage:
             raise UnpackError("no build label in context", remedy="the CLI must set ctx.build_label")
         label = ctx.build_label
         if cache.manifest_exists(self._workspace, "build", label):
-            ctx.kernel_root = Path(f"/ksrc/{label}")
+            ctx.kernel_root = Path(f"{VOLUME_MOUNT}/{label}")
             return ctx
         if ctx.kernel_archive is None:
             raise UnpackError(
@@ -45,12 +45,12 @@ class UnpackStage:
                 remedy="configure the Download stage's dl_dir to a subdirectory of the workspace so the unpack container can read it at /io",
             ) from exc
         archive_in = f"{_MOUNT}/{rel}"
-        keyed = f"/ksrc/{label}"
+        keyed = f"{VOLUME_MOUNT}/{label}"
         volumes = {
             str(self._workspace): {"bind": _MOUNT, "mode": "ro"},
-            self._volume: {"bind": _VOLUME_MOUNT, "mode": "rw"},
+            self._volume: {"bind": VOLUME_MOUNT, "mode": "rw"},
         }
-        container = self._c.run_detached(_BASE_IMAGE, volumes=volumes, detach=True, tty=True)
+        container = self._c.run_detached(BASE_IMAGE, volumes=volumes, detach=True, tty=True)
         try:
             self._c.exec(container, f"rm -rf {keyed}")
             self._c.exec(container, f"mkdir -p {keyed}")

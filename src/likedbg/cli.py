@@ -20,6 +20,10 @@ from likedbg.cache import RootfsRecipe
 from likedbg.cache import build_recipe as make_build_recipe
 from likedbg.cache import rootfs_recipe as make_rootfs_recipe
 from likedbg.config import load_settings
+from likedbg.constants import DEBUGGER_IMAGE
+from likedbg.constants import KBUILDER_IMAGE
+from likedbg.constants import KERNEL_VOLUME
+from likedbg.constants import ROOTFS_IMAGE
 from likedbg.container_service import ContainerService
 from likedbg.errors import CacheError
 from likedbg.errors import HostCapabilityError
@@ -87,14 +91,14 @@ def build_pipeline(
             BuildStage(
                 container,
                 recipe=build_recipe,
-                kbuilder_image="like_kbuilder_arm64:latest",
+                kbuilder_image=KBUILDER_IMAGE,
                 workspace=workspace,
                 kernel_volume=kernel_volume,
             ),
             RootfsStage(
                 container,
                 recipe=rootfs_recipe,
-                rootfs_image="like_rootfs:latest",
+                rootfs_image=ROOTFS_IMAGE,
                 workspace=workspace,
             ),
             ArtifactExporter(container, kernel_volume=kernel_volume, workspace=workspace),
@@ -181,8 +185,8 @@ def cmd_use(
         container,
         session,
         workspace=workspace,
-        kernel_volume="likedbg_ksrc",
-        debugger_image="like_debugger:latest",
+        kernel_volume=KERNEL_VOLUME,
+        debugger_image=DEBUGGER_IMAGE,
         ext=use_settings.debugger.ext,
         panes=panes,
         gdb_mount_source=bm.paths["gdb_mount_source"],
@@ -304,9 +308,9 @@ def main(argv: list[str] | None = None) -> int:
             container,
             session,
             workspace=workspace,
-            kernel_volume="likedbg_ksrc",
+            kernel_volume=KERNEL_VOLUME,
             dl_dir=workspace / "kernels",
-            debugger_image="like_debugger:latest",
+            debugger_image=DEBUGGER_IMAGE,
             ext=settings.debugger.ext,
             panes=panes,
             build_recipe=br,

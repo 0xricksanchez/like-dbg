@@ -10,15 +10,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from likedbg.constants import BASE_IMAGE
+from likedbg.constants import VOLUME_MOUNT
 from likedbg.container_service import ContainerService
 from likedbg.errors import BuildError
 from likedbg.errors import CacheError
 from likedbg.errors import ContainerError
 from likedbg.pipeline import PipelineContext
 
-_VOLUME_MOUNT = "/ksrc"
 _OUT_MOUNT = "/out"
-_BASE_IMAGE = "like_dbg_base"
 
 
 class ArtifactExporter:
@@ -43,12 +43,12 @@ class ArtifactExporter:
             return ctx
         out_dir.mkdir(parents=True, exist_ok=True)
         image_in_tree = str(ctx.kernel_image)
-        vmlinux_in_tree = f"/ksrc/{label}/vmlinux"
+        vmlinux_in_tree = f"{VOLUME_MOUNT}/{label}/vmlinux"
         volumes = {
-            self._volume: {"bind": _VOLUME_MOUNT, "mode": "ro"},
+            self._volume: {"bind": VOLUME_MOUNT, "mode": "ro"},
             str(out_dir): {"bind": _OUT_MOUNT, "mode": "rw"},
         }
-        container = self._c.run_detached(_BASE_IMAGE, volumes=volumes, detach=True, tty=True)
+        container = self._c.run_detached(BASE_IMAGE, volumes=volumes, detach=True, tty=True)
         try:
             try:
                 self._c.exec(container, f"test -e {vmlinux_in_tree}")
