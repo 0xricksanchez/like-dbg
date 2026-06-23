@@ -21,6 +21,7 @@ from likedbg.cache import RootfsRecipe
 from likedbg.cache import build_recipe as make_build_recipe
 from likedbg.cache import rootfs_recipe as make_rootfs_recipe
 from likedbg.config import load_settings
+from likedbg.constants import DEBUGGEE_IMAGE
 from likedbg.constants import DEBUGGER_IMAGE
 from likedbg.constants import KBUILDER_IMAGE
 from likedbg.constants import KERNEL_VOLUME
@@ -31,7 +32,6 @@ from likedbg.errors import HostCapabilityError
 from likedbg.errors import LikeDbgError
 from likedbg.host_profile import HostProfile
 from likedbg.launchers import gdb_pane_command
-from likedbg.launchers import qemu_pane_command
 from likedbg.pipeline import Pipeline
 from likedbg.pipeline import PipelineContext
 from likedbg.session import Session
@@ -63,6 +63,7 @@ def build_pipeline(
     kernel_volume: str,
     dl_dir: Path,
     debugger_image: str,
+    debuggee_image: str,
     ext: str,
     panes: tuple[int, int],
     build_recipe: BuildRecipe,
@@ -70,9 +71,9 @@ def build_pipeline(
 ) -> Pipeline:
     debuggee_pane, debugger_pane = panes
 
-    def launch_qemu(argv: list[str]) -> None:
+    def send_debuggee(cmd: str) -> None:
         session.select_pane(debuggee_pane)
-        session.send_keys(qemu_pane_command(argv))
+        session.send_keys(cmd)
 
     def run_gdb(args: list[str]) -> None:
         loc = cache.locations(
@@ -103,7 +104,7 @@ def build_pipeline(
                 workspace=workspace,
             ),
             ArtifactExporter(container, kernel_volume=kernel_volume, workspace=workspace),
-            DebuggeeStage(launch=launch_qemu),
+            DebuggeeStage(send=send_debuggee, debuggee_image=debuggee_image),
             DebuggerStage(ext=ext, run_gdb=run_gdb, breakpoint="start_kernel"),
         ]
     )
@@ -116,15 +117,16 @@ def build_use_pipeline(
     workspace: Path,
     kernel_volume: str,
     debugger_image: str,
+    debuggee_image: str,
     ext: str,
     panes: tuple[int, int],
     gdb_mount_source: str,
 ) -> Pipeline:
     debuggee_pane, debugger_pane = panes
 
-    def launch_qemu(argv: list[str]) -> None:
+    def send_debuggee(cmd: str) -> None:
         session.select_pane(debuggee_pane)
-        session.send_keys(qemu_pane_command(argv))
+        session.send_keys(cmd)
 
     def run_gdb(args: list[str]) -> None:
         session.select_pane(debugger_pane)
@@ -133,7 +135,7 @@ def build_use_pipeline(
     return Pipeline(
         [
             ArtifactExporter(container, kernel_volume=kernel_volume, workspace=workspace),
-            DebuggeeStage(launch=launch_qemu),
+            DebuggeeStage(send=send_debuggee, debuggee_image=debuggee_image),
             DebuggerStage(ext=ext, run_gdb=run_gdb, breakpoint="start_kernel"),
         ]
     )
@@ -188,6 +190,7 @@ def cmd_use(
         workspace=workspace,
         kernel_volume=KERNEL_VOLUME,
         debugger_image=DEBUGGER_IMAGE,
+        debuggee_image=DEBUGGEE_IMAGE,
         ext=use_settings.debugger.ext,
         panes=panes,
         gdb_mount_source=bm.paths["gdb_mount_source"],
@@ -311,7 +314,7 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         host = HostProfile.detect(settings, workspace)
         require_volume_mode(host)
-        _ensure_images(container, workspace, specs=images.IMAGES)
+        _ensure_images(container, workspace, specs=images.required_for(host))
         session = Session("LIKE-DBG")
         session.start("LIKE-DBG")
         panes = session.open_debug_layout()
@@ -323,6 +326,7 @@ def main(argv: list[str] | None = None) -> int:
             kernel_volume=KERNEL_VOLUME,
             dl_dir=workspace / "kernels",
             debugger_image=DEBUGGER_IMAGE,
+            debuggee_image=DEBUGGEE_IMAGE,
             ext=settings.debugger.ext,
             panes=panes,
             build_recipe=br,
