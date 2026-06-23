@@ -11,15 +11,19 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import shutil
 from dataclasses import dataclass
 from dataclasses import field
 from pathlib import Path
 
 from likedbg.config import Settings
+from likedbg.container_service import ContainerService
 from likedbg.errors import CacheError
 from likedbg.toolchain import resolve_toolchain
 
 _SLUG_RE = re.compile(r"[^a-z0-9._-]+")
+_BASE_IMAGE = "like_dbg_base"
+_VOLUME_MOUNT = "/ksrc"
 
 
 def cache_key(inputs: dict[str, str]) -> str:
@@ -199,3 +203,21 @@ def locations(label: str, *, arch: str, storage_mode: str, workspace: Path, volu
         # (no label segment); volume mode mounts the whole volume at /ksrc/<label>/vmlinux.
         gdb_vmlinux="/ksrc/vmlinux",
     )
+
+
+def remove_cached(container: ContainerService, workspace: Path, manifest: Manifest, *, volume: str = "likedbg_ksrc") -> None:
+    if manifest.kind == "build":
+        c = container.run_detached(_BASE_IMAGE, volumes={volume: {"bind": _VOLUME_MOUNT, "mode": "rw"}},
+                                   detach=True, tty=True)
+        try:
+            container.exec(c, f"rm -rf {_VOLUME_MOUNT}/{manifest.label}")
+        finally:
+            container.stop(c)
+        export_dir = workspace / "artifacts" / manifest.label
+        if export_dir.is_dir():
+            shutil.rmtree(export_dir)
+    else:
+        image = Path(manifest.paths.get("image_host", ""))
+        if image.is_file():
+            image.unlink()
+    manifest_path(workspace, manifest.kind, manifest.label).unlink(missing_ok=True)
