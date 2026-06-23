@@ -14,6 +14,14 @@ filesystem, booted under QEMU and exposing a stub for inspection. The compositio
 of one Kernel Build and one rootfs image.
 _Avoid_: guest, VM, target.
 
+**Debuggee mode**:
+Where the Debuggee's QEMU runs. **Native-host**: QEMU as a host process (macOS, same architecture,
+hardware-accelerated). **In-container**: QEMU inside the debuggee Container image (Linux, or
+x86_64-on-Mac under emulation). Chosen automatically from the host and guest architecture (see
+ADR-0001) and recorded on the host profile; it determines how the Debugger reaches the gdbstub.
+_Avoid_: confusing it with Storage mode (a separate axis — where the kernel *source* lives);
+naming the concept after the `debuggee_mode` field.
+
 **Debugger**:
 The interactive GDB session (driven by GEF or pwndbg) attached to the debuggee's stub.
 _Avoid_: gdb session, client.
