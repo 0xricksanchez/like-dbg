@@ -21,10 +21,6 @@ _OUT_MOUNT = "/out"
 _BASE_IMAGE = "like_dbg_base"
 
 
-def host_artifact_dir(workspace: Path, kernel_root: Path) -> Path:
-    return workspace / "artifacts" / kernel_root.name
-
-
 class ArtifactExporter:
     name = "export"
 

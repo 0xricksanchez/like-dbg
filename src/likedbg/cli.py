@@ -18,6 +18,7 @@ from likedbg.cache import build_recipe as make_build_recipe
 from likedbg.cache import rootfs_recipe as make_rootfs_recipe
 from likedbg.config import load_settings
 from likedbg.container_service import ContainerService
+from likedbg.errors import HostCapabilityError
 from likedbg.errors import LikeDbgError
 from likedbg.host_profile import HostProfile
 from likedbg.launchers import gdb_pane_command
@@ -68,7 +69,7 @@ def build_pipeline(
         loc = cache.locations(
             build_recipe.label,
             arch=build_recipe.arch,
-            storage_mode="volume",
+            storage_mode="volume",  # volume mode enforced upstream by require_volume_mode
             workspace=workspace,
             volume=kernel_volume,
         )
@@ -97,6 +98,14 @@ def build_pipeline(
             DebuggerStage(ext=ext, run_gdb=run_gdb, breakpoint="start_kernel"),
         ]
     )
+
+
+def require_volume_mode(host: HostProfile) -> None:
+    if host.storage_mode != "volume":
+        raise HostCapabilityError(
+            f"build-cache runtime supports volume storage only (got {host.storage_mode!r})",
+            remedy="this milestone targets macOS volume mode; bind/Linux runtime is not yet wired",
+        )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -129,6 +138,7 @@ def main(argv: list[str] | None = None) -> int:
             logger.error("Not running inside a TMUX session. Start tmux first.")
             return 2
         host = HostProfile.detect(settings, workspace)
+        require_volume_mode(host)
         session = Session("LIKE-DBG")
         session.start("LIKE-DBG")
         panes = session.open_debug_layout()
