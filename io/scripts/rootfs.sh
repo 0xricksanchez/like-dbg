@@ -20,114 +20,114 @@ USER=user
 HOSTNAME=""
 
 while (("$#")); do
-	case "$1" in
-	-a | --arch)
-		# Sets the architecture
-		ARCH=$2
-		shift 2
-		;;
-	-d | --distribution)
-		# Sets the debian distribution, which defaults to bullseye right now
-		DIST=$2
-		shift 2
-		;;
-	-s | --seek)
-		# Sets the size of the file system, default 3G
-		SEEK=$(($2 - 1))
-		shift 2
-		;;
-	-n | --name)
-		# Sets the name of the rootfs
-		ROOTFS_NAME=$2
-		shift 2
-		;;
-	-p | --packages)
-		# Set packages to install
-		PKGS=$2
-		shift 2
-		;;
-	-u | --user)
-		# The non-root user
-		USER=$2
-		shift 2
-		;;
-	-h | --hostname)
-		# Hostname to set
-		HOSTNAME=$2
-		shift 2
-		;;
-	-*)
-		echo "Error: Unknown option: $1" >&2
-		exit 1
-		;;
-	*) # No more options
-		break
-		;;
-	esac
+  case "$1" in
+  -a | --arch)
+    # Sets the architecture
+    ARCH=$2
+    shift 2
+    ;;
+  -d | --distribution)
+    # Sets the debian distribution, which defaults to bullseye right now
+    DIST=$2
+    shift 2
+    ;;
+  -s | --seek)
+    # Sets the size of the file system, default 3G
+    SEEK=$(($2 - 1))
+    shift 2
+    ;;
+  -n | --name)
+    # Sets the name of the rootfs
+    ROOTFS_NAME=$2
+    shift 2
+    ;;
+  -p | --packages)
+    # Set packages to install
+    PKGS=$2
+    shift 2
+    ;;
+  -u | --user)
+    # The non-root user
+    USER=$2
+    shift 2
+    ;;
+  -h | --hostname)
+    # Hostname to set
+    HOSTNAME=$2
+    shift 2
+    ;;
+  -*)
+    echo "Error: Unknown option: $1" >&2
+    exit 1
+    ;;
+  *) # No more options
+    break
+    ;;
+  esac
 done
 
 if [ ! "$HOSTNAME" ]; then
-	if [ ! "$ROOTFS_NAME" ]; then
-		HOSTNAME="LIKEDBG"
-	else
-		HOSTNAME="$ROOTFS_NAME"
-	fi
+  if [ ! "$ROOTFS_NAME" ]; then
+    HOSTNAME="LIKEDBG"
+  else
+    HOSTNAME="$ROOTFS_NAME"
+  fi
 fi
 
 # Handle cases where qemu and Debian use different arch names
 case "$ARCH" in
 ppc64le)
-	DEBARCH=ppc64el
-	;;
+  DEBARCH=ppc64el
+  ;;
 aarch64)
-	DEBARCH=arm64
-	;;
+  DEBARCH=arm64
+  ;;
 arm)
-	DEBARCH=armel
-	;;
+  DEBARCH=armel
+  ;;
 x86_64)
-	DEBARCH=amd64
-	;;
+  DEBARCH=amd64
+  ;;
 *)
-	DEBARCH=$ARCH
-	;;
+  DEBARCH=$ARCH
+  ;;
 esac
 
 # Foreign architecture
 FOREIGN=false
 if [ "$ARCH" != "$(uname -m)" ]; then
-	# i386 on an x86_64 host is exempted, as we can run i386 binaries natively
-	if [ "$ARCH" != "i386" ] || [ "$(uname -m)" != "x86_64" ]; then
-		echo "Requested foreign architecture $ARCH. Grabbing QEMU binfmt handlers..."
-		FOREIGN=true
+  # i386 on an x86_64 host is exempted, as we can run i386 binaries natively
+  if [ "$ARCH" != "i386" ] || [ "$(uname -m)" != "x86_64" ]; then
+    echo "Requested foreign architecture $ARCH. Grabbing QEMU binfmt handlers..."
+    FOREIGN=true
 
-		# Check if binfmt_misc is ready to go
-		if [ ! -f /proc/sys/fs/binfmt_misc/register ]; then
-			mount binfmt_misc -t binfmt_misc /proc/sys/fs/binfmt_misc >/dev/null
-		fi
-		# Reset any qemu handlers...
-		find /proc/sys/fs/binfmt_misc -type f -name 'qemu-*' -exec sh -c 'echo -1 > $1' shell {} \; >/dev/null
+    # Check if binfmt_misc is ready to go
+    if [ ! -f /proc/sys/fs/binfmt_misc/register ]; then
+      mount binfmt_misc -t binfmt_misc /proc/sys/fs/binfmt_misc >/dev/null
+    fi
+    # Reset any qemu handlers...
+    find /proc/sys/fs/binfmt_misc -type f -name 'qemu-*' -exec sh -c 'echo -1 > $1' shell {} \; >/dev/null
 
-		# Grab qemu binfmt register script
-		if [ ! -f "qemu-binfmt-conf.sh" ]; then
-			wget -q https://raw.githubusercontent.com/qemu/qemu/master/scripts/qemu-binfmt-conf.sh &&
-				chmod 777 qemu-binfmt-conf.sh
-		fi
-		./qemu-binfmt-conf.sh --qemu-suffix "-static" --qemu-path "/usr/bin" >/dev/null
-	fi
+    # Grab qemu binfmt register script
+    if [ ! -f "qemu-binfmt-conf.sh" ]; then
+      wget -q https://raw.githubusercontent.com/qemu/qemu/master/scripts/qemu-binfmt-conf.sh &&
+        chmod 777 qemu-binfmt-conf.sh
+    fi
+    ./qemu-binfmt-conf.sh --qemu-suffix "-static" --qemu-path "/usr/bin" >/dev/null
+  fi
 fi
 
 if [ $FOREIGN = "true" ]; then
-	# Check for according qemu static binary
-	if ! which qemu-"$ARCH"-static; then
-		echo "Please install qemu static binary for architecture \"$ARCH\" (package 'qemu-user-static' on Debian/Ubuntu/Fedora)"
-		exit 255
-	fi
-	# Check for according binfmt entry
-	if [ ! -r /proc/sys/fs/binfmt_misc/qemu-"$ARCH" ]; then
-		echo "binfmt entry /proc/sys/fs/binfmt_misc/qemu-$ARCH does not exist"
-		exit 255
-	fi
+  # Check for according qemu static binary
+  if ! which qemu-"$ARCH"-static; then
+    echo "Please install qemu static binary for architecture \"$ARCH\" (package 'qemu-user-static' on Debian/Ubuntu/Fedora)"
+    exit 255
+  fi
+  # Check for according binfmt entry
+  if [ ! -r /proc/sys/fs/binfmt_misc/qemu-"$ARCH" ]; then
+    echo "binfmt entry /proc/sys/fs/binfmt_misc/qemu-$ARCH does not exist"
+    exit 255
+  fi
 fi
 
 # Clean system
@@ -138,21 +138,21 @@ sudo chmod 0755 $MNT >/dev/null
 
 DEBOOTSTRAP_PARAMS="--arch=$DEBARCH --include=$PKGS --components=main,contrib,non-free $DIST $MNT"
 if [ $FOREIGN = "true" ]; then
-	DEBOOTSTRAP_PARAMS="--foreign $DEBOOTSTRAP_PARAMS"
+  DEBOOTSTRAP_PARAMS="--foreign $DEBOOTSTRAP_PARAMS"
 fi
 
 # riscv64 is hosted in the debian-ports repository
 # debian-ports doesn't include non-free, so we exclude firmware-atheros
 if [ "$DEBARCH" == "riscv64" ]; then
-	DEBOOTSTRAP_PARAMS="--keyring /usr/share/keyrings/debian-ports-archive-keyring.gpg --exclude firmware-atheros $DEBOOTSTRAP_PARAMS http://deb.debian.org/debian-ports"
+  DEBOOTSTRAP_PARAMS="--keyring /usr/share/keyrings/debian-ports-archive-keyring.gpg --exclude firmware-atheros $DEBOOTSTRAP_PARAMS http://deb.debian.org/debian-ports"
 fi
 echo "Running debootstrap to create base file system..."
 eval "sudo debootstrap $DEBOOTSTRAP_PARAMS" >/dev/null
 
 if [ $FOREIGN = "true" ]; then
-	echo "Running 2nd stage of debootstrap for non-native architecture \"$ARCH\""
-	sudo cp -av "$(which qemu-"$ARCH"-static)" "$MNT$(which qemu-"$ARCH"-static)" >/dev/null
-	sudo chroot $MNT /bin/bash -c "/debootstrap/debootstrap --second-stage" >/dev/null
+  echo "Running 2nd stage of debootstrap for non-native architecture \"$ARCH\""
+  sudo cp -av "$(which qemu-"$ARCH"-static)" "$MNT$(which qemu-"$ARCH"-static)" >/dev/null
+  sudo chroot $MNT /bin/bash -c "/debootstrap/debootstrap --second-stage" >/dev/null
 fi
 
 echo "Creating non-root user \"$USER\"..."
@@ -160,7 +160,7 @@ PASS=$(perl -e 'print crypt($ARGV[0], "password")' "$USER")
 sudo chroot $MNT /bin/bash -c "groupadd -g 1000 $USER && useradd -u 1000 -g 1000 -s /bin/bash -m -p $PASS $USER" >/dev/null
 
 if [ $FOREIGN = "true" ]; then
-	rm -rf "$MNT$(which qemu-"$ARCH"-static)" >/dev/null
+  rm -rf "$MNT$(which qemu-"$ARCH"-static)" >/dev/null
 fi
 
 echo "Configuring usable defaults for root file systems..."
@@ -173,7 +173,7 @@ echo 'debugfs /sys/kernel/debug debugfs defaults 0 0' | sudo tee -a $MNT/etc/fst
 # echo 'securityfs /sys/kernel/security securityfs defaults 0 0' | sudo tee -a $MNT/etc/fstab
 # echo 'configfs /sys/kernel/config/ configfs defaults 0 0' | sudo tee -a $MNT/etc/fstab
 if [ $FOREIGN = "false" ]; then
-	echo 'binfmt_misc /proc/sys/fs/binfmt_misc binfmt_misc defaults 0 0' | sudo tee -a $MNT/etc/fstab >/dev/null
+  echo 'binfmt_misc /proc/sys/fs/binfmt_misc binfmt_misc defaults 0 0' | sudo tee -a $MNT/etc/fstab >/dev/null
 fi
 echo -en "127.0.0.1\tlocalhost $ROOTFS_NAME\n" | sudo tee $MNT/etc/hosts >/dev/null
 echo "nameserver 8.8.8.8" | sudo tee -a $MNT/etc/resolv.conf >/dev/null

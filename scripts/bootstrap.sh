@@ -9,7 +9,10 @@ log() { printf '\033[1;34m[bootstrap]\033[0m %s\n' "$1"; }
 ensure_brew_pkg() { brew list "$1" >/dev/null 2>&1 || brew install "$1"; }
 
 if [ "$OS" = "Darwin" ]; then
-  command -v brew >/dev/null || { echo "Homebrew required: https://brew.sh"; exit 1; }
+  command -v brew >/dev/null || {
+    echo "Homebrew required: https://brew.sh"
+    exit 1
+  }
   ensure_brew_pkg colima
   ensure_brew_pkg qemu
   ensure_brew_pkg uv
@@ -19,8 +22,14 @@ if [ "$OS" = "Darwin" ]; then
     colima start --vm-type vz --cpu 4 --memory 8 --disk 60 --mount-type virtiofs
   fi
 else
-  command -v docker >/dev/null || { echo "Docker engine required"; exit 1; }
-  command -v uv >/dev/null || { echo "Install uv: https://docs.astral.sh/uv/"; exit 1; }
+  command -v docker >/dev/null || {
+    echo "Docker engine required"
+    exit 1
+  }
+  command -v uv >/dev/null || {
+    echo "Install uv: https://docs.astral.sh/uv/"
+    exit 1
+  }
 fi
 
 log "installing qemu binfmt handlers (for cross-arch rootfs/builds)"
