@@ -148,3 +148,42 @@ def load_manifest(workspace: Path, kind: str, label: str) -> Manifest:
         return Manifest(**data)
     except (ValueError, TypeError) as exc:
         raise CacheError(f"corrupt manifest {path}", remedy=f"`start_kgdb --clean {label}` and rebuild") from exc
+
+
+@dataclass(frozen=True)
+class Locations:
+    kernel_root: str
+    vmlinux_in_tree: str
+    image_in_tree: str
+    image_host: str
+    gdb_mount_source: str
+    gdb_mount_type: str
+    gdb_vmlinux: str
+
+
+def locations(
+    label: str, *, arch: str, storage_mode: str, workspace: Path, volume: str = "likedbg_ksrc"
+) -> Locations:
+    image_name = "bzImage" if arch == "x86_64" else "Image"
+    container_root = f"/ksrc/{label}"
+    image_in_tree = f"{container_root}/arch/{arch}/boot/{image_name}"
+    if storage_mode == "volume":
+        return Locations(
+            kernel_root=container_root,
+            vmlinux_in_tree=f"{container_root}/vmlinux",
+            image_in_tree=image_in_tree,
+            image_host=str(workspace / "artifacts" / label / image_name.replace("bzImage", "Image")),
+            gdb_mount_source=volume,
+            gdb_mount_type="volume",
+            gdb_vmlinux=f"{container_root}/vmlinux",
+        )
+    host_tree = workspace / "artifacts" / "builds" / label
+    return Locations(
+        kernel_root=container_root,
+        vmlinux_in_tree=f"{container_root}/vmlinux",
+        image_in_tree=image_in_tree,
+        image_host="",
+        gdb_mount_source=str(host_tree),
+        gdb_mount_type="bind",
+        gdb_vmlinux="/ksrc/vmlinux",
+    )
