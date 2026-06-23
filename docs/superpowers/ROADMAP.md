@@ -11,12 +11,13 @@ can continue the rework with one prompt. `dev` represents the FULL rewrite and s
 
 ## Status (2026-06-23)
 
-M1 Sub-project A (Foundation) is complete and extended; all merged to `dev` (tip `dcbe133`).
+M1 Sub-project A (Foundation) is complete and extended; all merged to `dev` (tip `4cde38d`).
 Landed 2026-06-23: the §A deferred-polish batch (all 7 items), §B1 image-build lifecycle, and
-§B2 x86_64-on-Mac in-container TCG **mechanism** (see §A / §B). Next unstarted: §B3 (un-gate
-bind/Linux runtime) — though it's least valuable to a macOS user and can't be fully live-gated
-on a Mac; the §B2 **M5 live gate** (x86_64 boot-to-userspace, foreign-arch rootfs) is also still
-to be run. (NOTE: a maintainer commit `a365bdc "chore: sensible defaults"` sits on `dev` too.)
+§B2 x86_64-on-Mac in-container TCG — **live-gate PASSED on the M5** (x86_64 build→foreign-arch
+rootfs→in-container TCG boot→gdb→systemd userspace), incl. 3 ubuntu:26.04 build-chain fixes that
+also unblock the arm64 daily driver (see §B2). Next unstarted: **§B3** (un-gate bind/Linux runtime)
+— least valuable to a macOS user and not fully live-gateable on a Mac — or move to Sub-projects
+C–E. (Maintainer commits `a365bdc`/`4cde38d` (ubuntu:26.04 bump + shell-script whitespace) also on `dev`.)
 Don't re-derive history — read these:
 - Project state & decisions: the auto-loaded memory `project-like-dbg-revival.md`.
 - Glossary: `CONTEXT.md`. Decisions: `docs/adr/0001..0003`.
@@ -86,19 +87,23 @@ threading), not detection.
   `docker rmi like_debugger:latest` → auto-build on next run.
   **Deferred minors (future pass):** `build_image` test under-asserts (no rm/nocache/path or
   `labels=None` checks); `copy_sources` `--from` substring vs token-anchored check.
-- **B2 — x86_64-on-Mac (in-container TCG) — ✅ MECHANISM DONE (2026-06-23; merged to `dev`,
-  commits `6131a1a..dcbe133`):** debuggee image (`like_debuggee:latest`) added to `images.IMAGES`
-  + mode-aware `images.required_for(host)`; `qemu_container_command` launcher (publish-to-host
-  `-p 1234:1234`, identical-path `:ro` mounts); `DebuggeeStage` owns the native-vs-in-container
-  dispatch on `host.debuggee_mode`; arch-aware gdb (`i386:x86-64`); OS-based `gdbstub_addr`
-  (realizes ADR-0001). 164 tests; opus whole-branch review clean (traced the in-container
-  argv↔mount lineup + gdbstub reachability end-to-end; arm64-native proven unchanged). `Debuggee
-  mode` glossary term added; no new ADR. Spec/plan: `docs/superpowers/{specs,plans}/2026-06-23-b2-x86_64-mac*`.
-  **OUTSTANDING (M5 live gate, spec §6 — not yet run):** `--build-images` builds 5 incl. debuggee;
-  an x86_64 config → build → **foreign-arch (amd64) rootfs** → in-container TCG boot → gdb @
-  `start_kernel` → systemd userspace; + arm64 no-regression. The **foreign-arch rootfs** is the
-  residual risk (colima/binfmt runtime) — `rootfs.sh` already does the cross-arch second stage so
-  NO code change is anticipated; if it trips, open a `systematic-debugging` cycle (not pre-coded).
+- **B2 — x86_64-on-Mac (in-container TCG) — ✅ DONE + LIVE-GATE PASSED (2026-06-23; on `dev`,
+  mechanism `6131a1a..dcbe133`, 26.04 fixes `3c562c5..324a719`):** debuggee image
+  (`like_debuggee:latest`) in `images.IMAGES` + mode-aware `images.required_for(host)`;
+  `qemu_container_command` launcher (publish-to-host `-p 1234:1234`; kernel `:ro`, **rootfs `:rw`**);
+  `DebuggeeStage` owns the native-vs-in-container dispatch on `host.debuggee_mode`; arch-aware gdb
+  (`i386:x86-64`); OS-based `gdbstub_addr` (realizes ADR-0001). 164 tests; opus whole-branch review
+  clean. `Debuggee mode` glossary term; no new ADR. Spec/plan: `…/2026-06-23-b2-x86_64-mac*`.
+  **LIVE GATE PASSED on the M5 (verify skill):** x86_64 build → **foreign-arch amd64 rootfs** →
+  in-container TCG boot → containerized gdb `hbreak start_kernel` (source-level, `init/main.c:879`)
+  → `continue` → **systemd userspace** (`Debian GNU/Linux 12 LIKE-DBG login:`) → runtime
+  `break schedule` hit on the live kernel; no leftover containers (`--rm`/`auto_remove`).
+  **3 ubuntu:26.04 build-chain bugs found + fixed (systematic-debugging) — also unblock the arm64
+  daily driver:** (1) `3c562c5` rootfs image — 26.04 dropped `qemu-user-static` → install
+  `qemu-user-binfmt` + `-static` hardlinks; (2) `62558e7` kernel build — clang-21 `-Werror` vs
+  kernel 6.6.30 → `# CONFIG_WERROR is not set` in `generic.config`; (3) `324a719` in-container QEMU —
+  rootfs disk must be `:rw` (was `:ro`). Observation: the build cache is fragment-**comment**-sensitive
+  (ADR-0003 hashes file content), so doc-only fragment edits force a kernel rebuild.
   Deferred minors: `_GDB_ARCH` unguarded (unreachable via the arch Literal); empty-mounts double-space (unreachable).
 - **B3 — bind/Linux runtime (un-gate `require_volume_mode`):** the cache architecture is already
   storage-mode-aware (`cache.locations`), but the live wiring is volume-only. Needs: thread
