@@ -1,6 +1,10 @@
 FROM like_dbg_base:latest
 LABEL maintainer="Christopher Krah <admin@0x434b.dev>"
 ENV DEBIAN_FRONTEND=noninteractive
+# UTF-8 locale so GEF can print its non-ASCII glyphs (e.g. ➤) without a
+# UnicodeEncodeError under the container's default ascii stdout encoding.
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
 ARG USER=user
 
 RUN apt-get update && apt-get install -yq --no-install-recommends \
