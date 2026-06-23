@@ -11,6 +11,7 @@ from loguru import logger
 
 from likedbg import cache
 from likedbg import docker_env
+from likedbg.adopt import adopt_legacy_build
 from likedbg.cache import BuildRecipe
 from likedbg.cache import RootfsRecipe
 from likedbg.cache import build_recipe as make_build_recipe
@@ -103,10 +104,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--config", "-c", default="")
     parser.add_argument("--verbose", "-v", action="store_true")
     parser.add_argument("--force-rebuild", action="store_true")
+    parser.add_argument("--adopt", action="store_true")
     args = parser.parse_args(argv)
-    if not os.getenv("TMUX"):
-        logger.error("Not running inside a TMUX session. Start tmux first.")
-        return 2
     try:
         workspace = Path.cwd()
         settings = load_settings(
@@ -122,6 +121,13 @@ def main(argv: list[str] | None = None) -> int:
             mp.unlink(missing_ok=True)
         client = docker_env.make_client(docker_env.resolve_docker_host(env=os.environ))
         container = ContainerService(client)
+        if args.adopt:
+            label = adopt_legacy_build(container, workspace=workspace, recipe=br)
+            logger.info(f"adopted legacy build as {label}")
+            return 0
+        if not os.getenv("TMUX"):
+            logger.error("Not running inside a TMUX session. Start tmux first.")
+            return 2
         host = HostProfile.detect(settings, workspace)
         session = Session("LIKE-DBG")
         session.start("LIKE-DBG")
