@@ -28,10 +28,18 @@ class ContainerService:
             return False
         return True
 
-    def build_image(self, dockerfile: str, tag: str, buildargs: dict[str, str], *, nocache: bool = False) -> None:
+    def build_image(
+        self,
+        dockerfile: str,
+        tag: str,
+        buildargs: dict[str, str],
+        *,
+        nocache: bool = False,
+        labels: dict[str, str] | None = None,
+    ) -> None:
         try:
             self._client.images.build(
-                path=".", dockerfile=dockerfile, tag=tag, buildargs=buildargs, nocache=nocache, rm=True
+                path=".", dockerfile=dockerfile, tag=tag, buildargs=buildargs, nocache=nocache, rm=True, labels=labels
             )
         except docker.errors.APIError as exc:
             raise ContainerError(
@@ -61,6 +69,15 @@ class ContainerService:
                 remedy="inspect the command output above",
             )
         return ExecResult(exit_code=result.exit_code, output=output)
+
+    def image_labels(self, tag: str) -> dict[str, str]:
+        try:
+            image = self._client.images.get(tag)
+        except docker.errors.ImageNotFound as exc:
+            raise ContainerError(
+                f"image not found: {tag}", remedy="build it first (`start_kgdb --build-images`)"
+            ) from exc
+        return image.labels or {}
 
     def stop(self, container: Any) -> None:
         container.stop()

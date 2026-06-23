@@ -8,13 +8,19 @@ from likedbg.errors import ContainerError
 
 
 class FakeImages:
-    def __init__(self, existing):
-        self._existing = existing
+    def __init__(self, existing=(), labels=None):
+        self._existing = set(existing)
+        self._labels = labels or {}
+        self.build_kwargs = None
 
     def get(self, tag):
         if tag in self._existing:
-            return SimpleNamespace(tags=[tag])
+            return SimpleNamespace(tags=[tag], labels=self._labels.get(tag, {}))
         raise docker.errors.ImageNotFound(tag)
+
+    def build(self, **kwargs):
+        self.build_kwargs = kwargs
+        return SimpleNamespace(id="built"), iter([])
 
 
 class FakeContainers:
@@ -27,8 +33,8 @@ class FakeContainers:
 
 
 class FakeClient:
-    def __init__(self, existing=()):
-        self.images = FakeImages(set(existing))
+    def __init__(self, existing=(), labels=None):
+        self.images = FakeImages(set(existing), labels)
         self.containers = FakeContainers()
 
 
@@ -88,3 +94,25 @@ def test_run_detached_auto_remove_can_be_overridden():
     svc = ContainerService(client)
     svc.run_detached("img", auto_remove=False, detach=True, tty=True)
     assert client.containers.run_kwargs["auto_remove"] is False
+
+
+def test_build_image_forwards_labels_and_args():
+    client = FakeClient()
+    svc = ContainerService(client)
+    svc.build_image(".dockerfile_base", "like_dbg_base:latest", {"USER": "user"}, labels={"likedbg.input_sha": "abc"})
+    kw = client.images.build_kwargs
+    assert kw["dockerfile"] == ".dockerfile_base"
+    assert kw["tag"] == "like_dbg_base:latest"
+    assert kw["buildargs"] == {"USER": "user"}
+    assert kw["labels"] == {"likedbg.input_sha": "abc"}
+
+
+def test_image_labels_returns_image_labels():
+    svc = ContainerService(FakeClient(existing=["t:latest"], labels={"t:latest": {"likedbg.input_sha": "xyz"}}))
+    assert svc.image_labels("t:latest") == {"likedbg.input_sha": "xyz"}
+
+
+def test_image_labels_missing_image_raises():
+    svc = ContainerService(FakeClient())
+    with pytest.raises(ContainerError):
+        svc.image_labels("nope:latest")
