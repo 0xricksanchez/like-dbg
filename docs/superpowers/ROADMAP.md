@@ -11,7 +11,8 @@ can continue the rework with one prompt. `dev` represents the FULL rewrite and s
 
 ## Status (2026-06-23)
 
-M1 Sub-project A (Foundation) is complete and extended; all merged to `dev` (tip `a109fb5`).
+M1 Sub-project A (Foundation) is complete and extended; all merged to `dev` (tip `7aadbfd`).
+The §A deferred-polish batch landed 2026-06-23 (see §A below — all 7 items cleared).
 Don't re-derive history — read these:
 - Project state & decisions: the auto-loaded memory `project-like-dbg-revival.md`.
 - Glossary: `CONTEXT.md`. Decisions: `docs/adr/0001..0003`.
@@ -40,20 +41,26 @@ dockerfile/baked script with **`just build-images`**.
 
 ## Remaining work
 
-### A. Deferred polish (small; from Plan 5/6 reviews — NOT recorded elsewhere, capture here)
-These were triaged "defer" during reviews. Good warm-up tasks; batch a few per branch.
-- `cache.remove_cached` ignores `manifest.storage_mode` for builds (assumes volume) — guard or
-  comment until bind runtime exists.
-- Hardcoded image/volume literals duplicated (`"likedbg_ksrc"`, `"like_debugger:latest"`,
-  `"like_kbuilder_arm64:latest"`, `"like_rootfs:latest"`) across `cli.build_pipeline`/
-  `build_use_pipeline`/`cmd_use` and `cache`/`adopt`/`export` constants → extract shared constants.
-- `adopt._parse_makefile_version` yields `"None.None.None"` on a malformed/missing Makefile →
-  raise a clear `CacheError("could not parse kernel version …")`.
-- `export.py` uses a literal `/ksrc` instead of the `_VOLUME_MOUNT` constant for `vmlinux_in_tree`.
-- `cache.slug` has no docstring / no empty-string test; `list_manifests` could sort by `p.stem`.
-- `write_manifest` uses a fixed `.json.tmp` temp name (benign under single-active-run).
-- Stopped-container accumulation: stages/`remove_cached` `run_detached` without `auto_remove`
-  (pre-existing project-wide; export/build/rootfs/adopt all leave stopped containers).
+### A. Deferred polish — ✅ DONE (2026-06-23; merged to `dev`, commits `ba748f3..7aadbfd`)
+All seven Plan 5/6 deferred items cleared via branch `chore/section-a-hardening`
+(brainstorm→spec→grill→writing-plans→subagent-driven TDD; opus final review = "ready to merge"):
+- new `src/likedbg/constants.py` + migration of all callers (cli/cache/adopt/export/build/unpack
+  **and** `launchers.py` — the 8th `/ksrc` site, found by the final whole-branch review);
+- `ContainerService.run_detached` defaults `auto_remove=True` (utility containers stop accumulating);
+- `cache.remove_cached` guards its **build branch** on `storage_mode != "volume"` (rootfs branch
+  is storage-mode-independent, untouched);
+- `adopt._parse_makefile_version` raises a clear `CacheError` on a malformed Makefile;
+- cache cosmetics: `slug` docstring, explicit `list_manifests` sort by `p.stem`, `mkstemp`
+  `write_manifest`. Added the `Storage mode` glossary term to `CONTEXT.md`.
+- Spec: `docs/superpowers/specs/2026-06-23-section-a-hardening-design.md`;
+  plan: `docs/superpowers/plans/2026-06-23-section-a-hardening.md`.
+
+**Outstanding runtime check (M5, spec §5 — not yet run):** `uv run ./start_kgdb`, then confirm
+`docker ps -a` shows no leftover `like_dbg_base`/`like_kbuilder_arm64`/`like_rootfs` helper
+containers, and a deliberately-broken build still surfaces output via `ContainerError`.
+**Deferred cosmetics (tiny, optional future pass):** inert `from __future__ import annotations`
+in `constants.py`; exact-value asserts for KBUILDER/ROOTFS/DEBUGGER in `test_constants.py`;
+`cache.py` comment still says `/ksrc` literally; a few function-scope test imports vs module-level.
 
 ### B. Foundation completion (medium; finishes Sub-project A's stated scope)
 - **x86_64-on-Mac end-to-end:** the CLI assembly is native-HVF-only today; wire the
