@@ -20,7 +20,13 @@ def _parse_makefile_version(text: str) -> str:
         for key in ("VERSION", "PATCHLEVEL", "SUBLEVEL"):
             if line.startswith(key) and "=" in line:
                 fields[key] = line.split("=", 1)[1].strip()
-    return f"{fields.get('VERSION')}.{fields.get('PATCHLEVEL')}.{fields.get('SUBLEVEL')}"
+    missing = [k for k in ("VERSION", "PATCHLEVEL", "SUBLEVEL") if not fields.get(k)]
+    if missing:
+        raise CacheError(
+            f"could not parse kernel version from Makefile (missing {', '.join(missing)})",
+            remedy="point at a real kernel tree, or build fresh",
+        )
+    return f"{fields['VERSION']}.{fields['PATCHLEVEL']}.{fields['SUBLEVEL']}"
 
 
 def adopt_legacy_build(container: Any, *, workspace: Path, recipe: BuildRecipe, volume: str = KERNEL_VOLUME) -> str:

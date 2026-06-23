@@ -63,3 +63,16 @@ def test_adopt_refuses_on_version_mismatch(tmp_path):
 def test_adopt_refuses_on_compiler_mismatch(tmp_path):
     with pytest.raises(CacheError):
         adopt_legacy_build(_AdoptFakeC(cc="gcc (Debian 12.2.0)"), workspace=tmp_path, recipe=_recipe("clang"))
+
+
+def test_parse_makefile_version_parses_valid():
+    from likedbg.adopt import _parse_makefile_version
+
+    assert _parse_makefile_version("VERSION = 6\nPATCHLEVEL = 6\nSUBLEVEL = 30\n") == "6.6.30"
+
+
+def test_parse_makefile_version_raises_on_missing_field():
+    from likedbg.adopt import _parse_makefile_version
+
+    with pytest.raises(CacheError):
+        _parse_makefile_version("VERSION = 6\nPATCHLEVEL = 6\n")  # SUBLEVEL missing
