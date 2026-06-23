@@ -12,6 +12,8 @@ from pathlib import Path
 
 from likedbg.container_service import ContainerService
 from likedbg.errors import BuildError
+from likedbg.errors import CacheError
+from likedbg.errors import ContainerError
 from likedbg.pipeline import PipelineContext
 
 _VOLUME_MOUNT = "/ksrc"
@@ -35,23 +37,34 @@ class ArtifactExporter:
         return ctx.host.storage_mode != "volume"
 
     def run(self, ctx: PipelineContext) -> PipelineContext:
-        if ctx.kernel_root is None or ctx.vmlinux is None or ctx.kernel_image is None:
-            raise BuildError("missing build artifacts in context", remedy="run the Build stage first")
-        out_dir = host_artifact_dir(self._workspace, ctx.kernel_root)
+        if ctx.build_label is None or ctx.kernel_image is None:
+            raise BuildError("missing build label / image in context", remedy="run Build first")
+        label = ctx.build_label
+        out_dir = self._workspace / "artifacts" / label
+        host_image = out_dir / "Image"
+        if host_image.exists():
+            ctx.kernel_image = host_image
+            return ctx
         out_dir.mkdir(parents=True, exist_ok=True)
-        rel_image = ctx.kernel_image.relative_to(_VOLUME_MOUNT)
+        image_in_tree = str(ctx.kernel_image)
+        vmlinux_in_tree = f"/ksrc/{label}/vmlinux"
         volumes = {
             self._volume: {"bind": _VOLUME_MOUNT, "mode": "ro"},
             str(out_dir): {"bind": _OUT_MOUNT, "mode": "rw"},
         }
         container = self._c.run_detached(_BASE_IMAGE, volumes=volumes, detach=True, tty=True)
         try:
-            # Export only Image: native host QEMU needs it as a host file.
-            # vmlinux is NOT exported — the debugger container mounts the volume
-            # ro and reads vmlinux from /ksrc/<id>/vmlinux (spec §4.6).
-            self._c.exec(container, f"cp {_VOLUME_MOUNT}/{rel_image} {_OUT_MOUNT}/Image")
+            try:
+                self._c.exec(container, f"test -e {vmlinux_in_tree}")
+                self._c.exec(container, f"test -e {image_in_tree}")
+            except ContainerError as exc:
+                raise CacheError(
+                    f"in-volume artifact missing for {label}",
+                    remedy=f"--clean {label}",
+                ) from exc
+            self._c.exec(container, f"cp {image_in_tree} {_OUT_MOUNT}/Image")
         finally:
             self._c.stop(container)
-        ctx.kernel_image = out_dir / "Image"
+        ctx.kernel_image = host_image
         # ctx.vmlinux intentionally left unchanged (container path in volume)
         return ctx
