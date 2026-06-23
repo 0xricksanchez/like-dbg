@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from likedbg import cache
 from likedbg.container_service import ContainerService
 from likedbg.errors import UnpackError
 from likedbg.pipeline import PipelineContext
@@ -11,16 +12,6 @@ from likedbg.pipeline import PipelineContext
 _MOUNT = "/io"
 _VOLUME_MOUNT = "/ksrc"
 _BASE_IMAGE = "like_dbg_base"
-
-
-def _archive_stem(archive: Path) -> str:
-    # linux-6.6.tar.gz -> linux-6.6
-    return archive.name.split(".tar.")[0]
-
-
-def kernel_root_path(ctx: PipelineContext, *, mount: str) -> Path:
-    assert ctx.kernel_archive is not None
-    return Path(mount) / _archive_stem(ctx.kernel_archive)
 
 
 class UnpackStage:
@@ -35,6 +26,12 @@ class UnpackStage:
         return False
 
     def run(self, ctx: PipelineContext) -> PipelineContext:
+        if ctx.build_label is None:
+            raise UnpackError("no build label in context", remedy="the CLI must set ctx.build_label")
+        label = ctx.build_label
+        if cache.manifest_exists(self._workspace, "build", label):
+            ctx.kernel_root = Path(f"/ksrc/{label}")
+            return ctx
         if ctx.kernel_archive is None:
             raise UnpackError(
                 "no kernel archive in context",
@@ -48,20 +45,17 @@ class UnpackStage:
                 remedy="configure the Download stage's dl_dir to a subdirectory of the workspace so the unpack container can read it at /io",
             ) from exc
         archive_in = f"{_MOUNT}/{rel}"
-        volume_mode = ctx.host.storage_mode == "volume"
-        mount = _VOLUME_MOUNT if volume_mode else _MOUNT
-        if volume_mode:
-            volumes = {
-                str(self._workspace): {"bind": _MOUNT, "mode": "ro"},
-                self._volume: {"bind": _VOLUME_MOUNT, "mode": "rw"},
-            }
-        else:
-            volumes = {str(self._workspace): {"bind": _MOUNT, "mode": "rw"}}
+        keyed = f"/ksrc/{label}"
+        volumes = {
+            str(self._workspace): {"bind": _MOUNT, "mode": "ro"},
+            self._volume: {"bind": _VOLUME_MOUNT, "mode": "rw"},
+        }
         container = self._c.run_detached(_BASE_IMAGE, volumes=volumes, detach=True, tty=True)
         try:
-            self._c.exec(container, f"mkdir -p {mount}")
-            self._c.exec(container, f"tar -C {mount} -xf {archive_in}")
+            self._c.exec(container, f"rm -rf {keyed}")
+            self._c.exec(container, f"mkdir -p {keyed}")
+            self._c.exec(container, f"tar -C {keyed} --strip-components=1 -xf {archive_in}")
         finally:
             self._c.stop(container)
-        ctx.kernel_root = kernel_root_path(ctx, mount=mount)
+        ctx.kernel_root = Path(keyed)
         return ctx

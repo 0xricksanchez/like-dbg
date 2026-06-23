@@ -23,6 +23,8 @@ class PipelineContext:
     rootfs_image: Path | None = None
     vmlinux: Path | None = None
     kernel_image: Path | None = None
+    build_label: str | None = None
+    rootfs_label: str | None = None
 
 
 @runtime_checkable
