@@ -13,10 +13,20 @@ def _real_runner(args: list[str]) -> int:
     return subprocess.run(args, check=False).returncode
 
 
+def _real_query(args: list[str]) -> str:
+    return subprocess.run(args, check=False, capture_output=True, text=True).stdout.strip()
+
+
 class Session:
-    def __init__(self, name: str, runner: Callable[[list[str]], int] = _real_runner) -> None:
+    def __init__(
+        self,
+        name: str,
+        runner: Callable[[list[str]], int] = _real_runner,
+        query: Callable[[list[str]], str] = _real_query,
+    ) -> None:
         self.name = name
         self._runner = runner
+        self._query = query
 
     def _tmux(self, *args: str) -> None:
         rc = self._runner(["tmux", *args])
@@ -39,13 +49,23 @@ class Session:
         self._tmux("rename-session", name)
         self._tmux("rename-window", name)
 
+    def pane_base_index(self) -> int:
+        # tmux pane indices honor the user's `pane-base-index` (commonly 1, not 0).
+        # Never assume 0 — query it, falling back to 0 if tmux is unavailable.
+        out = self._query(["tmux", "display-message", "-p", "#{pane-base-index}"])
+        try:
+            return int(out)
+        except (TypeError, ValueError):
+            return 0
+
     def open_debug_layout(self) -> tuple[int, int]:
-        self.select_pane(0)
+        base = self.pane_base_index()
+        self.select_pane(base)
         self.split("h", 66)
         self.split("v", 50)
-        self.select_pane(0)
-        return (1, 2)
+        self.select_pane(base)
+        return (base + 1, base + 2)
 
     def kill(self) -> None:
         # TODO(plan-3): target panes/session by self.name; name is unused scaffolding for now
-        self._tmux("kill-pane", "-a", "-t", "0")
+        self._tmux("kill-pane", "-a", "-t", str(self.pane_base_index()))
