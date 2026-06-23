@@ -15,6 +15,7 @@
 - **No-drift is a type invariant:** `BuildStage`/`RootfsStage` build *only from the Recipe*, never re-reading `settings` for build-affecting values.
 - Package boundary: new code under `src/likedbg/`; tests under `tests/`; legacy flat `src/*.py` untouched (ruff `force-exclude`). `mypy --strict` clean over `src/likedbg`; `ruff check .` / `ruff format --check .` clean; line length 120. Run tools with `uv run`.
 - Errors use `LikeDbgError` subclasses with `remedy=`; side-effects behind injected seams (`ContainerService`).
+- **Existing tests:** when a task changes a stage's constructor or behavior, UPDATE that file's *existing* tests (constructor calls + assertions) to the new design — do not merely append. The whole file (and `uv run pytest -q`) must be green, not just the new tests.
 - Branching: `main` untouched. Work on `feat/m1-cache` off the current `feat/m1-live-cli` (which holds Plan 4 + fold-back fixes). Live validation may use `feat/m1-cache` directly.
 - Manifests live under `<workspace>/artifacts/cache/{builds,rootfs}/<label>.json` (`artifacts/` is git-ignored). `created_at`/`size_bytes` are stamped by the CLI after a stage returns; stages record paths only.
 - Storage mode (`ctx.host.storage_mode`): `"volume"` (macOS default) or `"bind"` (Linux; macOS case-sensitive). `locations()` is implemented and unit-tested for **both**; the empirical gate runs in **volume** mode.
@@ -206,7 +207,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from likedbg.config import Settings
-from likedbg.stages.download import resolve_version
 from likedbg.toolchain import resolve_toolchain
 
 
@@ -633,7 +633,7 @@ Expected: FAIL — `PipelineContext` has no `build_label` (AttributeError) / beh
             raise UnpackError("no build label in context", remedy="the CLI must set ctx.build_label")
         label = ctx.build_label
         if cache.manifest_exists(self._workspace, "build", label):
-            ctx.kernel_root = Path(f"/ksrc/{label}") if ctx.host.storage_mode == "volume" else Path(f"/ksrc/{label}")
+            ctx.kernel_root = Path(f"/ksrc/{label}")  # container-view root is the same in both storage modes
             return ctx
         if ctx.kernel_archive is None:
             raise UnpackError("no kernel archive in context", remedy="run the Download stage first")
@@ -705,7 +705,7 @@ def test_build_reuses_when_manifest_present(tmp_path):
                                              "image_in_tree": f"/ksrc/{label}/arch/arm64/boot/Image"}))
     c = _BuildFakeC()
     ctx = _ctx(tmp_path); ctx.build_label = label; ctx.kernel_root = None
-    out = BuildStage(c, recipe=_recipe(), workspace=tmp_path, kernel_volume="likedbg_ksrc").run(ctx)
+    out = BuildStage(c, recipe=_recipe(), kbuilder_image="like_kbuilder_arm64:latest", workspace=tmp_path, kernel_volume="likedbg_ksrc").run(ctx)
     assert str(out.vmlinux) == f"/ksrc/{label}/vmlinux"
     assert c.started is False
 
@@ -714,7 +714,7 @@ def test_build_compiles_with_recipe_make_vars_then_writes_manifest(tmp_path):
     c = _BuildFakeC()
     label = "linux-6.6.30-a1b2c3d4"
     ctx = _ctx(tmp_path); ctx.build_label = label; ctx.kernel_root = None
-    BuildStage(c, recipe=_recipe(), workspace=tmp_path, kernel_volume="likedbg_ksrc").run(ctx)
+    BuildStage(c, recipe=_recipe(), kbuilder_image="like_kbuilder_arm64:latest", workspace=tmp_path, kernel_volume="likedbg_ksrc").run(ctx)
     allcmds = " ; ".join(c.execs)
     assert "ARCH=arm64" in allcmds and "LLVM=1" in allcmds          # from the recipe, not settings
     assert "make" in allcmds and "all" in allcmds
@@ -740,9 +740,12 @@ from likedbg.cache import BuildRecipe
 class BuildStage:
     name = "build"
 
-    def __init__(self, container, *, recipe: BuildRecipe, workspace: Path, kernel_volume: str) -> None:
+    def __init__(
+        self, container, *, recipe: BuildRecipe, kbuilder_image: str, workspace: Path, kernel_volume: str
+    ) -> None:
         self._c = container
         self._recipe = recipe
+        self._image = kbuilder_image
         self._workspace = workspace
         self._volume = kernel_volume
 
@@ -766,7 +769,7 @@ class BuildStage:
             str(self._workspace): {"bind": _MOUNT, "mode": "ro"},
             self._volume: {"bind": _VOLUME_MOUNT, "mode": "rw"},
         }
-        container = self._c.run_detached(self._image_or_default(), volumes=volumes, detach=True, tty=True)
+        container = self._c.run_detached(self._image, volumes=volumes, detach=True, tty=True)
         try:
             self._c.exec(container, make_command(env, "mrproper"), workdir=root)
             self._c.exec(container, make_command(env, "defconfig"), workdir=root)
@@ -791,7 +794,7 @@ class BuildStage:
         return ctx
 ```
 
-Add the kbuilder image as a constructor arg instead of `_image_or_default()` — keep the existing `kbuilder_image` parameter: change `__init__` to also accept `kbuilder_image: str` and store `self._image`, then use `self._image` in `run_detached`. (Drop the `_image_or_default()` placeholder.)
+**Also update the existing tests in this file:** the prior `BuildStage(container, kbuilder_image=…, fragments=…, workspace=…, kernel_volume=…)` test (and its `_ctx`) assert the old constructor + always-rebuild behavior. Replace them with the new `recipe=`-based constructor and behavior so the whole file is green.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
@@ -841,7 +844,7 @@ def test_rootfs_reuses_present_image_without_rebuild(tmp_path):
                                       paths={"image_host": str(img)}))
     c = FakeC()
     ctx = _ctx(tmp_path); ctx.rootfs_label = label
-    out = RootfsStage(c, recipe=_rrecipe(), workspace=tmp_path).run(ctx)
+    out = RootfsStage(c, recipe=_rrecipe(), rootfs_image="like_rootfs", workspace=tmp_path).run(ctx)
     assert out.rootfs_image == img
     assert c.run_kwargs is None
 
@@ -853,13 +856,13 @@ def test_rootfs_reuse_missing_image_raises(tmp_path):
                                       paths={"image_host": str(tmp_path / "gone.img")}))
     ctx = _ctx(tmp_path); ctx.rootfs_label = label
     with pytest.raises(CacheError):
-        RootfsStage(FakeC(), recipe=_rrecipe(), workspace=tmp_path).run(ctx)
+        RootfsStage(FakeC(), recipe=_rrecipe(), rootfs_image="like_rootfs", workspace=tmp_path).run(ctx)
 
 
 def test_rootfs_builds_and_writes_manifest_on_miss(tmp_path):
     c = FakeC()
     ctx = _ctx(tmp_path); ctx.rootfs_label = _rrecipe().label
-    out = RootfsStage(c, recipe=_rrecipe(), workspace=tmp_path).run(ctx)
+    out = RootfsStage(c, recipe=_rrecipe(), rootfs_image="like_rootfs", workspace=tmp_path).run(ctx)
     assert out.rootfs_image == tmp_path / "artifacts" / "rootfs" / f"{_rrecipe().label}.img"
     assert manifest_exists(tmp_path, "rootfs", _rrecipe().label) is True
     assert c.run_kwargs["privileged"] is True
@@ -887,9 +890,10 @@ def rootfs_target(workspace, label):
 class RootfsStage:
     name = "rootfs"
 
-    def __init__(self, container, *, recipe: RootfsRecipe, workspace) -> None:
+    def __init__(self, container, *, recipe: RootfsRecipe, rootfs_image: str, workspace) -> None:
         self._c = container
         self._recipe = recipe
+        self._image = rootfs_image
         self._workspace = workspace
 
     def should_skip(self, ctx):
@@ -928,7 +932,7 @@ class RootfsStage:
         return ctx
 ```
 
-Keep the existing `rootfs_image` constructor parameter name `rootfs_image` for the kbuilder image tag — rename to keep it: add `rootfs_image: str` to `__init__` and store `self._image` (the test passes it positionally via `FakeC`? No — update the test constructor calls to `RootfsStage(c, recipe=…, workspace=…)` and add `rootfs_image="like_rootfs"` where the real image is needed). For the unit tests the image tag is unused by `FakeC`, so include `rootfs_image="like_rootfs"` in the test constructor calls.
+**Also update the existing tests in this file:** the prior tests (`test_run_starts_privileged_container_and_sets_rootfs`, the Plan-4 file-based reuse test `test_run_reuses_existing_image_without_rebuild`, and `test_rootfs_target_path` which calls `rootfs_target(Path("/ws"), "arm64")`) assert the old `rootfs_image=`-tag constructor, the old `rootfs_target(workspace, arch)` signature, and file-existence (not manifest) reuse. Update/replace them for the new `recipe=`-based constructor (with `rootfs_image="like_rootfs"`), the new `rootfs_target(workspace, label)`, and manifest-based reuse so the whole file is green.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
@@ -978,7 +982,7 @@ def test_export_verifies_then_copies_and_sets_host_image(tmp_path):
     assert "cp /ksrc/linux-6.6.30-a1b2c3d4/arch/arm64/boot/Image" in allcmds
 ```
 
-Add `_ExportFakeC` (records `execs`, `exec` returns ok) + `_ctx` (arch=arm64, storage_mode="volume").
+Add `_ExportFakeC` (records `execs`, `exec` returns ok) + `_ctx` (arch=arm64, storage_mode="volume"). **Also update the existing `test_volume_mode_copies_and_rewrites_paths`**, which asserts the old `artifacts/linux-6.6.30/Image` path and `kernel_root`-derived behavior — update it for the new `ctx.build_label`-keyed `artifacts/<label>/Image` output (or replace it with the new test above) so the whole file is green.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -1111,7 +1115,7 @@ def gdb_pane_command(gdb_args: list[str], *, image: str, mount_source: str) -> s
 
 Set `ctx` labels before running (in `main`): after building recipes, `ctx.build_label = build_recipe.label`, `ctx.rootfs_label = rootfs_recipe.label` (pass labels by setting them on the `PipelineContext` constructed in `main`).
 
-`main` — after `load_settings`, build the recipes and labels:
+`main` — add the imports `from likedbg import cache`, `from likedbg.cache import build_recipe, rootfs_recipe`, and `from likedbg.stages.download import resolve_version` at the top of `cli.py`. After `load_settings`, build the recipes and labels:
 
 ```python
     version = resolve_version(settings.kernel_dl)
