@@ -11,9 +11,12 @@ can continue the rework with one prompt. `dev` represents the FULL rewrite and s
 
 ## Status (2026-06-23)
 
-M1 Sub-project A (Foundation) is complete and extended; all merged to `dev` (tip `ee61257`).
-Landed 2026-06-23: the §A deferred-polish batch (all 7 items cleared) and §B1 image-build
-lifecycle (see §A / §B below). Next unstarted: §B2 (x86_64-on-Mac TCG).
+M1 Sub-project A (Foundation) is complete and extended; all merged to `dev` (tip `dcbe133`).
+Landed 2026-06-23: the §A deferred-polish batch (all 7 items), §B1 image-build lifecycle, and
+§B2 x86_64-on-Mac in-container TCG **mechanism** (see §A / §B). Next unstarted: §B3 (un-gate
+bind/Linux runtime) — though it's least valuable to a macOS user and can't be fully live-gated
+on a Mac; the §B2 **M5 live gate** (x86_64 boot-to-userspace, foreign-arch rootfs) is also still
+to be run. (NOTE: a maintainer commit `a365bdc "chore: sensible defaults"` sits on `dev` too.)
 Don't re-derive history — read these:
 - Project state & decisions: the auto-loaded memory `project-like-dbg-revival.md`.
 - Glossary: `CONTEXT.md`. Decisions: `docs/adr/0001..0003`.
@@ -83,10 +86,20 @@ threading), not detection.
   `docker rmi like_debugger:latest` → auto-build on next run.
   **Deferred minors (future pass):** `build_image` test under-asserts (no rm/nocache/path or
   `labels=None` checks); `copy_sources` `--from` substring vs token-anchored check.
-- **B2 — x86_64-on-Mac end-to-end:** the CLI assembly is native-HVF-only today; wire the
-  in-container TCG debuggee path (the `.dockerfile_dbge` debuggee image — add it to `images.IMAGES`
-  here, its first consumer) + a `qemu_container_command` launcher + gdbstub networking, then
-  validate build→boot→debug for x86_64 on the Mac (ADR-0001 keeps x86_64-on-Mac in-container TCG).
+- **B2 — x86_64-on-Mac (in-container TCG) — ✅ MECHANISM DONE (2026-06-23; merged to `dev`,
+  commits `6131a1a..dcbe133`):** debuggee image (`like_debuggee:latest`) added to `images.IMAGES`
+  + mode-aware `images.required_for(host)`; `qemu_container_command` launcher (publish-to-host
+  `-p 1234:1234`, identical-path `:ro` mounts); `DebuggeeStage` owns the native-vs-in-container
+  dispatch on `host.debuggee_mode`; arch-aware gdb (`i386:x86-64`); OS-based `gdbstub_addr`
+  (realizes ADR-0001). 164 tests; opus whole-branch review clean (traced the in-container
+  argv↔mount lineup + gdbstub reachability end-to-end; arm64-native proven unchanged). `Debuggee
+  mode` glossary term added; no new ADR. Spec/plan: `docs/superpowers/{specs,plans}/2026-06-23-b2-x86_64-mac*`.
+  **OUTSTANDING (M5 live gate, spec §6 — not yet run):** `--build-images` builds 5 incl. debuggee;
+  an x86_64 config → build → **foreign-arch (amd64) rootfs** → in-container TCG boot → gdb @
+  `start_kernel` → systemd userspace; + arm64 no-regression. The **foreign-arch rootfs** is the
+  residual risk (colima/binfmt runtime) — `rootfs.sh` already does the cross-arch second stage so
+  NO code change is anticipated; if it trips, open a `systematic-debugging` cycle (not pre-coded).
+  Deferred minors: `_GDB_ARCH` unguarded (unreachable via the arch Literal); empty-mounts double-space (unreachable).
 - **B3 — bind/Linux runtime (un-gate `require_volume_mode`):** the cache architecture is already
   storage-mode-aware (`cache.locations`), but the live wiring is volume-only. Needs: thread
   `storage_mode` into `cli.run_gdb`'s `locations()` call (currently hardcoded `"volume"`);
