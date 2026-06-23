@@ -161,9 +161,7 @@ class Locations:
     gdb_vmlinux: str
 
 
-def locations(
-    label: str, *, arch: str, storage_mode: str, workspace: Path, volume: str = "likedbg_ksrc"
-) -> Locations:
+def locations(label: str, *, arch: str, storage_mode: str, workspace: Path, volume: str = "likedbg_ksrc") -> Locations:
     image_name = "bzImage" if arch == "x86_64" else "Image"
     container_root = f"/ksrc/{label}"
     image_in_tree = f"{container_root}/arch/{arch}/boot/{image_name}"
@@ -185,5 +183,7 @@ def locations(
         image_host="",
         gdb_mount_source=str(host_tree),
         gdb_mount_type="bind",
+        # bind mode mounts the single label dir at /ksrc, so vmlinux is at /ksrc/vmlinux
+        # (no label segment); volume mode mounts the whole volume at /ksrc/<label>/vmlinux.
         gdb_vmlinux="/ksrc/vmlinux",
     )

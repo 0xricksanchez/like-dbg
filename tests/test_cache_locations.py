@@ -18,6 +18,7 @@ def test_bind_mode_footprint_has_no_host_export():
     assert loc.image_host == ""
     assert loc.gdb_mount_type == "bind"
     assert loc.gdb_mount_source == "/ws/artifacts/builds/linux-6.6.30-gef-a1b2c3d4"
+    assert loc.gdb_vmlinux == "/ksrc/vmlinux"
 
 
 def test_x86_uses_bzimage():
