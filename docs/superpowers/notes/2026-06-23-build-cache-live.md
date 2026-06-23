@@ -55,3 +55,15 @@ manifest). For this gate the rootfs was **adopted** from the known-good Plan-3 i
 not depend on rootfs contents, and the adopted rootfs in fact boots to a shell. **Follow-up
 (separate from Plan 5):** fix `rootfs.sh` fresh builds (bookworm / aarch64 emulation), or add
 a `--adopt-rootfs` analogue.
+
+## Addendum (2026-06-23): dual debugger extensions (gef + pwndbg)
+
+The debugger image now installs BOTH GEF (`/opt/gef/gef.py`) and pwndbg
+(`git clone + setup.sh` → `/opt/pwndbg/gdbinit.py`); `~/.gdbinit` auto-loads neither
+(pwndbg's setup.sh auto-source line is stripped). `build_gdb_args` sources the requested
+extension via `-iex source <path>` so config `[debugger] ext = gef|pwndbg` actually selects
+it. `PWNDBG_NO_AUTOUPDATE=1` keeps launches offline/fast.
+
+Both validated live via the one command (cache hits → HVF boot → attach at `start_kernel`):
+- `ext = gef`  → `gef➤`, stopped at `start_kernel` (BREAKPOINT), bt `start_kernel ← __primary_switched`.
+- `ext = pwndbg` → `pwndbg>`, DISASM/STACK/BACKTRACE at `start_kernel+20`, bt `start_kernel ← __primary_switched`.
