@@ -210,6 +210,11 @@ def remove_cached(
     container: ContainerService, workspace: Path, manifest: Manifest, *, volume: str = KERNEL_VOLUME
 ) -> None:
     if manifest.kind == "build":
+        if manifest.storage_mode != "volume":
+            raise CacheError(
+                f"cache removal for {manifest.storage_mode!r}-mode builds is not yet wired",
+                remedy="this milestone targets Volume mode; Bind/Linux runtime is gated (see require_volume_mode)",
+            )
         c = container.run_detached(
             BASE_IMAGE, volumes={volume: {"bind": VOLUME_MOUNT, "mode": "rw"}}, detach=True, tty=True
         )
