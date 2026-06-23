@@ -26,10 +26,16 @@ def gdb_pane_command(gdb_args: list[str], *, image: str, mount_source: str) -> s
     return docker + shlex.join(gdb_args)
 
 
-def qemu_container_command(argv: list[str], *, image: str, mounts: list[Path], gdbstub_port: int = 1234) -> str:
+def qemu_container_command(
+    argv: list[str], *, image: str, ro_mounts: list[Path], rw_mounts: list[Path], gdbstub_port: int = 1234
+) -> str:
     # In-container QEMU (x86_64-on-Mac TCG / Linux KVM). Publish the gdbstub to the host so the
     # containerized gdb reaches it at host.docker.internal:1234 (same as native-HVF). Bind each
     # artifact at its identical host path so the QEMU argv's embedded paths resolve unchanged.
-    binds = " ".join(f"-v {shlex.quote(str(p))}:{shlex.quote(str(p))}:ro" for p in mounts)
+    # The kernel Image is read-only (QEMU only reads -kernel); the rootfs disk must be writable
+    # (QEMU opens -drive read-write — exactly as the native host process does).
+    ro = [f"-v {shlex.quote(str(p))}:{shlex.quote(str(p))}:ro" for p in ro_mounts]
+    rw = [f"-v {shlex.quote(str(p))}:{shlex.quote(str(p))}:rw" for p in rw_mounts]
+    binds = " ".join(ro + rw)
     docker = f"docker run --rm -it -p {gdbstub_port}:{gdbstub_port} {binds} {image} "
     return docker + shlex.join(argv)

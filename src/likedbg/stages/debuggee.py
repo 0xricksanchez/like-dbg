@@ -26,9 +26,12 @@ class DebuggeeStage:
         if ctx.kernel_image is None:
             raise BuildError("no kernel image in context", remedy="run the Build/Export stages first")
         argv = build_qemu_argv(ctx.settings, ctx.host, kernel_image=ctx.kernel_image, rootfs=ctx.rootfs_image)
-        mounts = [p for p in (ctx.kernel_image, ctx.rootfs_image) if p is not None]
         if ctx.host.debuggee_mode == "in-container":
-            cmd = qemu_container_command(argv, image=self._debuggee_image, mounts=mounts)
+            # kernel Image read-only (QEMU only reads -kernel); rootfs disk read-write (QEMU's -drive).
+            rw_mounts = [ctx.rootfs_image] if ctx.rootfs_image is not None else []
+            cmd = qemu_container_command(
+                argv, image=self._debuggee_image, ro_mounts=[ctx.kernel_image], rw_mounts=rw_mounts
+            )
         else:
             cmd = qemu_pane_command(argv)
         self._send(cmd)

@@ -38,18 +38,22 @@ def test_qemu_container_command_publishes_port_mounts_and_wraps_argv():
     cmd = qemu_container_command(
         ["qemu-system-x86_64", "-accel", "tcg", "-kernel", "/ws/artifacts/x/Image", "-S", "-s"],
         image="like_debuggee:latest",
-        mounts=[Path("/ws/artifacts/x/Image"), Path("/ws/artifacts/rootfs/r.img")],
+        ro_mounts=[Path("/ws/artifacts/x/Image")],
+        rw_mounts=[Path("/ws/artifacts/rootfs/r.img")],
     )
     assert cmd.startswith("docker run --rm -it -p 1234:1234")
-    assert "-v /ws/artifacts/x/Image:/ws/artifacts/x/Image:ro" in cmd
-    assert "-v /ws/artifacts/rootfs/r.img:/ws/artifacts/rootfs/r.img:ro" in cmd
+    assert "-v /ws/artifacts/x/Image:/ws/artifacts/x/Image:ro" in cmd  # kernel read-only
+    assert "-v /ws/artifacts/rootfs/r.img:/ws/artifacts/rootfs/r.img:rw" in cmd  # rootfs disk writable
     assert "like_debuggee:latest" in cmd
     assert cmd.rstrip().endswith("-S -s")  # argv appended last
 
 
 def test_qemu_container_command_omits_absent_rootfs():
     cmd = qemu_container_command(
-        ["qemu-system-x86_64", "-kernel", "/ws/Image"], image="like_debuggee:latest", mounts=[Path("/ws/Image")]
+        ["qemu-system-x86_64", "-kernel", "/ws/Image"],
+        image="like_debuggee:latest",
+        ro_mounts=[Path("/ws/Image")],
+        rw_mounts=[],
     )
     assert "-v /ws/Image:/ws/Image:ro" in cmd
-    assert cmd.count(":ro") == 1  # only the kernel image mounted
+    assert ":rw" not in cmd  # no writable mount when there's no rootfs disk
