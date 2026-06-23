@@ -6,6 +6,7 @@ Session sends the result to a tmux pane."""
 from __future__ import annotations
 
 import shlex
+from pathlib import Path
 
 from likedbg.constants import VOLUME_MOUNT
 
@@ -23,3 +24,12 @@ def gdb_pane_command(gdb_args: list[str], *, image: str, mount_source: str) -> s
     )
     # Quote the gdb argv too: `-ex "hbreak start_kernel"` must reach gdb as one arg.
     return docker + shlex.join(gdb_args)
+
+
+def qemu_container_command(argv: list[str], *, image: str, mounts: list[Path], gdbstub_port: int = 1234) -> str:
+    # In-container QEMU (x86_64-on-Mac TCG / Linux KVM). Publish the gdbstub to the host so the
+    # containerized gdb reaches it at host.docker.internal:1234 (same as native-HVF). Bind each
+    # artifact at its identical host path so the QEMU argv's embedded paths resolve unchanged.
+    binds = " ".join(f"-v {shlex.quote(str(p))}:{shlex.quote(str(p))}:ro" for p in mounts)
+    docker = f"docker run --rm -it -p {gdbstub_port}:{gdbstub_port} {binds} {image} "
+    return docker + shlex.join(argv)
