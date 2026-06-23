@@ -410,7 +410,7 @@ git commit -m "feat(cli): --clean <label> / --clean-all"
 - Consumes: `cache.load_manifest`, `cache.manifest_exists`, `make_rootfs_recipe`, `load_settings`, `HostProfile.detect`, `require_volume_mode`, `Session`, the stages, `gdb_pane_command`/`qemu_pane_command`.
 - Produces:
   - `cli.build_use_pipeline(session, *, debugger_image, ext, panes, gdb_mount_source) -> Pipeline` — launch-only: `Pipeline([ArtifactExporter(container, …), DebuggeeStage(launch=…), DebuggerStage(ext=…, run_gdb=…, breakpoint="start_kernel")])`. (Export is idempotent; the kernel build + rootfs are already produced.) Takes `container`, `workspace`, `kernel_volume` like `build_pipeline`.
-  - `cli.cmd_use(container, session, workspace, settings, *, label, rootfs_label, panes) -> int` — load the build Manifest (`CacheError` if absent); re-load settings with `overrides={"general": {"arch": <manifest arch>}}`; detect host from those settings; `require_volume_mode`; resolve the rootfs image (from `--rootfs` label or the active rootfs label — `CacheError` if not cached); populate a `PipelineContext` (`build_label`, `kernel_root`, `vmlinux` = `paths["gdb_vmlinux"]`, `kernel_image` = `paths["image_in_tree"]`, `rootfs_image`, `rootfs_label`); run `build_use_pipeline` (using `paths["gdb_mount_source"]`); return 0.
+  - `cli.cmd_use(container, session, workspace, *, label, rootfs_label, panes) -> int` — load the build Manifest (`CacheError` if absent); re-load settings with `overrides={"general": {"arch": <manifest arch>}}`; detect host from those settings; `require_volume_mode`; resolve the rootfs image (from `--rootfs` label or the active rootfs label — `CacheError` if not cached); populate a `PipelineContext` (`build_label`, `kernel_root`, `vmlinux` = `paths["gdb_vmlinux"]`, `kernel_image` = `paths["image_in_tree"]`, `rootfs_image`, `rootfs_label`); run `build_use_pipeline` (using `paths["gdb_mount_source"]`); return 0.
   - `main` parses `--use LABEL` and `--rootfs LABEL`; when `--use` is set, runs the tmux path (TMUX guard, session, panes) then `cmd_use`.
 
 - [ ] **Step 1: Write the failing test** — append to `tests/test_cli.py`:
@@ -472,7 +472,6 @@ def cmd_use(
     container: ContainerService,
     session: Session,
     workspace: Path,
-    settings: object,  # likedbg.config.Settings; only .debugger.ext is read here
     *,
     label: str,
     rootfs_label: str | None,
@@ -529,7 +528,7 @@ def cmd_use(
         session.start("LIKE-DBG")
         panes = session.open_debug_layout()
         if args.use:
-            return cmd_use(container, session, workspace, settings,
+            return cmd_use(container, session, workspace,
                            label=args.use, rootfs_label=args.rootfs or None, panes=panes)
         host = HostProfile.detect(settings, workspace)
         require_volume_mode(host)
