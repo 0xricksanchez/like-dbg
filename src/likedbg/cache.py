@@ -155,6 +155,13 @@ def load_manifest(workspace: Path, kind: str, label: str) -> Manifest:
         raise CacheError(f"corrupt manifest {path}", remedy=f"`start_kgdb --clean {label}` and rebuild") from exc
 
 
+def list_manifests(workspace: Path, kind: str) -> list[Manifest]:
+    registry = workspace / "artifacts" / "cache" / _KIND_DIR[kind]
+    if not registry.is_dir():
+        return []
+    return [load_manifest(workspace, kind, p.stem) for p in sorted(registry.glob("*.json"))]
+
+
 @dataclass(frozen=True)
 class Locations:
     kernel_root: str
