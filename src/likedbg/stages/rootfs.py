@@ -1,48 +1,63 @@
 """Rootfs stage: build a native-arch root filesystem image via rootfs.sh in a
-privileged container, and record its host path."""
+privileged container, record its host path, and write a rootfs Manifest."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
+from likedbg import cache
+from likedbg.cache import RootfsRecipe
 from likedbg.container_service import ContainerService
+from likedbg.errors import CacheError
 from likedbg.errors import RootfsError
 from likedbg.pipeline import PipelineContext
 
 _MOUNT = "/io"
 
 
-def rootfs_target(workspace: Path, arch: str) -> Path:
-    return workspace / "artifacts" / f"rootfs-{arch}.img"
+def rootfs_target(workspace: Path, label: str) -> Path:
+    return workspace / "artifacts" / "rootfs" / f"{label}.img"
 
 
 class RootfsStage:
     name = "rootfs"
 
-    def __init__(self, container: ContainerService, *, rootfs_image: str, workspace: Path) -> None:
+    def __init__(
+        self, container: ContainerService, *, recipe: RootfsRecipe, rootfs_image: str, workspace: Path
+    ) -> None:
         self._c = container
+        self._recipe = recipe
         self._image = rootfs_image
         self._workspace = workspace
 
     def should_skip(self, ctx: PipelineContext) -> bool:
         # Never skip: a cached image still has to be recorded in the context so the
         # Debuggee stage can attach it as the root disk. run() is idempotent — it
-        # records the path and only rebuilds when the image is missing.
+        # records the path and only rebuilds when the manifest is missing.
         return False
 
     def run(self, ctx: PipelineContext) -> PipelineContext:
-        arch = ctx.settings.general.arch
-        target = rootfs_target(self._workspace, arch)
-        if target.exists():
-            ctx.rootfs_image = target
+        if ctx.rootfs_label is None:
+            raise RootfsError("no rootfs label in context", remedy="the CLI must set ctx.rootfs_label")
+        label = ctx.rootfs_label
+        target = rootfs_target(self._workspace, label)
+
+        if cache.manifest_exists(self._workspace, "rootfs", label):
+            m = cache.load_manifest(self._workspace, "rootfs", label)
+            img = Path(m.paths["image_host"])
+            if not img.exists():
+                raise CacheError(
+                    f"cached rootfs {label} image is gone",
+                    remedy=f"`start_kgdb --clean {label}` and rebuild",
+                )
+            ctx.rootfs_image = img
             return ctx
+
         target.parent.mkdir(parents=True, exist_ok=True)
-        cfg = ctx.settings.rootfs
-        qemu_arch = "aarch64" if arch == "arm64" else "x86_64"
-        name = target.name
+        qemu_arch = "aarch64" if self._recipe.arch == "arm64" else "x86_64"
         cmd = (
-            f"/bin/bash -lc '. /home/user/rootfs.sh -n {name} -a {qemu_arch} "
-            f"-d {cfg.distribution} -u user -h {cfg.hostname}'"
+            f"/bin/bash -lc '. /home/user/rootfs.sh -n {target.name} -a {qemu_arch} "
+            f"-d {self._recipe.distribution} -u user -h {self._recipe.hostname}'"
         )
         try:
             container = self._c.run_detached(
@@ -58,4 +73,17 @@ class RootfsStage:
             _ = line
         self._c.stop(container)
         ctx.rootfs_image = target
+        cache.write_manifest(
+            self._workspace,
+            cache.Manifest(
+                kind="rootfs",
+                label=label,
+                key=self._recipe.key,
+                version="",
+                arch=self._recipe.arch,
+                storage_mode=ctx.host.storage_mode,
+                inputs=self._recipe.cache_inputs(),
+                paths={"image_host": str(target)},
+            ),
+        )
         return ctx

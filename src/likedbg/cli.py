@@ -11,6 +11,7 @@ from loguru import logger
 
 from likedbg import docker_env
 from likedbg.cache import BuildRecipe
+from likedbg.cache import RootfsRecipe
 from likedbg.config import load_settings
 from likedbg.container_service import ContainerService
 from likedbg.errors import LikeDbgError
@@ -45,6 +46,13 @@ _PLACEHOLDER_RECIPE = BuildRecipe(
     make_vars=(("ARCH", "arm64"), ("LLVM", "1")),
     frag_hashes=(),
     fragments=_FRAGMENTS,
+)
+
+# Placeholder rootfs recipe used until T9 threads settings into build_pipeline.
+_PLACEHOLDER_ROOTFS_RECIPE = RootfsRecipe(
+    arch="arm64",
+    distribution="bookworm",
+    hostname="LIKE-DBG",
 )
 
 
@@ -84,7 +92,12 @@ def build_pipeline(
                 workspace=workspace,
                 kernel_volume=kernel_volume,
             ),
-            RootfsStage(container, rootfs_image="like_rootfs:latest", workspace=workspace),
+            RootfsStage(
+                container,
+                recipe=_PLACEHOLDER_ROOTFS_RECIPE,
+                rootfs_image="like_rootfs:latest",
+                workspace=workspace,
+            ),
             ArtifactExporter(container, kernel_volume=kernel_volume, workspace=workspace),
             DebuggeeStage(launch=launch_qemu),
             DebuggerStage(ext=ext, run_gdb=run_gdb, breakpoint="start_kernel"),

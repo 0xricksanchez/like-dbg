@@ -1,8 +1,15 @@
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
+from likedbg.cache import Manifest
+from likedbg.cache import RootfsRecipe
+from likedbg.cache import manifest_exists
+from likedbg.cache import write_manifest
 from likedbg.config import Settings
 from likedbg.container_service import ContainerService
+from likedbg.errors import CacheError
 from likedbg.host_profile import HostProfile
 from likedbg.pipeline import PipelineContext
 from likedbg.stages.rootfs import RootfsStage
@@ -24,6 +31,10 @@ class FakeC(ContainerService):
         pass
 
 
+def _rrecipe():
+    return RootfsRecipe(arch="arm64", distribution="bookworm", hostname="LIKE-DBG")
+
+
 def _ctx(tmp_path):
     from likedbg.config import GeneralCfg
 
@@ -37,29 +48,75 @@ def _ctx(tmp_path):
         gdbstub_addr="x",
         ssh_addr="x",
     )
-    return PipelineContext(settings=settings, host=host)
+    ctx = PipelineContext(settings=settings, host=host)
+    ctx.rootfs_label = _rrecipe().label
+    return ctx
 
 
 def test_rootfs_target_path():
-    assert rootfs_target(Path("/ws"), "arm64") == Path("/ws/artifacts/rootfs-arm64.img")
+    assert rootfs_target(Path("/ws"), "rootfs-arm64-bookworm-deadbeef") == Path(
+        "/ws/artifacts/rootfs/rootfs-arm64-bookworm-deadbeef.img"
+    )
 
 
 def test_run_starts_privileged_container_and_sets_rootfs(tmp_path):
     c = FakeC()
-    out = RootfsStage(c, rootfs_image="like_rootfs", workspace=tmp_path).run(_ctx(tmp_path))
+    ctx = _ctx(tmp_path)
+    out = RootfsStage(c, recipe=_rrecipe(), rootfs_image="like_rootfs", workspace=tmp_path).run(ctx)
     assert c.run_kwargs["privileged"] is True
-    assert out.rootfs_image == tmp_path / "artifacts" / "rootfs-arm64.img"
+    assert out.rootfs_image == tmp_path / "artifacts" / "rootfs" / f"{_rrecipe().label}.img"
 
 
-def test_run_reuses_existing_image_without_rebuild(tmp_path):
-    # A cached image must not be rebuilt, but the path must still reach the context
-    # so the Debuggee stage can attach it as the root disk.
-    target = rootfs_target(tmp_path, "arm64")
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_bytes(b"img")
+def test_rootfs_reuses_present_image_without_rebuild(tmp_path):
+    label = _rrecipe().label
+    img = tmp_path / "artifacts" / "rootfs" / f"{label}.img"
+    img.parent.mkdir(parents=True, exist_ok=True)
+    img.write_bytes(b"img")
+    write_manifest(
+        tmp_path,
+        Manifest(
+            kind="rootfs",
+            label=label,
+            key=_rrecipe().key,
+            version="",
+            arch="arm64",
+            storage_mode="volume",
+            paths={"image_host": str(img)},
+        ),
+    )
     c = FakeC()
-    stage = RootfsStage(c, rootfs_image="like_rootfs", workspace=tmp_path)
-    assert stage.should_skip(_ctx(tmp_path)) is False
-    out = stage.run(_ctx(tmp_path))
-    assert out.rootfs_image == target
-    assert c.run_kwargs is None  # no rebuild container started
+    ctx = _ctx(tmp_path)
+    ctx.rootfs_label = label
+    out = RootfsStage(c, recipe=_rrecipe(), rootfs_image="like_rootfs", workspace=tmp_path).run(ctx)
+    assert out.rootfs_image == img
+    assert c.run_kwargs is None
+
+
+def test_rootfs_reuse_missing_image_raises(tmp_path):
+    label = _rrecipe().label
+    write_manifest(
+        tmp_path,
+        Manifest(
+            kind="rootfs",
+            label=label,
+            key="k",
+            version="",
+            arch="arm64",
+            storage_mode="volume",
+            paths={"image_host": str(tmp_path / "gone.img")},
+        ),
+    )
+    ctx = _ctx(tmp_path)
+    ctx.rootfs_label = label
+    with pytest.raises(CacheError):
+        RootfsStage(FakeC(), recipe=_rrecipe(), rootfs_image="like_rootfs", workspace=tmp_path).run(ctx)
+
+
+def test_rootfs_builds_and_writes_manifest_on_miss(tmp_path):
+    c = FakeC()
+    ctx = _ctx(tmp_path)
+    ctx.rootfs_label = _rrecipe().label
+    out = RootfsStage(c, recipe=_rrecipe(), rootfs_image="like_rootfs", workspace=tmp_path).run(ctx)
+    assert out.rootfs_image == tmp_path / "artifacts" / "rootfs" / f"{_rrecipe().label}.img"
+    assert manifest_exists(tmp_path, "rootfs", _rrecipe().label) is True
+    assert c.run_kwargs["privileged"] is True
