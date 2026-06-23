@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from likedbg import cache
+from likedbg.cache import BuildRecipe
 from likedbg.container_service import ContainerService
 from likedbg.errors import BuildError
 from likedbg.pipeline import PipelineContext
-from likedbg.toolchain import resolve_toolchain
 
 _MOUNT = "/io"
 _VOLUME_MOUNT = "/ksrc"
@@ -18,11 +19,6 @@ def make_command(env: dict[str, str], target: str) -> str:
     return " ".join(parts)
 
 
-def _image_path(kernel_root: Path, arch: str) -> Path:
-    name = "bzImage" if arch == "x86_64" else "Image"
-    return kernel_root / "arch" / arch / "boot" / name
-
-
 class BuildStage:
     name = "build"
 
@@ -30,50 +26,77 @@ class BuildStage:
         self,
         container: ContainerService,
         *,
+        recipe: BuildRecipe,
         kbuilder_image: str,
-        fragments: list[str],
         workspace: Path,
         kernel_volume: str,
     ) -> None:
         self._c = container
+        self._recipe = recipe
         self._image = kbuilder_image
-        self._fragments = fragments
         self._workspace = workspace
         self._volume = kernel_volume
 
     def should_skip(self, ctx: PipelineContext) -> bool:
         return False
 
-    def _volumes(self, ctx: PipelineContext) -> dict[str, dict[str, str]]:
-        # Mount the workspace at /io (for the kconfig fragments) and, in volume mode,
-        # the named kernel-source volume at /ksrc (where Unpack put the tree).
-        if ctx.host.storage_mode == "volume":
-            return {
-                str(self._workspace): {"bind": _MOUNT, "mode": "ro"},
-                self._volume: {"bind": _VOLUME_MOUNT, "mode": "rw"},
-            }
-        return {str(self._workspace): {"bind": _MOUNT, "mode": "rw"}}
-
     def run(self, ctx: PipelineContext) -> PipelineContext:
-        if ctx.kernel_root is None:
-            raise BuildError("no kernel_root in context", remedy="run the Unpack stage first")
-        arch = ctx.settings.general.arch
-        env = resolve_toolchain(ctx.settings.kernel_builder.compiler, arch).make_vars
-        root = ctx.kernel_root
-        container = self._c.run_detached(self._image, volumes=self._volumes(ctx), detach=True, tty=True)
+        if ctx.build_label is None:
+            raise BuildError("no build label in context", remedy="the CLI must set ctx.build_label")
+        label = ctx.build_label
+        loc = cache.locations(
+            label,
+            arch=self._recipe.arch,
+            storage_mode=ctx.host.storage_mode,
+            workspace=self._workspace,
+            volume=self._volume,
+        )
+        if cache.manifest_exists(self._workspace, "build", label):
+            m = cache.load_manifest(self._workspace, "build", label)
+            ctx.vmlinux = Path(m.paths["vmlinux_in_tree"])
+            ctx.kernel_image = Path(m.paths["image_in_tree"])
+            return ctx
+        env = self._recipe.env()
+        volumes = {
+            str(self._workspace): {"bind": _MOUNT, "mode": "ro"},
+            self._volume: {"bind": _VOLUME_MOUNT, "mode": "rw"},
+        }
+        root = loc.kernel_root
+        container = self._c.run_detached(self._image, volumes=volumes, detach=True, tty=True)
         try:
-            self._c.exec(container, make_command(env, "mrproper"), workdir=str(root))
-            self._c.exec(container, make_command(env, "defconfig"), workdir=str(root))
-            if self._fragments:
-                frags = " ".join(f"{_MOUNT}/{f}" for f in self._fragments)
+            self._c.exec(container, make_command(env, "mrproper"), workdir=root)
+            self._c.exec(container, make_command(env, "defconfig"), workdir=root)
+            if self._recipe.fragments:
+                frags = " ".join(f"{_MOUNT}/{f}" for f in self._recipe.fragments)
                 self._c.exec(
                     container,
                     f"./scripts/kconfig/merge_config.sh -m .config {frags} && {make_command(env, 'olddefconfig')}",
-                    workdir=str(root),
+                    workdir=root,
                 )
-            self._c.exec(container, make_command(env, "all"), workdir=str(root))
+            self._c.exec(container, make_command(env, "all"), workdir=root)
         finally:
             self._c.stop(container)
-        ctx.vmlinux = root / "vmlinux"
-        ctx.kernel_image = _image_path(root, arch)
+        ctx.vmlinux = Path(loc.vmlinux_in_tree)
+        ctx.kernel_image = Path(loc.image_in_tree)
+        cache.write_manifest(
+            self._workspace,
+            cache.Manifest(
+                kind="build",
+                label=label,
+                key=self._recipe.key,
+                version=self._recipe.version,
+                arch=self._recipe.arch,
+                storage_mode=ctx.host.storage_mode,
+                inputs=self._recipe.cache_inputs(),
+                paths={
+                    "kernel_root": loc.kernel_root,
+                    "vmlinux_in_tree": loc.vmlinux_in_tree,
+                    "image_in_tree": loc.image_in_tree,
+                    "image_host": loc.image_host,
+                    "gdb_mount_source": loc.gdb_mount_source,
+                    "gdb_mount_type": loc.gdb_mount_type,
+                    "gdb_vmlinux": loc.gdb_vmlinux,
+                },
+            ),
+        )
         return ctx

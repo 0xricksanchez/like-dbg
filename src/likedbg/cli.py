@@ -10,6 +10,7 @@ from pathlib import Path
 from loguru import logger
 
 from likedbg import docker_env
+from likedbg.cache import BuildRecipe
 from likedbg.config import load_settings
 from likedbg.container_service import ContainerService
 from likedbg.errors import LikeDbgError
@@ -27,11 +28,24 @@ from likedbg.stages.export import ArtifactExporter
 from likedbg.stages.rootfs import RootfsStage
 from likedbg.stages.unpack import UnpackStage
 
-_FRAGMENTS = [
+_FRAGMENTS = (
     "configs/fragments/debug.config",
     "configs/fragments/no-kaslr.config",
     "configs/fragments/generic.config",
-]
+)
+
+# Placeholder recipe used until T9 threads version + settings into build_pipeline.
+# Arch and compiler are arm64/clang (the primary target); make_vars mirror the
+# clang toolchain. frag_hashes is empty because the CLI does not hash fragments
+# at assembly time — T9 will replace this with cache.build_recipe(settings, ...).
+_PLACEHOLDER_RECIPE = BuildRecipe(
+    version="unknown",
+    arch="arm64",
+    compiler="clang",
+    make_vars=(("ARCH", "arm64"), ("LLVM", "1")),
+    frag_hashes=(),
+    fragments=_FRAGMENTS,
+)
 
 
 def _fetch(url: str, dest: Path) -> None:
@@ -65,8 +79,8 @@ def build_pipeline(
             UnpackStage(container, kernel_volume=kernel_volume, workspace=workspace),
             BuildStage(
                 container,
+                recipe=_PLACEHOLDER_RECIPE,
                 kbuilder_image="like_kbuilder_arm64:latest",
-                fragments=_FRAGMENTS,
                 workspace=workspace,
                 kernel_volume=kernel_volume,
             ),
