@@ -52,3 +52,14 @@ in **Volume mode** it is off-host (the zero-setup default on case-insensitive fi
 Chosen automatically and recorded on every Manifest; governs where a Kernel Build lives and
 how it is reached. See ADR-0002 for the mechanism.
 _Avoid_: naming the concept after the `storage_mode` field; mount type.
+
+### Container images
+
+**Container image**:
+One of the project's Docker build artifacts — `like_dbg_base` and the images built from it
+(kbuilder, rootfs, debugger, and the debuggee) — produced from the repo's `.dockerfile_*`
+files and kept current as a set. A Container image's Docker **tag** (e.g. `like_dbg_base:latest`)
+and its Docker **labels** are mechanisms of the image itself, distinct from a Kernel Build's
+consumable `Image` and from the cache's **Label**/**Manifest**.
+_Avoid_: conflating a Container image with a Kernel Build's `Image`; calling its Docker
+tag/label a cache "Label".

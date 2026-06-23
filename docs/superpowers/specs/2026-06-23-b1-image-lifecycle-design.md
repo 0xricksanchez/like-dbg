@@ -1,7 +1,7 @@
 # B1 — Image-build lifecycle — Design
 
 **Date:** 2026-06-23
-**Status:** approved (brainstormed)
+**Status:** approved (brainstormed + grilled against CONTEXT.md / ADR-0003); see ADR-0004
 **Branch:** `feat/b1-image-lifecycle` off `dev` → merged **locally** (per ROADMAP: `dev` stays local)
 **ROADMAP item:** §B foundation-completion, piece 1 of 3 (chosen first: smallest, independent, fully Mac-validatable).
 
@@ -29,6 +29,14 @@ are separate specs; B1 is independent of both.
   scripts); the hash is over those files' contents. A dockerfile-only hash would miss the rootfs
   bug (a changed baked script), so `build_inputs` covers `io/scripts/rootfs.sh` for the rootfs image.
 - **Debuggee image deferred to B2** (its first consumer; not built today, unvalidated).
+- **Required-image set is per run path:** the build-run ensures all of `IMAGES`; `--use`
+  (launch-only) ensures only `(BASE, DEBUGGER)` — it boots a cached build and never needs
+  kbuilder/rootfs.
+- **`build_inputs` completeness is test-enforced:** a strict test parses each dockerfile's
+  `COPY`/`ADD` and fails if a local source is missing from that image's `build_inputs` (and fails
+  on unhandled patterns like globs/dirs, forcing a conscious update).
+- **Glossary + ADR:** `Container image` added to `CONTEXT.md` (its Docker tag/label distinguished
+  from the cache **Label**); the staleness approach is recorded as **ADR-0004**.
 
 ## 3. Component design
 
@@ -99,11 +107,16 @@ def ensure_current(container: ContainerService, workspace: Path, specs: tuple[Im
   docker client is created, before the tmux check — alongside `--clean`/`--list` style): calls
   `images.build_images(container, workspace)` and returns 0. This is the canonical refresh.
 - On the **default run path** and the **`--use` path**, after the docker client is created and
-  before the pipeline runs, call `stale = images.ensure_current(container, workspace)`:
-  auto-builds missing required images; for each stale tag, `logger.warning(f"image {tag} looks "
-  f"stale (build inputs changed); run \`start_kgdb --build-images\` to refresh")`. The run proceeds.
-- `ensure_current` uses the full `IMAGES` set (base/kbuilder/rootfs/debugger) — all four are needed
-  by a build+boot+debug run; `--use` also needs the debugger image and tolerates the others present.
+  (build-run) after `require_volume_mode`, but **before `session.start`** (so missing-image build
+  logs and the stale WARN print in the base pane before `open_debug_layout` splits it), call
+  `stale = images.ensure_current(container, workspace, specs=<required set>)`: it auto-builds
+  missing required images and returns the stale tags. For each stale tag,
+  `logger.warning(f"image {tag} looks stale (build inputs changed); run \`start_kgdb --build-images\` to refresh")`.
+  The run proceeds.
+- **Required set per path:** the build-run passes all of `IMAGES` (base/kbuilder/rootfs/debugger —
+  all four are touched by build+boot+debug). `--use` passes `(BASE, DEBUGGER)` only — `DEBUGGER`
+  for gdb, `BASE` for the rare re-export when the host `Image` was deleted (`export.py` short-circuits
+  otherwise); it never builds a kernel or rootfs.
 
 ### 3.4 `justfile`
 
@@ -123,6 +136,11 @@ TDD per unit; tests in `./tests/`.
   edit the baked script, assert the hash moves — the rootfs-bug case); stable when unchanged.
 - **`IMAGES` manifest sanity:** base is first; every spec's `build_inputs[0] == spec.dockerfile`;
   rootfs's inputs include `io/scripts/rootfs.sh`; tags equal the `constants` values; debuggee absent.
+- **`build_inputs` completeness (the staleness guard's guard):** for each `ImageSpec`, parse its
+  dockerfile's `COPY`/`ADD` directives, collect local source paths (exclude URLs and `--from=`
+  stage copies), and assert each is present in `build_inputs`. **Strict:** an unhandled pattern
+  (glob/dir) fails the test, forcing a conscious update of both the test and `build_inputs`. Today
+  this asserts exactly that `io/scripts/rootfs.sh` is declared for the rootfs image.
 - **`build_images` / `ensure_current`:** fake `ContainerService` recording `build_image` calls and
   faking `image_exists`/`image_labels`. Assert: `build_images` calls in dependency order with the
   `input_sha` label; `ensure_current` builds a missing image, returns `[]` when all present+current,
@@ -149,9 +167,10 @@ TDD per unit; tests in `./tests/`.
 - **Auto-rebuild on stale** — we WARN, never rebuild mid-run (no surprise multi-minute builds).
 - **Upstream drift** — gef/pwndbg cloned in `.dockerfile_dbg`, the `ubuntu:26.04` base — not
   tracked; only local build-input *content* is hashed.
-- **COPY auto-parsing** — `build_inputs` is declared explicitly per image, not parsed from the
-  dockerfile (avoids glob/dir/`.dockerignore` fragility). If a future dockerfile `COPY`s a new
-  local file, its `build_inputs` must be updated in the same change (mirrors ADR-0003's rule that
-  output-affecting inputs belong in the key).
+- **Runtime COPY auto-parsing** — at run time `build_inputs` is the explicit, hashed list, not
+  parsed from the dockerfile (avoids glob/dir/`.dockerignore` fragility). A **test-time**
+  completeness check (§4) *does* parse `COPY`/`ADD` to enforce that `build_inputs` covers every
+  baked local file, so a future `COPY` lacking a `build_inputs` entry fails CI (mirrors
+  ADR-0003 / ADR-0004's declared-input discipline).
 - **`nocache` rebuilds** — `--build-images` uses normal layer-cached builds (Docker rebuilds changed
   layers); `nocache` stays an unused `build_image` parameter.
