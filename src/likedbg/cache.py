@@ -47,7 +47,12 @@ class BuildRecipe:
         return dict(self.make_vars)
 
     def cache_inputs(self) -> dict[str, str]:
-        inputs = {"version": self.version, "arch": self.arch, "compiler": self.compiler}
+        inputs = {
+            "version": self.version,
+            "arch": self.arch,
+            "compiler": self.compiler,
+            "kernel_tag": self.kernel_tag,
+        }
         inputs.update({f"frag:{name}": h for name, h in self.frag_hashes})
         return inputs
 
@@ -81,9 +86,7 @@ class RootfsRecipe:
 
 def build_recipe(settings: Settings, *, version: str, workspace: Path, fragments: list[str]) -> BuildRecipe:
     tc = resolve_toolchain(settings.kernel_builder.compiler, settings.general.arch)
-    frag_hashes = sorted(
-        (Path(rel).name, hashlib.sha256((workspace / rel).read_bytes()).hexdigest()) for rel in fragments
-    )
+    frag_hashes = sorted((rel, hashlib.sha256((workspace / rel).read_bytes()).hexdigest()) for rel in fragments)
     return BuildRecipe(
         version=version,
         arch=settings.general.arch,
