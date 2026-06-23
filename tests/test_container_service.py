@@ -74,3 +74,17 @@ def test_exec_wraps_command_in_shell():
     svc.exec(SimpleNamespace(exec_run=exec_run), "make -j$(nproc) all", workdir="/io/linux")
     assert captured["cmd"] == ["/bin/sh", "-c", "make -j$(nproc) all"]
     assert captured["workdir"] == "/io/linux"
+
+
+def test_run_detached_defaults_to_auto_remove():
+    client = FakeClient()
+    svc = ContainerService(client)
+    svc.run_detached("img", detach=True, tty=True)
+    assert client.containers.run_kwargs["auto_remove"] is True
+
+
+def test_run_detached_auto_remove_can_be_overridden():
+    client = FakeClient()
+    svc = ContainerService(client)
+    svc.run_detached("img", auto_remove=False, detach=True, tty=True)
+    assert client.containers.run_kwargs["auto_remove"] is False

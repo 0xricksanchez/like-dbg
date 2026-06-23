@@ -39,8 +39,16 @@ class ContainerService:
                 remedy="check the Dockerfile and that the container runtime is running",
             ) from exc
 
-    def run_detached(self, image: str, **kwargs: Any) -> Any:
-        return self._client.containers.run(image, **kwargs)
+    def run_detached(self, image: str, *, auto_remove: bool = True, **kwargs: Any) -> Any:
+        """Run a short-lived utility container detached and return its handle.
+
+        Intended for ephemeral helpers that do work then stop (unpack/build/rootfs/export/
+        adopt/cache-removal). ``auto_remove=True`` (default) lets the daemon delete the
+        container once it stops, so stopped containers do not accumulate. Long-lived guests
+        (the Debuggee and Debugger) are launched as tmux ``docker run`` pane commands, NOT
+        through this method.
+        """
+        return self._client.containers.run(image, auto_remove=auto_remove, **kwargs)
 
     def exec(self, container: Any, cmd: str, *, workdir: str | None = None) -> ExecResult:
         # Run via a shell so build commands using $(nproc), &&, and other shell
