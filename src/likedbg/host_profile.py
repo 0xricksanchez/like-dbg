@@ -101,7 +101,10 @@ class HostProfile:
         accel, mode = cls._resolve_accel(requested, capable_native_hvf, capable_kvm, os_name)
 
         storage = cls._resolve_storage(settings, os_name, workspace, probes)
-        addr = "host.docker.internal" if mode == "native-host" else "localhost"
+        # gdb is always containerized; on macOS it reaches QEMU via the host (the host process for
+        # native-HVF, or the in-container QEMU's published port). On Linux it shares the net/localhost.
+        # This realizes ADR-0001's "host.docker.internal on macOS" for the in-container case too.
+        addr = "localhost" if os_name == "linux" else "host.docker.internal"
         return cls(
             os=os_name,
             host_arch=host_arch,

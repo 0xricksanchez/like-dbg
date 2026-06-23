@@ -38,6 +38,13 @@ def test_x86_on_arm_mac_stays_in_container_tcg():
     assert (hp.accel, hp.debuggee_mode) == ("tcg", "in-container")
 
 
+def test_x86_on_arm_mac_gdbstub_is_host_docker_internal():
+    p = _probes(system="darwin", machine="arm64", hvf=True, qemu=False)
+    hp = HostProfile.detect(_settings("x86_64"), Path("/ws"), p)
+    assert hp.debuggee_mode == "in-container"
+    assert hp.gdbstub_addr == "host.docker.internal"  # in-container on macOS reaches the published port
+
+
 def test_linux_same_arch_with_kvm():
     p = _probes(system="linux", machine="x86_64", kvm=True)
     hp = HostProfile.detect(_settings("x86_64"), Path("/ws"), p)
