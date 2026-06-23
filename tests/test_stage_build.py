@@ -195,6 +195,7 @@ def test_build_reuses_when_manifest_present(tmp_path):
         kernel_volume="likedbg_ksrc",
     ).run(ctx)
     assert str(out.vmlinux) == f"/ksrc/{label}/vmlinux"
+    assert str(out.kernel_image) == f"/ksrc/{label}/arch/arm64/boot/Image"
     assert c.started is False
 
 
