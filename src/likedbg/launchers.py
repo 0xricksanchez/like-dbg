@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import shlex
 
+from likedbg.constants import VOLUME_MOUNT
+
 
 def qemu_pane_command(argv: list[str]) -> str:
     # shlex.join shell-quotes each token, so multi-word argv elements (e.g.
@@ -16,6 +18,8 @@ def qemu_pane_command(argv: list[str]) -> str:
 
 
 def gdb_pane_command(gdb_args: list[str], *, image: str, mount_source: str) -> str:
-    docker = f"docker run --rm -it --add-host=host.docker.internal:host-gateway -v {mount_source}:/ksrc:ro {image} "
+    docker = (
+        f"docker run --rm -it --add-host=host.docker.internal:host-gateway -v {mount_source}:{VOLUME_MOUNT}:ro {image} "
+    )
     # Quote the gdb argv too: `-ex "hbreak start_kernel"` must reach gdb as one arg.
     return docker + shlex.join(gdb_args)
