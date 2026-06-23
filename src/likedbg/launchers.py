@@ -15,7 +15,7 @@ def qemu_pane_command(argv: list[str]) -> str:
     return shlex.join(argv)
 
 
-def gdb_pane_command(gdb_args: list[str], *, image: str, kernel_volume: str) -> str:
-    docker = f"docker run --rm -it --add-host=host.docker.internal:host-gateway -v {kernel_volume}:/ksrc:ro {image} "
+def gdb_pane_command(gdb_args: list[str], *, image: str, mount_source: str) -> str:
+    docker = f"docker run --rm -it --add-host=host.docker.internal:host-gateway -v {mount_source}:/ksrc:ro {image} "
     # Quote the gdb argv too: `-ex "hbreak start_kernel"` must reach gdb as one arg.
     return docker + shlex.join(gdb_args)

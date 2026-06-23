@@ -9,9 +9,12 @@ from pathlib import Path
 
 from loguru import logger
 
+from likedbg import cache
 from likedbg import docker_env
 from likedbg.cache import BuildRecipe
 from likedbg.cache import RootfsRecipe
+from likedbg.cache import build_recipe as make_build_recipe
+from likedbg.cache import rootfs_recipe as make_rootfs_recipe
 from likedbg.config import load_settings
 from likedbg.container_service import ContainerService
 from likedbg.errors import LikeDbgError
@@ -25,6 +28,7 @@ from likedbg.stages.build import BuildStage
 from likedbg.stages.debuggee import DebuggeeStage
 from likedbg.stages.debugger import DebuggerStage
 from likedbg.stages.download import DownloadStage
+from likedbg.stages.download import resolve_version
 from likedbg.stages.export import ArtifactExporter
 from likedbg.stages.rootfs import RootfsStage
 from likedbg.stages.unpack import UnpackStage
@@ -33,26 +37,6 @@ _FRAGMENTS = (
     "configs/fragments/debug.config",
     "configs/fragments/no-kaslr.config",
     "configs/fragments/generic.config",
-)
-
-# Placeholder recipe used until T9 threads version + settings into build_pipeline.
-# Arch and compiler are arm64/clang (the primary target); make_vars mirror the
-# clang toolchain. frag_hashes is empty because the CLI does not hash fragments
-# at assembly time — T9 will replace this with cache.build_recipe(settings, ...).
-_PLACEHOLDER_RECIPE = BuildRecipe(
-    version="unknown",
-    arch="arm64",
-    compiler="clang",
-    make_vars=(("ARCH", "arm64"), ("LLVM", "1")),
-    frag_hashes=(),
-    fragments=_FRAGMENTS,
-)
-
-# Placeholder rootfs recipe used until T9 threads settings into build_pipeline.
-_PLACEHOLDER_ROOTFS_RECIPE = RootfsRecipe(
-    arch="arm64",
-    distribution="bookworm",
-    hostname="LIKE-DBG",
 )
 
 
@@ -70,6 +54,8 @@ def build_pipeline(
     debugger_image: str,
     ext: str,
     panes: tuple[int, int],
+    build_recipe: BuildRecipe,
+    rootfs_recipe: RootfsRecipe,
 ) -> Pipeline:
     debuggee_pane, debugger_pane = panes
 
@@ -78,8 +64,15 @@ def build_pipeline(
         session.send_keys(qemu_pane_command(argv))
 
     def run_gdb(args: list[str]) -> None:
+        loc = cache.locations(
+            build_recipe.label,
+            arch=build_recipe.arch,
+            storage_mode="volume",
+            workspace=workspace,
+            volume=kernel_volume,
+        )
         session.select_pane(debugger_pane)
-        session.send_keys(gdb_pane_command(args, image=debugger_image, kernel_volume=kernel_volume))
+        session.send_keys(gdb_pane_command(args, image=debugger_image, mount_source=loc.gdb_mount_source))
 
     return Pipeline(
         [
@@ -87,14 +80,14 @@ def build_pipeline(
             UnpackStage(container, kernel_volume=kernel_volume, workspace=workspace),
             BuildStage(
                 container,
-                recipe=_PLACEHOLDER_RECIPE,
+                recipe=build_recipe,
                 kbuilder_image="like_kbuilder_arm64:latest",
                 workspace=workspace,
                 kernel_volume=kernel_volume,
             ),
             RootfsStage(
                 container,
-                recipe=_PLACEHOLDER_ROOTFS_RECIPE,
+                recipe=rootfs_recipe,
                 rootfs_image="like_rootfs:latest",
                 workspace=workspace,
             ),
@@ -109,6 +102,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="start_kgdb")
     parser.add_argument("--config", "-c", default="")
     parser.add_argument("--verbose", "-v", action="store_true")
+    parser.add_argument("--force-rebuild", action="store_true")
     args = parser.parse_args(argv)
     if not os.getenv("TMUX"):
         logger.error("Not running inside a TMUX session. Start tmux first.")
@@ -120,12 +114,19 @@ def main(argv: list[str] | None = None) -> int:
             workspace / "configs" / "user.ini",
             custom_ini=Path(args.config) if args.config else None,
         )
+        version = resolve_version(settings.kernel_dl)
+        br = make_build_recipe(settings, version=version, workspace=workspace, fragments=list(_FRAGMENTS))
+        rr = make_rootfs_recipe(settings)
+        if args.force_rebuild:
+            mp = cache.manifest_path(workspace, "build", br.label)
+            mp.unlink(missing_ok=True)
         client = docker_env.make_client(docker_env.resolve_docker_host(env=os.environ))
         container = ContainerService(client)
         host = HostProfile.detect(settings, workspace)
         session = Session("LIKE-DBG")
         session.start("LIKE-DBG")
         panes = session.open_debug_layout()
+        ctx = PipelineContext(settings=settings, host=host, build_label=br.label, rootfs_label=rr.label)
         pipeline = build_pipeline(
             container,
             session,
@@ -135,8 +136,9 @@ def main(argv: list[str] | None = None) -> int:
             debugger_image="like_debugger:latest",
             ext=settings.debugger.ext,
             panes=panes,
+            build_recipe=br,
+            rootfs_recipe=rr,
         )
-        ctx = PipelineContext(settings=settings, host=host)
         pipeline.run(ctx)
         return 0
     except LikeDbgError as exc:
