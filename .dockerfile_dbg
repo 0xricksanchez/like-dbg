@@ -1,5 +1,5 @@
 FROM like_dbg_base:latest
-LABEL maintainer="Christopher Krah <admin@0x434b.dev>"
+LABEL maintainer="Christopher Krah <mail@0x434b.dev>"
 ENV DEBIAN_FRONTEND=noninteractive
 # UTF-8 locale so GEF/pwndbg can print their non-ASCII glyphs (e.g. ➤) without a
 # UnicodeEncodeError under the container's default ascii stdout encoding.
