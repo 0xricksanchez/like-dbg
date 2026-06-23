@@ -12,9 +12,11 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass
+from dataclasses import field
 from pathlib import Path
 
 from likedbg.config import Settings
+from likedbg.errors import CacheError
 from likedbg.toolchain import resolve_toolchain
 
 _SLUG_RE = re.compile(r"[^a-z0-9._-]+")
@@ -104,3 +106,45 @@ def rootfs_recipe(settings: Settings) -> RootfsRecipe:
         distribution=settings.rootfs.distribution,
         hostname=settings.rootfs.hostname,
     )
+
+
+@dataclass(frozen=True)
+class Manifest:
+    kind: str
+    label: str
+    key: str
+    version: str
+    arch: str
+    storage_mode: str
+    inputs: dict[str, str] = field(default_factory=dict)
+    paths: dict[str, str] = field(default_factory=dict)
+    created_at: str = ""
+    size_bytes: int = 0
+
+
+def manifest_path(workspace: Path, kind: str, label: str) -> Path:
+    return workspace / "artifacts" / "cache" / f"{kind}s" / f"{label}.json"
+
+
+def manifest_exists(workspace: Path, kind: str, label: str) -> bool:
+    return manifest_path(workspace, kind, label).exists()
+
+
+def write_manifest(workspace: Path, manifest: Manifest) -> Path:
+    path = manifest_path(workspace, manifest.kind, manifest.label)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(manifest.__dict__, indent=2, sort_keys=True))
+    tmp.replace(path)  # atomic on the same filesystem
+    return path
+
+
+def load_manifest(workspace: Path, kind: str, label: str) -> Manifest:
+    path = manifest_path(workspace, kind, label)
+    if not path.exists():
+        raise CacheError(f"no cached {kind} labelled {label!r}", remedy="run `start_kgdb --list`")
+    try:
+        data = json.loads(path.read_text())
+        return Manifest(**data)
+    except (ValueError, TypeError) as exc:
+        raise CacheError(f"corrupt manifest {path}", remedy=f"`start_kgdb --clean {label}` and rebuild") from exc
