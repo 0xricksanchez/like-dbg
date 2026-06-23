@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import shutil
+import tempfile
 from dataclasses import dataclass
 from dataclasses import field
 from pathlib import Path
@@ -37,6 +39,7 @@ def short_hash(key: str) -> str:
 
 
 def slug(text: str) -> str:
+    """Kebab-slug for Labels: lowercase, collapse runs of non-[a-z0-9._-] to '-', trim '-'."""
     return _SLUG_RE.sub("-", text.lower()).strip("-")
 
 
@@ -143,9 +146,15 @@ def manifest_exists(workspace: Path, kind: str, label: str) -> bool:
 def write_manifest(workspace: Path, manifest: Manifest) -> Path:
     path = manifest_path(workspace, manifest.kind, manifest.label)
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(manifest.__dict__, indent=2, sort_keys=True))
-    tmp.replace(path)  # atomic on the same filesystem
+    fd, tmp_name = tempfile.mkstemp(dir=path.parent, suffix=".json.tmp")
+    tmp = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w") as fh:
+            fh.write(json.dumps(manifest.__dict__, indent=2, sort_keys=True))
+        tmp.replace(path)  # atomic on the same filesystem
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
     return path
 
 
@@ -164,7 +173,7 @@ def list_manifests(workspace: Path, kind: str) -> list[Manifest]:
     registry = workspace / "artifacts" / "cache" / _KIND_DIR[kind]
     if not registry.is_dir():
         return []
-    return [load_manifest(workspace, kind, p.stem) for p in sorted(registry.glob("*.json"))]
+    return [load_manifest(workspace, kind, p.stem) for p in sorted(registry.glob("*.json"), key=lambda p: p.stem)]
 
 
 @dataclass(frozen=True)

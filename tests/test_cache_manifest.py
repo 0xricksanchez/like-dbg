@@ -72,3 +72,17 @@ def test_list_manifests_returns_all_of_a_kind_sorted(tmp_path):
     builds = list_manifests(tmp_path, "build")
     assert [m.label for m in builds] == ["linux-6.1.0-aaaa", "linux-6.6.30-bbbb"]
     assert [m.label for m in list_manifests(tmp_path, "rootfs")] == ["rootfs-arm64-bookworm-cccc"]
+
+
+def test_write_manifest_leaves_no_tmp_residue(tmp_path):
+    from likedbg.cache import Manifest
+    from likedbg.cache import write_manifest
+
+    write_manifest(
+        tmp_path,
+        Manifest(
+            kind="build", label="linux-6.6.30-zzzz", key="k", version="6.6.30", arch="arm64", storage_mode="volume"
+        ),
+    )
+    builds = tmp_path / "artifacts" / "cache" / "builds"
+    assert list(builds.glob("*.tmp")) == []

@@ -25,3 +25,15 @@ def test_slug_is_filesystem_safe():
     assert slug("6.6.30") == "6.6.30"
     assert slug("My Tag/v2") == "my-tag-v2"
     assert slug("--weird__") == "weird__"
+
+
+def test_slug_empty_string():
+    from likedbg.cache import slug
+
+    assert slug("") == ""
+
+
+def test_slug_already_clean_roundtrips():
+    from likedbg.cache import slug
+
+    assert slug("linux-6.6.30") == "linux-6.6.30"
