@@ -13,6 +13,7 @@ from loguru import logger
 
 from likedbg import cache
 from likedbg import docker_env
+from likedbg import images
 from likedbg.adopt import adopt_legacy_build
 from likedbg.cache import BuildRecipe
 from likedbg.cache import Manifest
@@ -203,6 +204,11 @@ def require_volume_mode(host: HostProfile) -> None:
         )
 
 
+def _ensure_images(container: ContainerService, workspace: Path, *, specs: tuple[images.ImageSpec, ...]) -> None:
+    for tag in images.ensure_current(container, workspace, specs):
+        logger.warning(f"image {tag} looks stale (build inputs changed); run `start_kgdb --build-images` to refresh")
+
+
 def _artifact_size(workspace: Path, manifest: Manifest) -> str:
     if manifest.kind == "build":
         image = workspace / "artifacts" / manifest.label / "Image"
@@ -255,6 +261,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--clean-all", action="store_true")
     parser.add_argument("--use", default="")
     parser.add_argument("--rootfs", default="")
+    parser.add_argument("--build-images", action="store_true")
     args = parser.parse_args(argv)
     try:
         workspace = Path.cwd()
@@ -267,12 +274,16 @@ def main(argv: list[str] | None = None) -> int:
         )
         client = docker_env.make_client(docker_env.resolve_docker_host(env=os.environ))
         container = ContainerService(client)
+        if args.build_images:
+            images.build_images(container, workspace)
+            return 0
         if args.clean or args.clean_all:
             return cmd_clean(container, workspace, label=args.clean or None, clean_all=args.clean_all)
         if args.use:
             if not os.getenv("TMUX"):
                 logger.error("Not running inside a TMUX session. Start tmux first.")
                 return 2
+            _ensure_images(container, workspace, specs=images.USE_IMAGES)
             session = Session("LIKE-DBG")
             session.start("LIKE-DBG")
             panes = session.open_debug_layout()
@@ -300,6 +311,7 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         host = HostProfile.detect(settings, workspace)
         require_volume_mode(host)
+        _ensure_images(container, workspace, specs=images.IMAGES)
         session = Session("LIKE-DBG")
         session.start("LIKE-DBG")
         panes = session.open_debug_layout()

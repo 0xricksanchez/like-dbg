@@ -17,7 +17,4 @@ lint:
 
 # Rebuild all container images from current dockerfiles (run after editing a dockerfile/script)
 build-images:
-    docker build -f .dockerfile_base     -t like_dbg_base:latest        --build-arg USER=user .
-    docker build -f .dockerfile_kbuilder -t like_kbuilder_arm64:latest  --build-arg USER=user .
-    docker build -f .dockerfile_rootfs   -t like_rootfs:latest          --build-arg USER=user .
-    docker build -f .dockerfile_dbg      -t like_debugger:latest        --build-arg USER=user .
+    uv run ./start_kgdb --build-images

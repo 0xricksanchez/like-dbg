@@ -155,3 +155,29 @@ def test_build_use_pipeline_is_launch_only(tmp_path):
         gdb_mount_source="likedbg_ksrc",
     )
     assert [s.name for s in pipe._stages] == ["export", "debuggee", "debugger"]  # type: ignore[attr-defined]
+
+
+def test_main_build_images_is_docker_only_and_invokes_build_images(monkeypatch):
+    import likedbg.cli as cli
+
+    built = []
+    monkeypatch.setattr(cli, "load_settings", lambda *a, **k: Settings())
+    monkeypatch.setattr(cli.docker_env, "resolve_docker_host", lambda env: "unix:///x")
+    monkeypatch.setattr(cli.docker_env, "make_client", lambda host: SimpleNamespace())
+    monkeypatch.setattr(cli.images, "build_images", lambda container, workspace, *a, **k: built.append(True))
+    monkeypatch.delenv("TMUX", raising=False)  # build-images must NOT require tmux
+
+    assert cli.main(["--build-images"]) == 0
+    assert built == [True]
+
+
+def test_ensure_images_helper_warns_each_stale_tag(monkeypatch):
+    import likedbg.cli as cli
+
+    monkeypatch.setattr(cli.images, "ensure_current", lambda container, workspace, specs: ["like_rootfs:latest"])
+    msgs = []
+    monkeypatch.setattr(cli.logger, "warning", lambda msg: msgs.append(msg))
+    cli._ensure_images(object(), object(), specs=())
+    assert len(msgs) == 1
+    assert "like_rootfs:latest" in msgs[0]
+    assert "--build-images" in msgs[0]
