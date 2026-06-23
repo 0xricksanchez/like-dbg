@@ -49,5 +49,9 @@ class ContainerError(LikeDbgError):
     """Failure interacting with the container runtime."""
 
 
+class CacheError(LikeDbgError):
+    """Failure resolving, reusing, or migrating a cached Kernel Build / rootfs."""
+
+
 class SessionError(LikeDbgError):
     """Failure driving the tmux session."""
