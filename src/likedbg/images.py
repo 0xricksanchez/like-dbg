@@ -17,10 +17,12 @@ from pathlib import Path
 from loguru import logger
 
 from likedbg.constants import BASE_IMAGE
+from likedbg.constants import DEBUGGEE_IMAGE
 from likedbg.constants import DEBUGGER_IMAGE
 from likedbg.constants import KBUILDER_IMAGE
 from likedbg.constants import ROOTFS_IMAGE
 from likedbg.container_service import ContainerService
+from likedbg.host_profile import HostProfile
 
 LABEL = "likedbg.input_sha"
 
@@ -39,9 +41,8 @@ IMAGES: tuple[ImageSpec, ...] = (
     ImageSpec(KBUILDER_IMAGE, ".dockerfile_kbuilder", (".dockerfile_kbuilder",), {"USER": "user"}),
     ImageSpec(ROOTFS_IMAGE, ".dockerfile_rootfs", (".dockerfile_rootfs", "io/scripts/rootfs.sh"), {"USER": "user"}),
     ImageSpec(DEBUGGER_IMAGE, ".dockerfile_dbg", (".dockerfile_dbg",), {"USER": "user"}),
+    ImageSpec(DEBUGGEE_IMAGE, ".dockerfile_dbge", (".dockerfile_dbge",), {"USER": "user"}),
 )
-# NOTE: the debuggee image (.dockerfile_dbge, FROM base) joins this manifest in B2 (x86_64-on-Mac),
-# its first consumer; intentionally absent now (unbuilt + unvalidated today).
 
 # `--use` is launch-only (boots a cached build): it needs gdb's debugger image, and base only for
 # the rare re-export when the host Image was deleted. It never builds a kernel or rootfs.
@@ -114,3 +115,11 @@ def ensure_current(container: ContainerService, workspace: Path, specs: tuple[Im
         elif container.image_labels(s.tag).get(LABEL) != want:
             stale.append(s.tag)
     return stale
+
+
+def required_for(host: HostProfile) -> tuple[ImageSpec, ...]:
+    """Images a build+boot+debug run needs: the four base images always, plus the debuggee image
+    only for in-container runs (a native-host run launches QEMU on the host and never uses it)."""
+    if host.debuggee_mode == "in-container":
+        return IMAGES
+    return tuple(s for s in IMAGES if s.tag != DEBUGGEE_IMAGE)

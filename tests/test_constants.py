@@ -13,9 +13,14 @@ def test_image_tags_are_tagged_latest():
         constants.KBUILDER_IMAGE,
         constants.ROOTFS_IMAGE,
         constants.DEBUGGER_IMAGE,
+        constants.DEBUGGEE_IMAGE,
     ):
         assert tag.endswith(":latest")
 
 
 def test_base_image_is_like_dbg_base():
     assert constants.BASE_IMAGE == "like_dbg_base:latest"
+
+
+def test_debuggee_image_value():
+    assert constants.DEBUGGEE_IMAGE == "like_debuggee:latest"

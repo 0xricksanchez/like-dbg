@@ -34,18 +34,45 @@ def test_input_sha_ignores_files_not_in_build_inputs(tmp_path):
 
 
 def test_images_manifest_shape():
+    from likedbg.constants import DEBUGGEE_IMAGE
+
     assert images.IMAGES[0].tag == BASE_IMAGE  # base first (dependency order)
-    assert {s.tag for s in images.IMAGES} == {BASE_IMAGE, KBUILDER_IMAGE, ROOTFS_IMAGE, DEBUGGER_IMAGE}
+    assert {s.tag for s in images.IMAGES} == {BASE_IMAGE, KBUILDER_IMAGE, ROOTFS_IMAGE, DEBUGGER_IMAGE, DEBUGGEE_IMAGE}
     for s in images.IMAGES:
         assert s.build_inputs[0] == s.dockerfile  # dockerfile is always input[0]
         assert s.buildargs == {"USER": "user"}
     rootfs = next(s for s in images.IMAGES if s.tag == ROOTFS_IMAGE)
     assert "io/scripts/rootfs.sh" in rootfs.build_inputs  # the baked script (prior-bug file)
-    assert all(".dockerfile_dbge" != s.dockerfile for s in images.IMAGES)  # debuggee deferred to B2
+    debuggee = next(s for s in images.IMAGES if s.tag == DEBUGGEE_IMAGE)
+    assert debuggee.dockerfile == ".dockerfile_dbge"
 
 
 def test_use_images_is_base_and_debugger_in_order():
     assert tuple(s.tag for s in images.USE_IMAGES) == (BASE_IMAGE, DEBUGGER_IMAGE)
+
+
+def _host(mode):
+    from likedbg.host_profile import HostProfile
+
+    return HostProfile(
+        os="darwin",
+        host_arch="arm64",
+        accel="tcg",
+        debuggee_mode=mode,
+        storage_mode="volume",
+        gdbstub_addr="host.docker.internal",
+        ssh_addr="host.docker.internal",
+    )
+
+
+def test_required_for_includes_debuggee_only_in_container():
+    from likedbg.constants import DEBUGGEE_IMAGE
+
+    in_container = {s.tag for s in images.required_for(_host("in-container"))}
+    native = {s.tag for s in images.required_for(_host("native-host"))}
+    assert DEBUGGEE_IMAGE in in_container
+    assert DEBUGGEE_IMAGE not in native
+    assert len(native) == 4 and len(in_container) == 5
 
 
 def test_copy_sources_parses_literal_local_files():
