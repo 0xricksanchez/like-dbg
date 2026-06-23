@@ -1,5 +1,5 @@
-FROM ubuntu:24.04
-LABEL maintainer="Christopher Krah <admin@0x434b.dev>"
+FROM ubuntu:26.04
+LABEL maintainer="Christopher Krah <mail@0x434b.dev>"
 ENV DEBIAN_FRONTEND=noninteractive
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ARG USER=user
