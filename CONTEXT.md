@@ -45,3 +45,10 @@ _Avoid_: index, metadata.
 The collection of reusable Kernel Builds and rootfs images, keyed by configuration so an
 identical configuration is never rebuilt.
 _Avoid_: store, cache store.
+
+**Storage mode**:
+Whether the kernel source tree is host-visible. In **Bind mode** the tree is host-editable;
+in **Volume mode** it is off-host (the zero-setup default on case-insensitive filesystems).
+Chosen automatically and recorded on every Manifest; governs where a Kernel Build lives and
+how it is reached. See ADR-0002 for the mechanism.
+_Avoid_: naming the concept after the `storage_mode` field; mount type.
