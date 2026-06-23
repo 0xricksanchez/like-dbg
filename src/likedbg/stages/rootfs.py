@@ -72,6 +72,11 @@ class RootfsStage:
         for line in container.logs(stream=True, follow=True):
             _ = line
         self._c.stop(container)
+        if not target.exists():
+            raise RootfsError(
+                f"rootfs build did not produce {target}",
+                remedy="inspect the rootfs build (rootfs.sh) logs; the container exited without writing the image",
+            )
         ctx.rootfs_image = target
         cache.write_manifest(
             self._workspace,

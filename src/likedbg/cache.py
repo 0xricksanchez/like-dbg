@@ -122,8 +122,13 @@ class Manifest:
     size_bytes: int = 0
 
 
+# Registry sub-directory per artifact kind (spec §4.3). NOT f"{kind}s" — that would
+# pluralize "rootfs" to the wrong "rootfss".
+_KIND_DIR = {"build": "builds", "rootfs": "rootfs"}
+
+
 def manifest_path(workspace: Path, kind: str, label: str) -> Path:
-    return workspace / "artifacts" / "cache" / f"{kind}s" / f"{label}.json"
+    return workspace / "artifacts" / "cache" / _KIND_DIR[kind] / f"{label}.json"
 
 
 def manifest_exists(workspace: Path, kind: str, label: str) -> bool:

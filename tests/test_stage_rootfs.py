@@ -10,6 +10,7 @@ from likedbg.cache import write_manifest
 from likedbg.config import Settings
 from likedbg.container_service import ContainerService
 from likedbg.errors import CacheError
+from likedbg.errors import RootfsError
 from likedbg.host_profile import HostProfile
 from likedbg.pipeline import PipelineContext
 from likedbg.stages.rootfs import RootfsStage
@@ -62,9 +63,13 @@ def test_rootfs_target_path():
 def test_run_starts_privileged_container_and_sets_rootfs(tmp_path):
     c = FakeC()
     ctx = _ctx(tmp_path)
+    # Simulate the build container producing the image (FakeC runs no real container).
+    target = rootfs_target(tmp_path, _rrecipe().label)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(b"img")
     out = RootfsStage(c, recipe=_rrecipe(), rootfs_image="like_rootfs", workspace=tmp_path).run(ctx)
     assert c.run_kwargs["privileged"] is True
-    assert out.rootfs_image == tmp_path / "artifacts" / "rootfs" / f"{_rrecipe().label}.img"
+    assert out.rootfs_image == target
 
 
 def test_rootfs_reuses_present_image_without_rebuild(tmp_path):
@@ -116,7 +121,22 @@ def test_rootfs_builds_and_writes_manifest_on_miss(tmp_path):
     c = FakeC()
     ctx = _ctx(tmp_path)
     ctx.rootfs_label = _rrecipe().label
+    # Simulate the build container producing the image (FakeC runs no real container).
+    target = rootfs_target(tmp_path, _rrecipe().label)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(b"img")
     out = RootfsStage(c, recipe=_rrecipe(), rootfs_image="like_rootfs", workspace=tmp_path).run(ctx)
-    assert out.rootfs_image == tmp_path / "artifacts" / "rootfs" / f"{_rrecipe().label}.img"
+    assert out.rootfs_image == target
     assert manifest_exists(tmp_path, "rootfs", _rrecipe().label) is True
     assert c.run_kwargs["privileged"] is True
+
+
+def test_rootfs_build_without_image_raises_and_writes_no_manifest(tmp_path):
+    # If the build container exits without producing the image, fail loudly — never write a
+    # manifest claiming a cached rootfs that does not exist (the live-gate bug).
+    c = FakeC()
+    ctx = _ctx(tmp_path)
+    ctx.rootfs_label = _rrecipe().label
+    with pytest.raises(RootfsError):
+        RootfsStage(c, recipe=_rrecipe(), rootfs_image="like_rootfs", workspace=tmp_path).run(ctx)
+    assert manifest_exists(tmp_path, "rootfs", _rrecipe().label) is False

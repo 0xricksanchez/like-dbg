@@ -26,6 +26,12 @@ def test_manifest_path_layout(tmp_path):
     assert p == tmp_path / "artifacts" / "cache" / "builds" / "linux-6.6.30-gef-a1b2c3d4.json"
 
 
+def test_manifest_path_rootfs_kind_is_not_double_pluralized(tmp_path):
+    # "rootfs" must map to the "rootfs" dir, NOT "rootfss" (spec §4.3).
+    p = manifest_path(tmp_path, "rootfs", "rootfs-arm64-bookworm-deadbeef")
+    assert p == tmp_path / "artifacts" / "cache" / "rootfs" / "rootfs-arm64-bookworm-deadbeef.json"
+
+
 def test_write_then_load_roundtrip(tmp_path):
     assert manifest_exists(tmp_path, "build", _m().label) is False
     write_manifest(tmp_path, _m())
