@@ -10,7 +10,8 @@
 
 ## Global Constraints
 
-- Run everything via `uv run` (e.g. `uv run pytest`, `uv run mypy src`, `uv run ruff check`).
+- Run everything via `uv run` (e.g. `uv run pytest`, `uv run mypy src/likedbg`, `uv run ruff check`).
+- NOTE: type-check with `uv run mypy src/likedbg` (the project's mypy `files` scope). Do NOT run `uv run mypy src/likedbg` — it overrides the config scope and trips over the quarantined legacy `src/debuggee.py` ("found twice under different module names"), which is unrelated to this work.
 - Tests live in `./tests/`; package lives in `src/likedbg/`. Quarantined legacy `src/*.py` is ruff-excluded — **do not touch it**.
 - TDD: write the failing test first, watch it fail, implement minimally, watch it pass, commit.
 - `mypy --strict`, `ruff check`, and `ruff format --check` must all be green before each commit.
@@ -96,7 +97,7 @@ Expected: PASS (3 tests).
 
 - [ ] **Step 5: Lint + type-check**
 
-Run: `uv run ruff check src/likedbg/constants.py tests/test_constants.py && uv run ruff format src/likedbg/constants.py tests/test_constants.py && uv run mypy src`
+Run: `uv run ruff check src/likedbg/constants.py tests/test_constants.py && uv run ruff format src/likedbg/constants.py tests/test_constants.py && uv run mypy src/likedbg`
 Expected: no errors.
 
 - [ ] **Step 6: Commit**
@@ -244,7 +245,7 @@ Apply:
 
 - [ ] **Step 7: Run the full suite + lint + types**
 
-Run: `uv run ruff format src tests && uv run ruff check src tests && uv run mypy src && uv run pytest -q`
+Run: `uv run ruff format src tests && uv run ruff check src tests && uv run mypy src/likedbg && uv run pytest -q`
 Expected: ruff/mypy clean; pytest 128+ passed (the existing suite is unchanged — `test_cache_locations.py` still sees `gdb_mount_source == "likedbg_ksrc"` because `KERNEL_VOLUME == "likedbg_ksrc"`).
 
 - [ ] **Step 8: Commit**
@@ -314,7 +315,7 @@ Expected: PASS (all, including the two new ones and the existing `test_run_detac
 
 - [ ] **Step 5: Lint + type-check + full suite**
 
-Run: `uv run ruff check src tests && uv run mypy src && uv run pytest -q`
+Run: `uv run ruff check src tests && uv run mypy src/likedbg && uv run pytest -q`
 Expected: clean; full suite green (the stage tests use their own `run_detached` fakes, so they are unaffected).
 
 - [ ] **Step 6: Commit**
@@ -382,7 +383,7 @@ Expected: PASS — the new guard test plus the existing volume-build and rootfs 
 
 - [ ] **Step 5: Lint + type-check**
 
-Run: `uv run ruff check src tests && uv run mypy src`
+Run: `uv run ruff check src tests && uv run mypy src/likedbg`
 Expected: clean.
 
 - [ ] **Step 6: Commit**
@@ -454,7 +455,7 @@ Expected: PASS — both new tests plus the three existing adopt tests (the succe
 
 - [ ] **Step 5: Lint + type-check**
 
-Run: `uv run ruff check src tests && uv run mypy src`
+Run: `uv run ruff check src tests && uv run mypy src/likedbg`
 Expected: clean.
 
 - [ ] **Step 6: Commit**
@@ -563,7 +564,7 @@ def write_manifest(workspace: Path, manifest: Manifest) -> Path:
 
 - [ ] **Step 7: Run tests + lint + types + full suite**
 
-Run: `uv run ruff format src tests && uv run ruff check src tests && uv run mypy src && uv run pytest -q`
+Run: `uv run ruff format src tests && uv run ruff check src tests && uv run mypy src/likedbg && uv run pytest -q`
 Expected: clean; full suite green (`load_manifest` round-trips the freshly written manifest; `list_manifests` ordering tests unchanged).
 
 - [ ] **Step 8: Commit**
@@ -577,7 +578,7 @@ git commit -m "refactor(cache): slug docstring, explicit list_manifests sort, un
 
 ## Final verification (whole branch)
 
-- [ ] **Full gate:** `uv run ruff format --check src tests && uv run ruff check src tests && uv run mypy src && uv run pytest -q` — all green.
+- [ ] **Full gate:** `uv run ruff format --check src tests && uv run ruff check src tests && uv run mypy src/likedbg && uv run pytest -q` — all green.
 - [ ] **Spec coverage:** items #1 (Task 4), #2 (Tasks 1-2), #3 (Task 5), #4 (Task 2 / export.py), #5 (Task 6 slug + list_manifests), #6 (Task 6 write_manifest), #7 (Task 3) — all implemented.
 - [ ] **Live gate (on the M5, volume mode), per spec §5:** run `uv run ./start_kgdb`; confirm (1) `docker ps -a` shows no leftover `like_dbg_base` / `like_kbuilder_arm64` / `like_rootfs` helper containers after the run, and (2) a deliberately-broken build still surfaces full output via `ContainerError`.
 - [ ] **Finish:** use `superpowers:finishing-a-development-branch` to merge `chore/section-a-hardening` into `dev` **locally** (no push); then update the ROADMAP §A (mark items cleared) and the project memory.
