@@ -21,6 +21,7 @@ from likedbg.cache import build_recipe as make_build_recipe
 from likedbg.cache import rootfs_recipe as make_rootfs_recipe
 from likedbg.config import load_settings
 from likedbg.container_service import ContainerService
+from likedbg.errors import CacheError
 from likedbg.errors import HostCapabilityError
 from likedbg.errors import LikeDbgError
 from likedbg.host_profile import HostProfile
@@ -138,6 +139,20 @@ def cmd_list(workspace: Path) -> int:
     return 0
 
 
+def cmd_clean(container: ContainerService, workspace: Path, *, label: str | None, clean_all: bool) -> int:
+    if clean_all:
+        targets = [*cache.list_manifests(workspace, "build"), *cache.list_manifests(workspace, "rootfs")]
+    else:
+        kind = next((k for k in ("build", "rootfs") if cache.manifest_exists(workspace, k, label or "")), None)
+        if kind is None:
+            raise CacheError(f"no cached artifact labelled {label!r}", remedy="run `start_kgdb --list`")
+        targets = [cache.load_manifest(workspace, kind, label or "")]
+    for m in targets:
+        cache.remove_cached(container, workspace, m)
+        logger.info(f"removed {m.kind} {m.label}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="start_kgdb")
     parser.add_argument("--config", "-c", default="")
@@ -145,6 +160,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--force-rebuild", action="store_true")
     parser.add_argument("--adopt", action="store_true")
     parser.add_argument("--list", action="store_true")
+    parser.add_argument("--clean", default="")
+    parser.add_argument("--clean-all", action="store_true")
     args = parser.parse_args(argv)
     try:
         workspace = Path.cwd()
@@ -163,6 +180,8 @@ def main(argv: list[str] | None = None) -> int:
             mp.unlink(missing_ok=True)
         client = docker_env.make_client(docker_env.resolve_docker_host(env=os.environ))
         container = ContainerService(client)
+        if args.clean or args.clean_all:
+            return cmd_clean(container, workspace, label=args.clean or None, clean_all=args.clean_all)
         if args.adopt:
             label = adopt_legacy_build(container, workspace=workspace, recipe=br)
             logger.info(f"adopted legacy build as {label}")

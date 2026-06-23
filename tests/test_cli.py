@@ -2,18 +2,35 @@ from types import SimpleNamespace
 
 import pytest
 
+from likedbg import cache
 from likedbg.cache import Manifest
 from likedbg.cache import build_recipe
 from likedbg.cache import rootfs_recipe
 from likedbg.cache import write_manifest
 from likedbg.cli import build_pipeline
+from likedbg.cli import cmd_clean
 from likedbg.cli import require_volume_mode
 from likedbg.cli import summarize_cache
 from likedbg.config import Settings
 from likedbg.container_service import ContainerService
+from likedbg.errors import CacheError
 from likedbg.errors import HostCapabilityError
 from likedbg.host_profile import HostProfile
 from likedbg.session import Session
+
+
+class _FakeContainer(ContainerService):
+    def __init__(self):
+        pass
+
+    def run_detached(self, image, **kwargs):
+        return SimpleNamespace(id="c1")
+
+    def exec(self, container, cmd, *, workdir=None):
+        return SimpleNamespace(exit_code=0, output="")
+
+    def stop(self, container):
+        pass
 
 
 def test_build_pipeline_includes_all_stage_names(tmp_path):
@@ -77,3 +94,20 @@ def test_summarize_cache_lists_build_and_rootfs(tmp_path):
     assert "linux-6.6.30-aaaa" in joined and "6.6.30" in joined
     assert "rootfs-arm64-bookworm-cccc" in joined
     assert "build" in joined and "rootfs" in joined
+
+
+def test_cmd_clean_unknown_label_raises(tmp_path):
+    with pytest.raises(CacheError):
+        cmd_clean(_FakeContainer(), tmp_path, label="nope", clean_all=False)
+
+
+def test_cmd_clean_all_removes_every_manifest(tmp_path):
+    write_manifest(tmp_path, Manifest(kind="build", label="linux-6.6.30-aaaa", key="k",
+                                      version="6.6.30", arch="arm64", storage_mode="volume"))
+    write_manifest(tmp_path, Manifest(kind="rootfs", label="rootfs-arm64-bookworm-cccc", key="k",
+                                      version="", arch="arm64", storage_mode="volume",
+                                      paths={"image_host": str(tmp_path / "gone.img")}))
+    rc = cmd_clean(_FakeContainer(), tmp_path, label=None, clean_all=True)
+    assert rc == 0
+    assert cache.list_manifests(tmp_path, "build") == []
+    assert cache.list_manifests(tmp_path, "rootfs") == []
