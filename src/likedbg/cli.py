@@ -104,6 +104,91 @@ def build_pipeline(
     )
 
 
+def build_use_pipeline(
+    container: ContainerService,
+    session: Session,
+    *,
+    workspace: Path,
+    kernel_volume: str,
+    debugger_image: str,
+    ext: str,
+    panes: tuple[int, int],
+    gdb_mount_source: str,
+) -> Pipeline:
+    debuggee_pane, debugger_pane = panes
+
+    def launch_qemu(argv: list[str]) -> None:
+        session.select_pane(debuggee_pane)
+        session.send_keys(qemu_pane_command(argv))
+
+    def run_gdb(args: list[str]) -> None:
+        session.select_pane(debugger_pane)
+        session.send_keys(gdb_pane_command(args, image=debugger_image, mount_source=gdb_mount_source))
+
+    return Pipeline(
+        [
+            ArtifactExporter(container, kernel_volume=kernel_volume, workspace=workspace),
+            DebuggeeStage(launch=launch_qemu),
+            DebuggerStage(ext=ext, run_gdb=run_gdb, breakpoint="start_kernel"),
+        ]
+    )
+
+
+def cmd_use(
+    container: ContainerService,
+    session: Session,
+    workspace: Path,
+    *,
+    label: str,
+    rootfs_label: str | None,
+    panes: tuple[int, int],
+) -> int:
+    if not cache.manifest_exists(workspace, "build", label):
+        raise CacheError(f"no cached build labelled {label!r}", remedy="run `start_kgdb --list`")
+    bm = cache.load_manifest(workspace, "build", label)
+    # Build identity (arch) is authoritative; reload settings with the arch override so the
+    # host profile / QEMU follow the cached build, keeping runtime+debugger prefs from config.
+    use_settings = load_settings(
+        workspace / "configs" / "system.ini",
+        workspace / "configs" / "user.ini",
+        overrides={"general": {"arch": bm.arch}},
+    )
+    host = HostProfile.detect(use_settings, workspace)
+    require_volume_mode(host)
+    rlabel = rootfs_label or make_rootfs_recipe(use_settings).label
+    if not cache.manifest_exists(workspace, "rootfs", rlabel):
+        raise CacheError(
+            f"no cached rootfs labelled {rlabel!r}",
+            remedy="run `start_kgdb` once to build a rootfs, or pass --rootfs <label> (see `--list`)",
+        )
+    rm = cache.load_manifest(workspace, "rootfs", rlabel)
+    rootfs_image = Path(rm.paths["image_host"])
+    if not rootfs_image.is_file():
+        raise CacheError(f"cached rootfs {rlabel} image is gone", remedy=f"`start_kgdb --clean {rlabel}` and rebuild")
+    ctx = PipelineContext(
+        settings=use_settings,
+        host=host,
+        kernel_root=Path(bm.paths["kernel_root"]),
+        vmlinux=Path(bm.paths["gdb_vmlinux"]),
+        kernel_image=Path(bm.paths["image_in_tree"]),
+        rootfs_image=rootfs_image,
+        build_label=label,
+        rootfs_label=rlabel,
+    )
+    pipeline = build_use_pipeline(
+        container,
+        session,
+        workspace=workspace,
+        kernel_volume="likedbg_ksrc",
+        debugger_image="like_debugger:latest",
+        ext=use_settings.debugger.ext,
+        panes=panes,
+        gdb_mount_source=bm.paths["gdb_mount_source"],
+    )
+    pipeline.run(ctx)
+    return 0
+
+
 def require_volume_mode(host: HostProfile) -> None:
     if host.storage_mode != "volume":
         raise HostCapabilityError(
@@ -162,6 +247,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--list", action="store_true")
     parser.add_argument("--clean", default="")
     parser.add_argument("--clean-all", action="store_true")
+    parser.add_argument("--use", default="")
+    parser.add_argument("--rootfs", default="")
     args = parser.parse_args(argv)
     try:
         workspace = Path.cwd()
@@ -189,11 +276,13 @@ def main(argv: list[str] | None = None) -> int:
         if not os.getenv("TMUX"):
             logger.error("Not running inside a TMUX session. Start tmux first.")
             return 2
-        host = HostProfile.detect(settings, workspace)
-        require_volume_mode(host)
         session = Session("LIKE-DBG")
         session.start("LIKE-DBG")
         panes = session.open_debug_layout()
+        if args.use:
+            return cmd_use(container, session, workspace, label=args.use, rootfs_label=args.rootfs or None, panes=panes)
+        host = HostProfile.detect(settings, workspace)
+        require_volume_mode(host)
         ctx = PipelineContext(settings=settings, host=host, build_label=br.label, rootfs_label=rr.label)
         pipeline = build_pipeline(
             container,
