@@ -111,8 +111,9 @@ def test_summarize_cache_lists_build_and_rootfs(tmp_path):
 
 
 def test_cmd_clean_unknown_label_raises(tmp_path):
-    with pytest.raises(CacheError):
+    with pytest.raises(CacheError) as exc:
         cmd_clean(_FakeContainer(), tmp_path, label="nope", clean_all=False)
+    assert "start_kgdb --list" in (exc.value.remedy or "")
 
 
 def test_cmd_clean_all_removes_every_manifest(tmp_path):

@@ -5,8 +5,8 @@ from __future__ import annotations
 import argparse
 import os
 import urllib.request
+from datetime import UTC
 from datetime import datetime
-from datetime import timezone
 from pathlib import Path
 
 from loguru import logger
@@ -139,6 +139,7 @@ def cmd_use(
     session: Session,
     workspace: Path,
     *,
+    custom_ini: Path | None,
     label: str,
     rootfs_label: str | None,
     panes: tuple[int, int],
@@ -151,6 +152,7 @@ def cmd_use(
     use_settings = load_settings(
         workspace / "configs" / "system.ini",
         workspace / "configs" / "user.ini",
+        custom_ini=custom_ini,
         overrides={"general": {"arch": bm.arch}},
     )
     host = HostProfile.detect(use_settings, workspace)
@@ -213,7 +215,7 @@ def summarize_cache(workspace: Path) -> list[str]:
     lines = ["kind    label  version  arch  size  created"]
     for m in [*builds, *rootfs]:
         mp = cache.manifest_path(workspace, m.kind, m.label)
-        created = datetime.fromtimestamp(mp.stat().st_mtime, tz=timezone.utc).date().isoformat()  # noqa: UP017
+        created = datetime.fromtimestamp(mp.stat().st_mtime, tz=UTC).date().isoformat()
         lines.append(f"{m.kind}  {m.label}  {m.version or '-'}  {m.arch}  {_artifact_size(workspace, m)}  {created}")
     return lines
 
@@ -259,16 +261,32 @@ def main(argv: list[str] | None = None) -> int:
             workspace / "configs" / "user.ini",
             custom_ini=Path(args.config) if args.config else None,
         )
-        version = resolve_version(settings.kernel_dl)
-        br = make_build_recipe(settings, version=version, workspace=workspace, fragments=list(_FRAGMENTS))
-        rr = make_rootfs_recipe(settings)
-        if args.force_rebuild:
-            mp = cache.manifest_path(workspace, "build", br.label)
-            mp.unlink(missing_ok=True)
         client = docker_env.make_client(docker_env.resolve_docker_host(env=os.environ))
         container = ContainerService(client)
         if args.clean or args.clean_all:
             return cmd_clean(container, workspace, label=args.clean or None, clean_all=args.clean_all)
+        if args.use:
+            if not os.getenv("TMUX"):
+                logger.error("Not running inside a TMUX session. Start tmux first.")
+                return 2
+            session = Session("LIKE-DBG")
+            session.start("LIKE-DBG")
+            panes = session.open_debug_layout()
+            return cmd_use(
+                container,
+                session,
+                workspace,
+                custom_ini=Path(args.config) if args.config else None,
+                label=args.use,
+                rootfs_label=args.rootfs or None,
+                panes=panes,
+            )
+        # --adopt and the default run both need the recipes (and the network/hash work):
+        version = resolve_version(settings.kernel_dl)
+        br = make_build_recipe(settings, version=version, workspace=workspace, fragments=list(_FRAGMENTS))
+        rr = make_rootfs_recipe(settings)
+        if args.force_rebuild:
+            cache.manifest_path(workspace, "build", br.label).unlink(missing_ok=True)
         if args.adopt:
             label = adopt_legacy_build(container, workspace=workspace, recipe=br)
             logger.info(f"adopted legacy build as {label}")
@@ -276,13 +294,11 @@ def main(argv: list[str] | None = None) -> int:
         if not os.getenv("TMUX"):
             logger.error("Not running inside a TMUX session. Start tmux first.")
             return 2
+        host = HostProfile.detect(settings, workspace)
+        require_volume_mode(host)
         session = Session("LIKE-DBG")
         session.start("LIKE-DBG")
         panes = session.open_debug_layout()
-        if args.use:
-            return cmd_use(container, session, workspace, label=args.use, rootfs_label=args.rootfs or None, panes=panes)
-        host = HostProfile.detect(settings, workspace)
-        require_volume_mode(host)
         ctx = PipelineContext(settings=settings, host=host, build_label=br.label, rootfs_label=rr.label)
         pipeline = build_pipeline(
             container,
