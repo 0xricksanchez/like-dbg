@@ -11,8 +11,9 @@ can continue the rework with one prompt. `dev` represents the FULL rewrite and s
 
 ## Status (2026-06-23)
 
-M1 Sub-project A (Foundation) is complete and extended; all merged to `dev` (tip `7aadbfd`).
-The §A deferred-polish batch landed 2026-06-23 (see §A below — all 7 items cleared).
+M1 Sub-project A (Foundation) is complete and extended; all merged to `dev` (tip `ee61257`).
+Landed 2026-06-23: the §A deferred-polish batch (all 7 items cleared) and §B1 image-build
+lifecycle (see §A / §B below). Next unstarted: §B2 (x86_64-on-Mac TCG).
 Don't re-derive history — read these:
 - Project state & decisions: the auto-loaded memory `project-like-dbg-revival.md`.
 - Glossary: `CONTEXT.md`. Decisions: `docs/adr/0001..0003`.
@@ -63,17 +64,35 @@ in `constants.py`; exact-value asserts for KBUILDER/ROOTFS/DEBUGGER in `test_con
 `cache.py` comment still says `/ksrc` literally; a few function-scope test imports vs module-level.
 
 ### B. Foundation completion (medium; finishes Sub-project A's stated scope)
-- **x86_64-on-Mac end-to-end:** the CLI assembly is native-HVF-only today; wire the
-  in-container TCG debuggee path (the `.dockerfile_dbge` debuggee image) + validate
-  build→boot→debug for x86_64 on the Mac (ADR-0001 says x86_64-on-Mac stays in-container TCG).
-- **Image-build lifecycle:** `ContainerService.build_image` exists but is only invoked via
-  `just build-images`. Wire it into the package (a `--build-images`/`force_rebuild` path,
-  and/or auto-build-if-missing) so image currency isn't a manual step.
-- **bind/Linux runtime (un-gate `require_volume_mode`):** the cache architecture is already
+Decomposed (2026-06-23) into three independent pieces: **B1** image-build lifecycle (done),
+**B2** x86_64-on-Mac TCG, **B3** un-gate bind/Linux. B2 builds the in-container launch seam
+that B3 reuses, so B2 before B3; B3 can't be fully live-gated on a macOS host. **Key grounding:**
+`host_profile.detect` ALREADY resolves every case (`debuggee_mode` in-container/native-host,
+`accel` hvf/kvm/tcg, `storage_mode`) and `DebuggeeStage` takes an injected `launch` callable —
+so B2/B3 are downstream WIRING (a `qemu_container_command` + gdbstub networking, storage_mode
+threading), not detection.
+- **B1 — Image-build lifecycle — ✅ DONE (2026-06-23; merged to `dev`, commits `fc679eb..ee61257`):**
+  new `src/likedbg/images.py` (`IMAGES` manifest + `input_sha` content hash over declared
+  `build_inputs` + `build_images`/`ensure_current`), `ContainerService.build_image(labels=)` +
+  `image_labels`, `--build-images` CLI dispatch + auto-build-missing/stale-WARN on the run +
+  `--use` paths (subset per path), justfile delegates to the package. ADR-0004 (image currency)
+  + `Container image` glossary term. 156 tests; opus whole-branch review clean. Spec/plan:
+  `docs/superpowers/{specs,plans}/2026-06-23-b1-image-lifecycle*`.
+  **Outstanding runtime check (M5, spec §5 — not yet run):** `uv run ./start_kgdb --build-images`
+  builds 4 + stamps `likedbg.input_sha`; touch `io/scripts/rootfs.sh` → stale WARN fires;
+  `docker rmi like_debugger:latest` → auto-build on next run.
+  **Deferred minors (future pass):** `build_image` test under-asserts (no rm/nocache/path or
+  `labels=None` checks); `copy_sources` `--from` substring vs token-anchored check.
+- **B2 — x86_64-on-Mac end-to-end:** the CLI assembly is native-HVF-only today; wire the
+  in-container TCG debuggee path (the `.dockerfile_dbge` debuggee image — add it to `images.IMAGES`
+  here, its first consumer) + a `qemu_container_command` launcher + gdbstub networking, then
+  validate build→boot→debug for x86_64 on the Mac (ADR-0001 keeps x86_64-on-Mac in-container TCG).
+- **B3 — bind/Linux runtime (un-gate `require_volume_mode`):** the cache architecture is already
   storage-mode-aware (`cache.locations`), but the live wiring is volume-only. Needs: thread
   `storage_mode` into `cli.run_gdb`'s `locations()` call (currently hardcoded `"volume"`);
   a host-readable Image path for the bind-mode Debuggee (Export is volume-only — "the build
-  is the export" in bind); in-container QEMU launch (Linux `/dev/kvm`); then drop the guard.
+  is the export" in bind); in-container QEMU launch (Linux `/dev/kvm`, reusing B2's launcher);
+  then drop the guard.
 
 ### C. Cache niceties (small)
 - `--use` rootfs **build-if-absent** (currently requires a cached rootfs; spec §4.5 v1 note).
