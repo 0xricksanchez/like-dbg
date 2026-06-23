@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import os
 import urllib.request
+from datetime import datetime
+from datetime import timezone
 from pathlib import Path
 
 from loguru import logger
@@ -13,6 +15,7 @@ from likedbg import cache
 from likedbg import docker_env
 from likedbg.adopt import adopt_legacy_build
 from likedbg.cache import BuildRecipe
+from likedbg.cache import Manifest
 from likedbg.cache import RootfsRecipe
 from likedbg.cache import build_recipe as make_build_recipe
 from likedbg.cache import rootfs_recipe as make_rootfs_recipe
@@ -108,15 +111,45 @@ def require_volume_mode(host: HostProfile) -> None:
         )
 
 
+def _artifact_size(workspace: Path, manifest: Manifest) -> str:
+    if manifest.kind == "build":
+        image = workspace / "artifacts" / manifest.label / "Image"
+    else:
+        image = Path(manifest.paths.get("image_host", ""))
+    return str(image.stat().st_size) if image.is_file() else "-"
+
+
+def summarize_cache(workspace: Path) -> list[str]:
+    builds = cache.list_manifests(workspace, "build")
+    rootfs = cache.list_manifests(workspace, "rootfs")
+    if not builds and not rootfs:
+        return ["(cache empty)"]
+    lines = ["kind    label  version  arch  size  created"]
+    for m in [*builds, *rootfs]:
+        mp = cache.manifest_path(workspace, m.kind, m.label)
+        created = datetime.fromtimestamp(mp.stat().st_mtime, tz=timezone.utc).date().isoformat()  # noqa: UP017
+        lines.append(f"{m.kind}  {m.label}  {m.version or '-'}  {m.arch}  {_artifact_size(workspace, m)}  {created}")
+    return lines
+
+
+def cmd_list(workspace: Path) -> int:
+    for line in summarize_cache(workspace):
+        logger.info(line)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="start_kgdb")
     parser.add_argument("--config", "-c", default="")
     parser.add_argument("--verbose", "-v", action="store_true")
     parser.add_argument("--force-rebuild", action="store_true")
     parser.add_argument("--adopt", action="store_true")
+    parser.add_argument("--list", action="store_true")
     args = parser.parse_args(argv)
     try:
         workspace = Path.cwd()
+        if args.list:
+            return cmd_list(workspace)
         settings = load_settings(
             workspace / "configs" / "system.ini",
             workspace / "configs" / "user.ini",

@@ -2,10 +2,13 @@ from types import SimpleNamespace
 
 import pytest
 
+from likedbg.cache import Manifest
 from likedbg.cache import build_recipe
 from likedbg.cache import rootfs_recipe
+from likedbg.cache import write_manifest
 from likedbg.cli import build_pipeline
 from likedbg.cli import require_volume_mode
+from likedbg.cli import summarize_cache
 from likedbg.config import Settings
 from likedbg.container_service import ContainerService
 from likedbg.errors import HostCapabilityError
@@ -54,3 +57,23 @@ def test_require_volume_mode_accepts_volume():
 def test_require_volume_mode_rejects_bind():
     with pytest.raises(HostCapabilityError):
         require_volume_mode(_host("bind"))
+
+
+def test_summarize_cache_empty(tmp_path):
+    assert summarize_cache(tmp_path) == ["(cache empty)"]
+
+
+def test_summarize_cache_lists_build_and_rootfs(tmp_path):
+    write_manifest(tmp_path, Manifest(kind="build", label="linux-6.6.30-aaaa", key="k",
+                                      version="6.6.30", arch="arm64", storage_mode="volume"))
+    rimg = tmp_path / "artifacts" / "rootfs" / "rootfs-arm64-bookworm-cccc.img"
+    rimg.parent.mkdir(parents=True)
+    rimg.write_bytes(b"x" * 2048)
+    write_manifest(tmp_path, Manifest(kind="rootfs", label="rootfs-arm64-bookworm-cccc", key="k",
+                                      version="", arch="arm64", storage_mode="volume",
+                                      paths={"image_host": str(rimg)}))
+    lines = summarize_cache(tmp_path)
+    joined = "\n".join(lines)
+    assert "linux-6.6.30-aaaa" in joined and "6.6.30" in joined
+    assert "rootfs-arm64-bookworm-cccc" in joined
+    assert "build" in joined and "rootfs" in joined
