@@ -205,10 +205,13 @@ def locations(label: str, *, arch: str, storage_mode: str, workspace: Path, volu
     )
 
 
-def remove_cached(container: ContainerService, workspace: Path, manifest: Manifest, *, volume: str = "likedbg_ksrc") -> None:
+def remove_cached(
+    container: ContainerService, workspace: Path, manifest: Manifest, *, volume: str = "likedbg_ksrc"
+) -> None:
     if manifest.kind == "build":
-        c = container.run_detached(_BASE_IMAGE, volumes={volume: {"bind": _VOLUME_MOUNT, "mode": "rw"}},
-                                   detach=True, tty=True)
+        c = container.run_detached(
+            _BASE_IMAGE, volumes={volume: {"bind": _VOLUME_MOUNT, "mode": "rw"}}, detach=True, tty=True
+        )
         try:
             container.exec(c, f"rm -rf {_VOLUME_MOUNT}/{manifest.label}")
         finally:

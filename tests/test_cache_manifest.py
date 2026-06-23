@@ -60,10 +60,15 @@ def test_list_manifests_empty_when_no_dir(tmp_path):
 
 def test_list_manifests_returns_all_of_a_kind_sorted(tmp_path):
     for label in ("linux-6.6.30-bbbb", "linux-6.1.0-aaaa"):
-        write_manifest(tmp_path, Manifest(kind="build", label=label, key="k", version="x",
-                                          arch="arm64", storage_mode="volume"))
-    write_manifest(tmp_path, Manifest(kind="rootfs", label="rootfs-arm64-bookworm-cccc", key="k",
-                                      version="", arch="arm64", storage_mode="volume"))
+        write_manifest(
+            tmp_path, Manifest(kind="build", label=label, key="k", version="x", arch="arm64", storage_mode="volume")
+        )
+    write_manifest(
+        tmp_path,
+        Manifest(
+            kind="rootfs", label="rootfs-arm64-bookworm-cccc", key="k", version="", arch="arm64", storage_mode="volume"
+        ),
+    )
     builds = list_manifests(tmp_path, "build")
     assert [m.label for m in builds] == ["linux-6.1.0-aaaa", "linux-6.6.30-bbbb"]
     assert [m.label for m in list_manifests(tmp_path, "rootfs")] == ["rootfs-arm64-bookworm-cccc"]
