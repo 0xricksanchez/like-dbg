@@ -6,9 +6,12 @@ wiring everything into a single tmux session.
 
 ## Language
 
+### Debugging session
+
 **Debuggee**:
 The emulated guest under inspection — a specific kernel image together with its root
-filesystem, booted under QEMU and exposing a stub for inspection.
+filesystem, booted under QEMU and exposing a stub for inspection. The composition, at boot,
+of one Kernel Build and one rootfs image.
 _Avoid_: guest, VM, target.
 
 **Debugger**:
@@ -19,3 +22,26 @@ _Avoid_: gdb session, client.
 A run where the kernel image and root filesystem are supplied ready-made (a challenge),
 rather than downloaded and built from source.
 _Avoid_: challenge mode, ctf mode.
+
+### Build cache
+
+**Kernel Build**:
+A compiled kernel — its tree and the consumable artifacts it yields — produced from one
+specific configuration and kept for reuse instead of rebuilt. Half of a Debuggee (the
+rootfs image is the other half).
+_Avoid_: build (the verb/stage), image.
+
+**Label**:
+The human-readable identifier of one cached artifact (a Kernel Build or a rootfs image),
+e.g. `linux-6.6.30-gef-a1b2c3d4`.
+_Avoid_: tag, id, name.
+
+**Manifest**:
+The host-side record of one cached artifact — its label, configuration identity, and where
+it lives — and the source of truth for what is cached.
+_Avoid_: index, metadata.
+
+**Build Cache**:
+The collection of reusable Kernel Builds and rootfs images, keyed by configuration so an
+identical configuration is never rebuilt.
+_Avoid_: store, cache store.
