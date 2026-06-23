@@ -42,3 +42,24 @@ def test_gef_uses_gef_remote_not_qemu_user():
 def test_no_breakpoint_omits_break():
     args = build_gdb_args(_host(), vmlinux=Path("/w/vmlinux"), ext="pwndbg", breakpoint=None)
     assert all("break" not in a for a in args)
+
+
+def test_gef_sources_only_the_gef_plugin():
+    # Both gef and pwndbg are installed in the image; the requested ext is sourced
+    # explicitly (~/.gdbinit no longer auto-loads one) and the other must not appear.
+    args = build_gdb_args(_host(), vmlinux=Path("/w/vmlinux"), ext="gef", breakpoint=None)
+    s = " ".join(args)
+    assert "source /opt/gef/gef.py" in s
+    assert "/opt/pwndbg" not in s
+
+
+def test_pwndbg_sources_only_the_pwndbg_plugin():
+    args = build_gdb_args(_host(), vmlinux=Path("/w/vmlinux"), ext="pwndbg", breakpoint=None)
+    s = " ".join(args)
+    assert "source /opt/pwndbg/gdbinit.py" in s
+    assert "/opt/gef" not in s
+
+
+def test_extension_is_sourced_before_the_symbol_file():
+    args = build_gdb_args(_host(), vmlinux=Path("/w/vmlinux"), ext="gef", breakpoint=None)
+    assert args.index("source /opt/gef/gef.py") < args.index("/w/vmlinux")

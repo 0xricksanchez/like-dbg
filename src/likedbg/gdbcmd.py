@@ -6,12 +6,20 @@ from pathlib import Path
 
 from likedbg.host_profile import HostProfile
 
+# Both extensions are installed in the debugger image; exactly one is sourced per run
+# (gef and pwndbg conflict if both load). ~/.gdbinit no longer auto-loads either —
+# the requested extension is sourced explicitly here.
+_EXT_SOURCE = {"gef": "/opt/gef/gef.py", "pwndbg": "/opt/pwndbg/gdbinit.py"}
+
 
 def build_gdb_args(host: HostProfile, *, vmlinux: Path, ext: str, breakpoint: str | None) -> list[str]:
     addr = host.gdbstub_addr
-    # `-iex "set auto-load safe-path /"` runs BEFORE the symbol file loads, so the
-    # kernel's vmlinux-gdb.py / lx- helpers auto-load cleanly (a later -ex is too late).
-    args = ["gdb-multiarch", "-q", "-iex", "set auto-load safe-path /", str(vmlinux)]
+    # Source the chosen extension and enable auto-load BEFORE the symbol file loads
+    # (mirrors ~/.gdbinit): the kernel's vmlinux-gdb.py / lx- helpers and the gef/pwndbg
+    # hooks must be in place first (a later -ex is too late).
+    args = ["gdb-multiarch", "-q"]
+    args += ["-iex", f"source {_EXT_SOURCE[ext]}"]
+    args += ["-iex", "set auto-load safe-path /", str(vmlinux)]
     args += ["-ex", "set architecture aarch64"]
     if ext == "gef":
         args += ["-ex", f"gef-remote {addr} 1234"]
