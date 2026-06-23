@@ -14,10 +14,13 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from loguru import logger
+
 from likedbg.constants import BASE_IMAGE
 from likedbg.constants import DEBUGGER_IMAGE
 from likedbg.constants import KBUILDER_IMAGE
 from likedbg.constants import ROOTFS_IMAGE
+from likedbg.container_service import ContainerService
 
 LABEL = "likedbg.input_sha"
 
@@ -87,3 +90,27 @@ def copy_sources(dockerfile_text: str) -> list[str]:
                 raise ValueError(f"unhandled glob/dir COPY/ADD source {src!r} in: {line!r}")
             out.append(src)
     return out
+
+
+def build_images(container: ContainerService, workspace: Path, specs: tuple[ImageSpec, ...] = IMAGES) -> None:
+    """(Re)build every spec in dependency order, stamping the input_sha label."""
+    for s in specs:
+        logger.info(f"building image {s.tag} from {s.dockerfile}")
+        container.build_image(s.dockerfile, s.tag, s.buildargs, labels={LABEL: input_sha(s, workspace)})
+
+
+def ensure_current(container: ContainerService, workspace: Path, specs: tuple[ImageSpec, ...] = IMAGES) -> list[str]:
+    """Auto-build MISSING images (in order); return the tags of present-but-STALE images.
+
+    Stale = the live image's `likedbg.input_sha` label != the freshly computed input_sha. The caller
+    warns about stale tags; ensure_current never rebuilds them (warn-only, ADR-0004).
+    """
+    stale: list[str] = []
+    for s in specs:
+        want = input_sha(s, workspace)
+        if not container.image_exists(s.tag):
+            logger.info(f"building missing image {s.tag} from {s.dockerfile}")
+            container.build_image(s.dockerfile, s.tag, s.buildargs, labels={LABEL: want})
+        elif container.image_labels(s.tag).get(LABEL) != want:
+            stale.append(s.tag)
+    return stale

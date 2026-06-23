@@ -72,3 +72,65 @@ def test_build_inputs_cover_every_copy_source():
         srcs = images.copy_sources((REPO / s.dockerfile).read_text())
         missing = [c for c in srcs if c not in s.build_inputs]
         assert not missing, f"{s.dockerfile} COPYs {missing} not in build_inputs {s.build_inputs}"
+
+
+class _FakeContainer:
+    def __init__(self, existing=(), labels=None):
+        self.existing = set(existing)
+        self.labels = labels or {}
+        self.builds = []  # list of (dockerfile, tag, labels)
+
+    def image_exists(self, tag):
+        return tag in self.existing
+
+    def build_image(self, dockerfile, tag, buildargs, *, nocache=False, labels=None):
+        self.builds.append((dockerfile, tag, labels))
+        self.existing.add(tag)
+
+    def image_labels(self, tag):
+        return self.labels.get(tag, {})
+
+
+def _two_specs(tmp_path):
+    (tmp_path / "Da").write_text("FROM scratch\n")
+    (tmp_path / "Db").write_text("FROM a\n")
+    return (
+        ImageSpec("img_a:latest", "Da", ("Da",), {"USER": "user"}),
+        ImageSpec("img_b:latest", "Db", ("Db",), {"USER": "user"}),
+    )
+
+
+def test_build_images_builds_all_in_order_with_label(tmp_path):
+    specs = _two_specs(tmp_path)
+    c = _FakeContainer()
+    images.build_images(c, tmp_path, specs)
+    assert [tag for _, tag, _ in c.builds] == ["img_a:latest", "img_b:latest"]
+    for spec, (_, _, labels) in zip(specs, c.builds, strict=True):
+        assert labels == {images.LABEL: images.input_sha(spec, tmp_path)}
+
+
+def test_ensure_current_builds_missing_and_returns_no_stale(tmp_path):
+    specs = _two_specs(tmp_path)
+    c = _FakeContainer()  # nothing exists
+    stale = images.ensure_current(c, tmp_path, specs)
+    assert stale == []
+    assert [tag for _, tag, _ in c.builds] == ["img_a:latest", "img_b:latest"]
+
+
+def test_ensure_current_flags_stale_without_rebuilding(tmp_path):
+    specs = _two_specs(tmp_path)
+    fresh_b = images.input_sha(specs[1], tmp_path)
+    c = _FakeContainer(
+        existing=["img_a:latest", "img_b:latest"],
+        labels={"img_a:latest": {images.LABEL: "stale"}, "img_b:latest": {images.LABEL: fresh_b}},
+    )
+    stale = images.ensure_current(c, tmp_path, specs)
+    assert stale == ["img_a:latest"]  # a is stale, b is current
+    assert c.builds == []  # stale images are NOT rebuilt (warn-only, ADR-0004)
+
+
+def test_ensure_current_honors_specs_subset(tmp_path):
+    specs = _two_specs(tmp_path)
+    c = _FakeContainer()
+    images.ensure_current(c, tmp_path, (specs[0],))
+    assert [tag for _, tag, _ in c.builds] == ["img_a:latest"]  # only the passed spec touched
