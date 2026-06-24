@@ -30,7 +30,13 @@ class DebuggeeStage:
             # kernel Image read-only (QEMU only reads -kernel); rootfs disk read-write (QEMU's -drive).
             rw_mounts = [ctx.rootfs_image] if ctx.rootfs_image is not None else []
             cmd = qemu_container_command(
-                argv, image=self._debuggee_image, ro_mounts=[ctx.kernel_image], rw_mounts=rw_mounts
+                argv,
+                image=self._debuggee_image,
+                ro_mounts=[ctx.kernel_image],
+                rw_mounts=rw_mounts,
+                gdbstub_port=ctx.settings.debuggee.gdb_port,
+                network_mode=ctx.host.network_mode,
+                kvm=ctx.host.accel == "kvm",
             )
         else:
             cmd = qemu_pane_command(argv)

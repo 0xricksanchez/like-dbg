@@ -24,7 +24,12 @@ class DebuggerStage:
         if ctx.vmlinux is None:
             raise BuildError("no vmlinux in context", remedy="run the Build/Export stages first")
         args = build_gdb_args(
-            ctx.host, arch=ctx.settings.general.arch, vmlinux=ctx.vmlinux, ext=self._ext, breakpoint=self._breakpoint
+            ctx.host,
+            arch=ctx.settings.general.arch,
+            vmlinux=ctx.vmlinux,
+            ext=self._ext,
+            breakpoint=self._breakpoint,
+            port=ctx.settings.debuggee.gdb_port,
         )
         self._run_gdb(args)
         return ctx

@@ -40,3 +40,36 @@ def test_in_container_debuggee_wraps_docker_run():
     assert "like_debuggee:latest" in sent["cmd"]
     assert "qemu-system-x86_64" in sent["cmd"]
     assert "-v /ws/artifacts/x/Image:/ws/artifacts/x/Image:ro" in sent["cmd"]
+
+
+def _linux_ctx(*, accel="tcg"):
+    host = HostProfile(
+        os="linux",
+        host_arch="arm64",
+        accel=accel,
+        debuggee_mode="in-container",
+        storage_mode="bind",
+        gdbstub_addr="localhost",
+        ssh_addr="localhost",
+        network_mode="host",
+    )
+    ctx = PipelineContext(settings=Settings.model_validate({"general": {"arch": "arm64"}}), host=host)
+    ctx.kernel_image = Path("/ws/artifacts/ksrc/x/arch/arm64/boot/Image")
+    ctx.rootfs_image = Path("/ws/artifacts/rootfs/r.img")
+    return ctx
+
+
+def test_linux_in_container_uses_host_network():
+    sent = {}
+    DebuggeeStage(send=lambda cmd: sent.setdefault("cmd", cmd), debuggee_image="like_debuggee:latest").run(_linux_ctx())
+    assert "--network host" in sent["cmd"]
+    assert "-p 1234:1234" not in sent["cmd"]
+    assert "/dev/kvm" not in sent["cmd"]  # tcg → no kvm device
+
+
+def test_linux_kvm_passes_device():
+    sent = {}
+    DebuggeeStage(send=lambda cmd: sent.setdefault("cmd", cmd), debuggee_image="like_debuggee:latest").run(
+        _linux_ctx(accel="kvm")
+    )
+    assert "--device /dev/kvm" in sent["cmd"]
