@@ -31,6 +31,7 @@ from likedbg.container_service import ContainerService
 from likedbg.errors import CacheError
 from likedbg.errors import HostCapabilityError
 from likedbg.errors import LikeDbgError
+from likedbg.errors import SessionError
 from likedbg.host_profile import HostProfile
 from likedbg.launchers import gdb_pane_command
 from likedbg.pipeline import Pipeline
@@ -302,6 +303,46 @@ def cmd_clean(container: ContainerService, workspace: Path, *, label: str | None
     return 0
 
 
+def _missing_restart_state(name: str) -> SessionError:
+    return SessionError(
+        f"missing {name}; cannot restart Debuggee",
+        remedy="start a fresh Debugging session with `uv run ./start_kgdb`",
+    )
+
+
+def cmd_restart_debuggee(session: Session) -> int:
+    if session.get_option("@likedbg_restart_in_progress") == "1":
+        raise SessionError("LIKE-DBG restart already in progress")
+    session.set_option("@likedbg_restart_in_progress", "1")
+    try:
+        workspace = session.get_option("@likedbg_workspace")
+        cmd = session.get_option("@likedbg_debuggee_cmd")
+        debuggee_pane = session.get_option("@likedbg_debuggee_pane")
+        base_pane = session.get_option("@likedbg_base_pane_id")
+        if not workspace:
+            raise _missing_restart_state("@likedbg_workspace")
+        if not cmd:
+            raise _missing_restart_state("@likedbg_debuggee_cmd")
+        active_pane = session.current_pane_id()
+        if debuggee_pane and session.pane_exists(debuggee_pane):
+            session.respawn_pane(pane=debuggee_pane, cmd=cmd)
+        else:
+            if not base_pane:
+                raise _missing_restart_state("@likedbg_base_pane_id")
+            if not session.pane_exists(base_pane):
+                raise SessionError(
+                    f"stored base pane {base_pane} is gone; cannot recreate Debuggee pane",
+                    remedy="start a fresh Debugging session with `uv run ./start_kgdb`",
+                )
+            debuggee_pane = session.run_in_new_pane(target=base_pane, direction="h", percent=66, cmd=cmd)
+            session.set_option("@likedbg_debuggee_pane", debuggee_pane)
+        if active_pane and session.pane_exists(active_pane):
+            session.select_pane(active_pane)
+        return 0
+    finally:
+        session.unset_option("@likedbg_restart_in_progress")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="start_kgdb")
     parser.add_argument("--config", "-c", default="")
@@ -314,10 +355,25 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--use", default="")
     parser.add_argument("--rootfs", default="")
     parser.add_argument("--build-images", action="store_true")
+    parser.add_argument("--restart-debuggee", action="store_true")
     args = parser.parse_args(argv)
     logsetup.configure_stderr(verbose=args.verbose)
     try:
         workspace = Path.cwd()
+        if args.restart_debuggee:
+            if not os.getenv("TMUX"):
+                logger.error("Not running inside a TMUX session. Start tmux first.")
+                return 2
+            session = Session("LIKE-DBG")
+            try:
+                return cmd_restart_debuggee(session)
+            except LikeDbgError as exc:
+                logger.error(str(exc))
+                try:
+                    session.display_message(f"LIKE-DBG restart failed: {exc.message}")
+                except LikeDbgError:
+                    pass
+                return 1
         if args.list:
             return cmd_list(workspace)
         settings = load_settings(

@@ -16,6 +16,7 @@ from likedbg.config import Settings
 from likedbg.container_service import ContainerService
 from likedbg.errors import CacheError
 from likedbg.errors import HostCapabilityError
+from likedbg.errors import SessionError
 from likedbg.host_profile import HostProfile
 from likedbg.pipeline import PipelineContext
 
@@ -48,6 +49,51 @@ class _FakeSession:
 
     def unset_option(self, name):
         self.unset_options.append(name)
+
+
+class _RestartSession:
+    def __init__(self, *, options=None, existing=("%1", "%2", "%3"), active="%3"):
+        self.options = dict(options or {})
+        self.existing = set(existing)
+        self.active = active
+        self.sets: list[tuple[str, str]] = []
+        self.unsets: list[str] = []
+        self.respawns: list[tuple[str, str]] = []
+        self.launches: list[dict[str, object]] = []
+        self.selected: list[str] = []
+        self.messages: list[str] = []
+
+    def get_option(self, name):
+        return self.options.get(name, "")
+
+    def set_option(self, name, value):
+        self.options[name] = value
+        self.sets.append((name, value))
+
+    def unset_option(self, name):
+        self.options.pop(name, None)
+        self.unsets.append(name)
+
+    def current_pane_id(self):
+        return self.active
+
+    def pane_exists(self, pane):
+        return pane in self.existing
+
+    def respawn_pane(self, *, pane, cmd):
+        self.respawns.append((pane, cmd))
+
+    def run_in_new_pane(self, *, target, direction, percent, cmd):
+        pane = "%4"
+        self.existing.add(pane)
+        self.launches.append({"target": target, "direction": direction, "percent": percent, "cmd": cmd, "pane": pane})
+        return pane
+
+    def select_pane(self, target):
+        self.selected.append(target)
+
+    def display_message(self, message):
+        self.messages.append(message)
 
 
 class _FakeContainer(ContainerService):
@@ -235,6 +281,137 @@ def test_pipeline_launches_process_panes_and_stores_session_options(tmp_path):
     assert options["@likedbg_debugger_cmd"] == session.pane_launches[1]["cmd"]
     assert options["@likedbg_debuggee_pane"] == "%2"
     assert options["@likedbg_debugger_pane"] == "%3"
+
+
+def _restart_options():
+    return {
+        "@likedbg_workspace": "/ws",
+        "@likedbg_base_pane_id": "%1",
+        "@likedbg_debuggee_cmd": "qemu-system-aarch64 -S",
+        "@likedbg_debuggee_pane": "%2",
+    }
+
+
+def test_restart_debuggee_respawns_existing_pane_in_place():
+    import likedbg.cli as cli
+
+    session = _RestartSession(options=_restart_options())
+    assert cli.cmd_restart_debuggee(session) == 0  # type: ignore[arg-type]
+    assert session.sets[0] == ("@likedbg_restart_in_progress", "1")
+    assert session.respawns == [("%2", "qemu-system-aarch64 -S")]
+    assert session.launches == []
+    assert session.selected == ["%3"]
+    assert "@likedbg_restart_in_progress" in session.unsets
+    assert session.options["@likedbg_debuggee_pane"] == "%2"
+
+
+def test_restart_debuggee_recreates_when_debuggee_pane_stale():
+    import likedbg.cli as cli
+
+    session = _RestartSession(options=_restart_options(), existing=("%1", "%3"))
+    assert cli.cmd_restart_debuggee(session) == 0  # type: ignore[arg-type]
+    assert session.respawns == []
+    assert session.launches == [
+        {
+            "target": "%1",
+            "direction": "h",
+            "percent": 66,
+            "cmd": "qemu-system-aarch64 -S",
+            "pane": "%4",
+        }
+    ]
+    assert session.options["@likedbg_debuggee_pane"] == "%4"
+    assert session.selected == ["%3"]
+
+
+def test_restart_debuggee_missing_command_or_workspace_raises_remedy():
+    import likedbg.cli as cli
+
+    for missing in ("@likedbg_workspace", "@likedbg_debuggee_cmd"):
+        options = _restart_options()
+        options.pop(missing)
+        with pytest.raises(SessionError) as exc:
+            cli.cmd_restart_debuggee(_RestartSession(options=options))  # type: ignore[arg-type]
+        assert "fresh Debugging session" in (exc.value.remedy or "")
+
+
+def test_restart_debuggee_clears_lock_on_post_acquire_failure():
+    import likedbg.cli as cli
+
+    options = _restart_options()
+    options.pop("@likedbg_workspace")
+    session = _RestartSession(options=options)
+    with pytest.raises(SessionError):
+        cli.cmd_restart_debuggee(session)  # type: ignore[arg-type]
+    assert session.unsets[-1] == "@likedbg_restart_in_progress"
+    assert "@likedbg_restart_in_progress" not in session.options
+
+
+def test_restart_debuggee_missing_base_only_fatal_for_recreate():
+    import likedbg.cli as cli
+
+    existing_debuggee = _RestartSession(options=_restart_options(), existing=("%2", "%3"))
+    assert cli.cmd_restart_debuggee(existing_debuggee) == 0  # type: ignore[arg-type]
+
+    missing_base = _RestartSession(options=_restart_options(), existing=("%3",))
+    with pytest.raises(SessionError) as exc:
+        cli.cmd_restart_debuggee(missing_base)  # type: ignore[arg-type]
+    assert "fresh Debugging session" in (exc.value.remedy or "")
+
+
+def test_restart_debuggee_lock_prevents_double_tap():
+    import likedbg.cli as cli
+
+    options = _restart_options()
+    options["@likedbg_restart_in_progress"] = "1"
+    session = _RestartSession(options=options)
+    with pytest.raises(SessionError) as exc:
+        cli.cmd_restart_debuggee(session)  # type: ignore[arg-type]
+    assert "already in progress" in str(exc.value)
+    assert session.respawns == []
+    assert session.launches == []
+    assert session.unsets == []
+
+
+def test_main_restart_bypasses_config_and_docker(monkeypatch):
+    import likedbg.cli as cli
+
+    restarted = []
+    monkeypatch.setenv("TMUX", "/tmp/tmux")
+    monkeypatch.setattr(cli, "load_settings", lambda *a, **k: pytest.fail("load_settings should not run"))
+    monkeypatch.setattr(cli.docker_env, "make_client", lambda host: pytest.fail("docker should not run"))
+    monkeypatch.setattr(cli, "cmd_restart_debuggee", lambda session: restarted.append(session) or 0)
+    assert cli.main(["--restart-debuggee"]) == 0
+    assert len(restarted) == 1
+
+
+def test_main_restart_failure_displays_tmux_message(monkeypatch):
+    import likedbg.cli as cli
+
+    created = []
+
+    class FakeSession(_RestartSession):
+        def __init__(self, name):
+            super().__init__()
+            self.name = name
+            created.append(self)
+
+    def fail_restart(session):
+        raise SessionError("missing @likedbg_debuggee_cmd", remedy="start fresh")
+
+    monkeypatch.setenv("TMUX", "/tmp/tmux")
+    monkeypatch.setattr(cli, "Session", FakeSession)
+    monkeypatch.setattr(cli, "cmd_restart_debuggee", fail_restart)
+    assert cli.main(["--restart-debuggee"]) == 1
+    assert created[0].messages == ["LIKE-DBG restart failed: missing @likedbg_debuggee_cmd"]
+
+
+def test_main_restart_requires_tmux(monkeypatch):
+    import likedbg.cli as cli
+
+    monkeypatch.delenv("TMUX", raising=False)
+    monkeypatch.setattr(cli, "load_settings", lambda *a, **k: pytest.fail("load_settings should not run"))
+    assert cli.main(["--restart-debuggee"]) == 2
 
 
 def test_main_build_images_is_docker_only_and_invokes_build_images(monkeypatch):
