@@ -225,21 +225,21 @@ def remove_cached(
     container: ContainerService, workspace: Path, manifest: Manifest, *, volume: str = KERNEL_VOLUME
 ) -> None:
     if manifest.kind == "build":
-        if manifest.storage_mode != "volume":
-            raise CacheError(
-                f"cache removal for {manifest.storage_mode!r}-mode builds is not yet wired",
-                remedy="this milestone targets Volume mode; Bind/Linux runtime is gated (see require_volume_mode)",
+        if manifest.storage_mode == "volume":
+            c = container.run_detached(
+                BASE_IMAGE, volumes={volume: {"bind": VOLUME_MOUNT, "mode": "rw"}}, detach=True, tty=True
             )
-        c = container.run_detached(
-            BASE_IMAGE, volumes={volume: {"bind": VOLUME_MOUNT, "mode": "rw"}}, detach=True, tty=True
-        )
-        try:
-            container.exec(c, f"rm -rf {VOLUME_MOUNT}/{manifest.label}")
-        finally:
-            container.stop(c)
-        export_dir = workspace / "artifacts" / manifest.label
-        if export_dir.is_dir():
-            shutil.rmtree(export_dir)
+            try:
+                container.exec(c, f"rm -rf {VOLUME_MOUNT}/{manifest.label}")
+            finally:
+                container.stop(c)
+            export_dir = workspace / "artifacts" / manifest.label
+            if export_dir.is_dir():
+                shutil.rmtree(export_dir)
+        else:  # bind: the tree IS on the host — chown'd to the user at build time, so rmtree just works
+            tree = workspace / "artifacts" / TREE_ROOT / manifest.label
+            if tree.is_dir():
+                shutil.rmtree(tree)
     else:
         image = Path(manifest.paths.get("image_host", ""))
         if image.is_file():

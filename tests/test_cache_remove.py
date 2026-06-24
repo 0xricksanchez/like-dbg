@@ -1,13 +1,13 @@
 from types import SimpleNamespace
 
-import pytest
+import pytest  # noqa: F401
 
 from likedbg.cache import Manifest
 from likedbg.cache import manifest_exists
 from likedbg.cache import remove_cached
 from likedbg.cache import write_manifest
 from likedbg.container_service import ContainerService
-from likedbg.errors import CacheError
+from likedbg.errors import CacheError  # noqa: F401
 
 
 class FakeC(ContainerService):
@@ -78,11 +78,15 @@ def test_remove_rootfs_unlinks_image_and_manifest(tmp_path):
     assert manifest_exists(tmp_path, "rootfs", label) is False
 
 
-def test_remove_build_refuses_non_volume_storage(tmp_path):
+def test_remove_bind_build_rmtrees_host_tree(tmp_path):
     label = "linux-6.6.30-bbbb"
+    tree = tmp_path / "artifacts" / "ksrc" / label / "arch" / "arm64" / "boot"
+    tree.mkdir(parents=True)
+    (tree / "Image").write_bytes(b"img")
     m = Manifest(kind="build", label=label, key="k", version="6.6.30", arch="arm64", storage_mode="bind")
     write_manifest(tmp_path, m)
-    with pytest.raises(CacheError):
-        remove_cached(FakeC(), tmp_path, m)
-    # the manifest is preserved (nothing was removed)
-    assert manifest_exists(tmp_path, "build", label) is True
+    c = FakeC()
+    remove_cached(c, tmp_path, m)
+    assert c.execs == []  # bind tree is on the host; no container needed
+    assert not (tmp_path / "artifacts" / "ksrc" / label).exists()
+    assert manifest_exists(tmp_path, "build", label) is False
