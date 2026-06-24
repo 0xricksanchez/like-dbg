@@ -1,13 +1,10 @@
 from types import SimpleNamespace
 
-import pytest  # noqa: F401
-
 from likedbg.cache import Manifest
 from likedbg.cache import manifest_exists
 from likedbg.cache import remove_cached
 from likedbg.cache import write_manifest
 from likedbg.container_service import ContainerService
-from likedbg.errors import CacheError  # noqa: F401
 
 
 class FakeC(ContainerService):

@@ -30,8 +30,8 @@ def test_gdb_pane_command_wraps_docker_run_with_addhost_and_volume():
 
 
 def test_gdb_pane_command_accepts_bind_dir_mount_source():
-    cmd = gdb_pane_command(["gdb-multiarch"], image="img", mount_source="/ws/artifacts/builds/x")
-    assert "-v /ws/artifacts/builds/x:/ksrc:ro" in cmd
+    cmd = gdb_pane_command(["gdb-multiarch"], image="img", mount_source="/ws/artifacts/ksrc/x")
+    assert "-v /ws/artifacts/ksrc/x:/ksrc:ro" in cmd
 
 
 def test_qemu_container_command_publishes_port_mounts_and_wraps_argv():
