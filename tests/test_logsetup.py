@@ -16,10 +16,10 @@ def _restore_logger():
 def test_configure_stderr_sets_level_by_verbose():
     logsetup.configure_stderr(verbose=False)
     levels = [h.levelno for h in logger._core.handlers.values()]  # noqa: SLF001
-    assert 20 in levels  # INFO
+    assert levels == [20]  # INFO, with old sinks removed
     logsetup.configure_stderr(verbose=True)
     levels = [h.levelno for h in logger._core.handlers.values()]  # noqa: SLF001
-    assert 10 in levels  # DEBUG
+    assert levels == [10]  # DEBUG, with the prior INFO sink removed
 
 
 def test_add_run_logfile_creates_file_latest_and_captures_debug(tmp_path):

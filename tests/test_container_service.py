@@ -77,7 +77,7 @@ def test_run_detached_passes_through():
     assert client.containers.run_kwargs["image"] == "img"
 
 
-def test_exec_streams_returns_result_and_logs(tmp_path):
+def test_exec_streams_returns_result_and_logs():
     msgs = []
     sink = logger.add(msgs.append, level="DEBUG", format="{message}")
     try:
@@ -89,7 +89,8 @@ def test_exec_streams_returns_result_and_logs(tmp_path):
     assert res.exit_code == 0
     assert res.output == "line1\nline2\n"
     assert api.created["cmd"] == ["/bin/sh", "-c", "true"] and api.created["workdir"] == "/io"
-    assert api.created["tty"] is True and api.start_kwargs["tty"] is True
+    assert api.created["tty"] is True
+    assert api.start_kwargs == {"tty": True, "stream": True}
     assert any("line1" in m for m in msgs) and any("line2" in m for m in msgs)
 
 

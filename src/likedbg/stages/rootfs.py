@@ -56,7 +56,7 @@ class RootfsStage:
             return ctx
 
         if not self._attempt(target):
-            logger.warning("rootfs build did not produce the image; retrying once...")
+            logger.warning(f"rootfs build did not produce {target}; retrying once...")
             if not self._attempt(target):
                 raise RootfsError(
                     f"rootfs build did not produce {target}",

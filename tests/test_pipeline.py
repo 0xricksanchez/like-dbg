@@ -56,6 +56,8 @@ def test_context_threads_through():
 
 def test_fmt_duration():
     assert _fmt_duration(12) == "12s"
+    assert _fmt_duration(59.9) == "59s"
+    assert _fmt_duration(60) == "1m0s"
     assert _fmt_duration(220) == "3m40s"
 
 

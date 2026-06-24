@@ -187,14 +187,21 @@ def test_rootfs_retries_once_on_missing_image_then_succeeds(tmp_path):
         logger.remove(sink)
     assert c.attempts == 2 and out.rootfs_image == target
     assert any("retry" in m.lower() for m in msgs)
+    assert any(str(target) in m for m in msgs)
 
 
 def test_rootfs_exception_is_not_retried(tmp_path):
     class _BoomC(FakeC):
+        def __init__(self):
+            super().__init__()
+            self.attempts = 0
+
         def run_detached(self, image, **kwargs):
+            self.attempts += 1
             raise RuntimeError("docker down")
 
     c = _BoomC()
     ctx = _ctx(tmp_path)
     with pytest.raises(RootfsError):  # run_detached failure is wrapped, propagates without retry
         RootfsStage(c, recipe=_rrecipe(), rootfs_image="like_rootfs", workspace=tmp_path).run(ctx)
+    assert c.attempts == 1

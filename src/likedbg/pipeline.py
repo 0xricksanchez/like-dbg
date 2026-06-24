@@ -38,7 +38,7 @@ class Stage(Protocol):
 
 
 def _fmt_duration(seconds: float) -> str:
-    """Format elapsed seconds as 'm' or 'ms' notation."""
+    """Format elapsed seconds as compact whole seconds or minutes+seconds."""
     s = int(seconds)
     return f"{s // 60}m{s % 60}s" if s >= 60 else f"{s}s"
 
