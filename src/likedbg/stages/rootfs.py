@@ -5,6 +5,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from loguru import logger
+
 from likedbg import cache
 from likedbg.cache import RootfsRecipe
 from likedbg.container_service import ContainerService
@@ -53,6 +55,30 @@ class RootfsStage:
             ctx.rootfs_image = img
             return ctx
 
+        if not self._attempt(target):
+            logger.warning("rootfs build did not produce the image; retrying once...")
+            if not self._attempt(target):
+                raise RootfsError(
+                    f"rootfs build did not produce {target}",
+                    remedy="see artifacts/logs/latest.log (rootfs.sh output); the container exited without writing the image",
+                )
+        ctx.rootfs_image = target
+        cache.write_manifest(
+            self._workspace,
+            cache.Manifest(
+                kind="rootfs",
+                label=label,
+                key=self._recipe.key,
+                version="",
+                arch=self._recipe.arch,
+                storage_mode=ctx.host.storage_mode,
+                inputs=self._recipe.cache_inputs(),
+                paths={"image_host": str(target)},
+            ),
+        )
+        return ctx
+
+    def _attempt(self, target: Path) -> bool:
         target.parent.mkdir(parents=True, exist_ok=True)
         qemu_arch = "aarch64" if self._recipe.arch == "arm64" else "x86_64"
         cmd = (
@@ -70,25 +96,6 @@ class RootfsStage:
         except Exception as exc:  # noqa: BLE001
             raise RootfsError("failed to start rootfs build container", remedy="check the rootfs image exists") from exc
         for line in container.logs(stream=True, follow=True):
-            _ = line
+            logger.debug(line.decode(errors="replace").rstrip() if isinstance(line, bytes) else str(line).rstrip())
         self._c.stop(container)
-        if not target.exists():
-            raise RootfsError(
-                f"rootfs build did not produce {target}",
-                remedy="inspect the rootfs build (rootfs.sh) logs; the container exited without writing the image",
-            )
-        ctx.rootfs_image = target
-        cache.write_manifest(
-            self._workspace,
-            cache.Manifest(
-                kind="rootfs",
-                label=label,
-                key=self._recipe.key,
-                version="",
-                arch=self._recipe.arch,
-                storage_mode=ctx.host.storage_mode,
-                inputs=self._recipe.cache_inputs(),
-                paths={"image_host": str(target)},
-            ),
-        )
-        return ctx
+        return target.exists()
