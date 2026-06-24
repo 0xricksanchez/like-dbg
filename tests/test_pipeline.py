@@ -1,7 +1,10 @@
+from loguru import logger
+
 from likedbg.config import Settings
 from likedbg.host_profile import HostProfile
 from likedbg.pipeline import Pipeline
 from likedbg.pipeline import PipelineContext
+from likedbg.pipeline import _fmt_duration
 
 
 def _ctx():
@@ -49,3 +52,21 @@ def test_context_threads_through():
     out = Pipeline([RecordStage("download"), RecordStage("build")]).run(ctx)
     assert out.kernel_status == "build"  # last stage wrote it
     assert out is ctx
+
+
+def test_fmt_duration():
+    assert _fmt_duration(12) == "12s"
+    assert _fmt_duration(220) == "3m40s"
+
+
+def test_logs_stage_start_and_done():
+    msgs = []
+    sink = logger.add(msgs.append, level="INFO", format="{message}")
+    try:
+        Pipeline([RecordStage("build")]).run(_ctx())
+        logger.complete()
+    finally:
+        logger.remove(sink)
+    joined = "\n".join(msgs)
+    assert "stage build: started" in joined
+    assert "stage build: done (" in joined

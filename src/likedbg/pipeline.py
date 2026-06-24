@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -36,6 +37,12 @@ class Stage(Protocol):
     def should_skip(self, ctx: PipelineContext) -> bool: ...
 
 
+def _fmt_duration(seconds: float) -> str:
+    """Format elapsed seconds as 'm' or 'ms' notation."""
+    s = int(seconds)
+    return f"{s // 60}m{s % 60}s" if s >= 60 else f"{s}s"
+
+
 class Pipeline:
     def __init__(self, stages: list[Stage]) -> None:
         self._stages = stages
@@ -45,6 +52,8 @@ class Pipeline:
             if stage.should_skip(ctx):
                 logger.debug(f"skipping stage: {stage.name}")
                 continue
-            logger.info(f"running stage: {stage.name}")
+            logger.info(f"stage {stage.name}: started")
+            t0 = time.monotonic()
             ctx = stage.run(ctx)
+            logger.info(f"stage {stage.name}: done ({_fmt_duration(time.monotonic() - t0)})")
         return ctx
