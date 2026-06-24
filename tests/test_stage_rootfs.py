@@ -93,9 +93,16 @@ def test_rootfs_reuses_present_image_without_rebuild(tmp_path):
     c = FakeC()
     ctx = _ctx(tmp_path)
     ctx.rootfs_label = label
-    out = RootfsStage(c, recipe=_rrecipe(), rootfs_image="like_rootfs", workspace=tmp_path).run(ctx)
+    msgs = []
+    sink = logger.add(msgs.append, level="INFO", format="{message}")
+    try:
+        out = RootfsStage(c, recipe=_rrecipe(), rootfs_image="like_rootfs", workspace=tmp_path).run(ctx)
+        logger.complete()
+    finally:
+        logger.remove(sink)
     assert out.rootfs_image == img
     assert c.run_kwargs is None
+    assert any(f"rootfs cache hit: {label}" in m for m in msgs)
 
 
 def test_rootfs_reuse_missing_image_raises(tmp_path):

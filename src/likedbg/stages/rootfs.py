@@ -45,6 +45,7 @@ class RootfsStage:
         target = rootfs_target(self._workspace, label)
 
         if cache.manifest_exists(self._workspace, "rootfs", label):
+            logger.info(f"rootfs cache hit: {label}")
             m = cache.load_manifest(self._workspace, "rootfs", label)
             img = Path(m.paths["image_host"])
             if not img.exists():

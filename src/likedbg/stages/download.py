@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
+from loguru import logger
+
 from likedbg.config import KernelDlCfg
 from likedbg.errors import DownloadError
 from likedbg.pipeline import PipelineContext
@@ -59,7 +61,9 @@ class DownloadStage:
         self._dl_dir.mkdir(parents=True, exist_ok=True)
         version = resolve_version(ctx.settings.kernel_dl)
         dest = self._dest(ctx)
-        if not dest.exists():
+        if dest.exists():
+            logger.info(f"download cache hit: {dest.name}")
+        else:
             self._fetch(archive_url(version), dest)
         ctx.kernel_archive = dest
         return ctx

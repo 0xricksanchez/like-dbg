@@ -1,3 +1,5 @@
+from loguru import logger
+
 from likedbg.config import Settings
 from likedbg.host_profile import HostProfile
 from likedbg.pipeline import PipelineContext
@@ -45,10 +47,17 @@ def test_download_idempotent_when_archive_present(tmp_path):
     # A cached archive must not be re-fetched, but the stage must still run so it can
     # record kernel_archive in the context for the Unpack stage.
     calls = []
+    msgs = []
+    sink = logger.add(msgs.append, level="INFO", format="{message}")
     stage = DownloadStage(lambda url, dest: calls.append((url, dest)), dl_dir=tmp_path)
     ctx = _ctx(tmp_path, tag="6.6")
     (tmp_path / "linux-6.6.tar.gz").write_bytes(b"x")
-    assert stage.should_skip(ctx) is False
-    out = stage.run(ctx)
+    try:
+        assert stage.should_skip(ctx) is False
+        out = stage.run(ctx)
+        logger.complete()
+    finally:
+        logger.remove(sink)
     assert out.kernel_archive == tmp_path / "linux-6.6.tar.gz"
     assert calls == []  # no re-fetch
+    assert any("download cache hit: linux-6.6.tar.gz" in m for m in msgs)

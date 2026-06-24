@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 import pytest
+from loguru import logger
 
 from likedbg.cache import Manifest
 from likedbg.cache import write_manifest
@@ -101,9 +102,16 @@ def test_unpack_reuses_when_manifest_present(tmp_path):
     )
     svc = FakeContainerService()
     ctx = _ctx("volume", tmp_path, label=label)
-    out = UnpackStage(svc, kernel_volume="likedbg_ksrc", workspace=tmp_path).run(ctx)
+    msgs = []
+    sink = logger.add(msgs.append, level="INFO", format="{message}")
+    try:
+        out = UnpackStage(svc, kernel_volume="likedbg_ksrc", workspace=tmp_path).run(ctx)
+        logger.complete()
+    finally:
+        logger.remove(sink)
     assert str(out.kernel_root) == f"/ksrc/{label}"
     assert svc.run_kwargs is None  # no container started on reuse
+    assert any(f"unpack cache hit: {label}" in m for m in msgs)
 
 
 def test_unpack_wipes_then_extracts_on_miss(tmp_path):

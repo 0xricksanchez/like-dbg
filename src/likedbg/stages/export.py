@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from loguru import logger
+
 from likedbg.constants import BASE_IMAGE
 from likedbg.constants import VOLUME_MOUNT
 from likedbg.container_service import ContainerService
@@ -39,6 +41,7 @@ class ArtifactExporter:
         out_dir = self._workspace / "artifacts" / label
         host_image = out_dir / "Image"
         if host_image.exists():
+            logger.info(f"export cache hit: {host_image}")
             ctx.kernel_image = host_image
             return ctx
         out_dir.mkdir(parents=True, exist_ok=True)

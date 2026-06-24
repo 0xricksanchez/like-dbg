@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from loguru import logger
+
 from likedbg import cache
 from likedbg.constants import BASE_IMAGE
 from likedbg.constants import VOLUME_MOUNT
@@ -30,6 +32,7 @@ class UnpackStage:
             raise UnpackError("no build label in context", remedy="the CLI must set ctx.build_label")
         label = ctx.build_label
         if cache.manifest_exists(self._workspace, "build", label):
+            logger.info(f"unpack cache hit: {label}")
             ctx.kernel_root = Path(f"{VOLUME_MOUNT}/{label}")
             return ctx
         if ctx.kernel_archive is None:

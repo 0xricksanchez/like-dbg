@@ -1,6 +1,8 @@
 from pathlib import Path
 from types import SimpleNamespace
 
+from loguru import logger
+
 from likedbg.cache import BuildRecipe
 from likedbg.cache import manifest_exists
 from likedbg.config import Settings
@@ -187,16 +189,23 @@ def test_build_reuses_when_manifest_present(tmp_path):
     ctx = _ctx(tmp_path)
     ctx.build_label = label
     ctx.kernel_root = None
-    out = BuildStage(
-        c,
-        recipe=_recipe(),
-        kbuilder_image="like_kbuilder_arm64:latest",
-        workspace=tmp_path,
-        kernel_volume="likedbg_ksrc",
-    ).run(ctx)
+    msgs = []
+    sink = logger.add(msgs.append, level="INFO", format="{message}")
+    try:
+        out = BuildStage(
+            c,
+            recipe=_recipe(),
+            kbuilder_image="like_kbuilder_arm64:latest",
+            workspace=tmp_path,
+            kernel_volume="likedbg_ksrc",
+        ).run(ctx)
+        logger.complete()
+    finally:
+        logger.remove(sink)
     assert str(out.vmlinux) == f"/ksrc/{label}/vmlinux"
     assert str(out.kernel_image) == f"/ksrc/{label}/arch/arm64/boot/Image"
     assert c.started is False
+    assert any(f"build cache hit: {label}" in m for m in msgs)
 
 
 def test_build_reuses_bind_manifest_uses_host_image(tmp_path):

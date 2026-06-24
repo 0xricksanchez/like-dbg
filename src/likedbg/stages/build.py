@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from loguru import logger
+
 from likedbg import cache
 from likedbg.cache import BuildRecipe
 from likedbg.constants import VOLUME_MOUNT
@@ -54,6 +56,7 @@ class BuildStage:
             volume=self._volume,
         )
         if cache.manifest_exists(self._workspace, "build", label):
+            logger.info(f"build cache hit: {label}")
             m = cache.load_manifest(self._workspace, "build", label)
             ctx.vmlinux = Path(m.paths["vmlinux_in_tree"])
             img = m.paths["image_host"] if m.storage_mode != "volume" else m.paths["image_in_tree"]

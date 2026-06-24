@@ -1,6 +1,8 @@
 from pathlib import Path
 from types import SimpleNamespace
 
+from loguru import logger
+
 from likedbg.config import Settings
 from likedbg.container_service import ContainerService
 from likedbg.errors import CacheError
@@ -91,9 +93,16 @@ def test_export_idempotent_skip_when_host_image_exists(tmp_path):
     host_image = tmp_path / "artifacts" / _LABEL / "Image"
     host_image.parent.mkdir(parents=True)
     host_image.write_bytes(b"fake")
-    out = ArtifactExporter(c, kernel_volume="likedbg_ksrc", workspace=tmp_path).run(ctx)
+    msgs = []
+    sink = logger.add(msgs.append, level="INFO", format="{message}")
+    try:
+        out = ArtifactExporter(c, kernel_volume="likedbg_ksrc", workspace=tmp_path).run(ctx)
+        logger.complete()
+    finally:
+        logger.remove(sink)
     assert out.kernel_image == host_image
     assert c.execs == []  # no container commands issued
+    assert any(f"export cache hit: {host_image}" in m for m in msgs)
 
 
 def test_export_cache_error_on_missing_artifact(tmp_path):
