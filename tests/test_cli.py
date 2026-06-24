@@ -185,3 +185,19 @@ def test_ensure_images_helper_warns_each_stale_tag(monkeypatch):
     assert len(msgs) == 1
     assert "like_rootfs:latest" in msgs[0]
     assert "--build-images" in msgs[0]
+
+
+def test_main_configures_stderr_always_but_logfile_only_for_runs(monkeypatch):
+    import likedbg.cli as cli
+
+    calls = {"stderr": 0, "logfile": 0}
+    monkeypatch.setattr(cli, "load_settings", lambda *a, **k: Settings())
+    monkeypatch.setattr(cli.docker_env, "resolve_docker_host", lambda env: "unix:///x")
+    monkeypatch.setattr(cli.docker_env, "make_client", lambda host: SimpleNamespace())
+    monkeypatch.setattr(cli.logsetup, "configure_stderr", lambda **k: calls.__setitem__("stderr", calls["stderr"] + 1))
+    monkeypatch.setattr(cli.logsetup, "add_run_logfile", lambda ws: calls.__setitem__("logfile", calls["logfile"] + 1))
+    monkeypatch.setattr(cli, "summarize_cache", lambda ws: ["(cache empty)"])
+
+    assert cli.main(["--list"]) == 0
+    assert calls["stderr"] == 1  # configure_stderr runs for every invocation
+    assert calls["logfile"] == 0  # --list writes no run log file

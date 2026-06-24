@@ -14,6 +14,7 @@ from loguru import logger
 from likedbg import cache
 from likedbg import docker_env
 from likedbg import images
+from likedbg import logsetup
 from likedbg.adopt import adopt_legacy_build
 from likedbg.cache import BuildRecipe
 from likedbg.cache import Manifest
@@ -173,6 +174,7 @@ def cmd_use(
         overrides={"general": {"arch": bm.arch}},
     )
     host = HostProfile.detect(use_settings, workspace)
+    logsetup.add_run_logfile(workspace)
     rlabel = rootfs_label or make_rootfs_recipe(use_settings).label
     if not cache.manifest_exists(workspace, "rootfs", rlabel):
         raise CacheError(
@@ -277,6 +279,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--rootfs", default="")
     parser.add_argument("--build-images", action="store_true")
     args = parser.parse_args(argv)
+    logsetup.configure_stderr(verbose=args.verbose)
     try:
         workspace = Path.cwd()
         if args.list:
@@ -325,6 +328,7 @@ def main(argv: list[str] | None = None) -> int:
             logger.error("Not running inside a TMUX session. Start tmux first.")
             return 2
         host = HostProfile.detect(settings, workspace)
+        logsetup.add_run_logfile(workspace)
         _ensure_images(container, workspace, specs=images.required_for(host))
         chown_to = (os.getuid(), os.getgid()) if host.os == "linux" and host.storage_mode == "bind" else None
         session = Session("LIKE-DBG")
