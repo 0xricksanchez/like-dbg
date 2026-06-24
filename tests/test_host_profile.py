@@ -92,3 +92,31 @@ def test_explicit_mac_storage_override_wins_over_detection():
     p_bind = _probes(system="darwin", machine="arm64", hvf=True, qemu=True, case_sensitive=False)
     hp_bind = HostProfile.detect(_settings("arm64", mac_storage="bind"), Path("/ws"), p_bind)
     assert hp_bind.storage_mode == "bind"
+
+
+def test_network_auto_linux_is_host_and_localhost():
+    p = _probes(system="linux", machine="arm64", kvm=False)
+    hp = HostProfile.detect(_settings("arm64"), Path("/ws"), p)
+    assert hp.network_mode == "host"
+    assert hp.gdbstub_addr == "localhost" and hp.ssh_addr == "localhost"
+
+
+def test_network_auto_mac_is_published_and_host_docker_internal():
+    p = _probes(system="darwin", machine="arm64", hvf=True, qemu=True)
+    hp = HostProfile.detect(_settings("arm64"), Path("/ws"), p)
+    assert hp.network_mode == "published"
+    assert hp.gdbstub_addr == "host.docker.internal"
+
+
+def test_network_published_override_on_linux():
+    p = _probes(system="linux", machine="arm64", kvm=False)
+    s = Settings.model_validate({"general": {"arch": "arm64"}, "debuggee": {"network": "published"}})
+    hp = HostProfile.detect(s, Path("/ws"), p)
+    assert hp.network_mode == "published" and hp.gdbstub_addr == "host.docker.internal"
+
+
+def test_network_host_on_mac_raises():
+    p = _probes(system="darwin", machine="arm64", hvf=True, qemu=True)
+    s = Settings.model_validate({"general": {"arch": "arm64"}, "debuggee": {"network": "host"}})
+    with pytest.raises(HostCapabilityError):
+        HostProfile.detect(s, Path("/ws"), p)

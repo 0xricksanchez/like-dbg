@@ -20,6 +20,7 @@ from likedbg.errors import HostCapabilityError
 Accel = Literal["kvm", "hvf", "tcg"]
 DebuggeeMode = Literal["in-container", "native-host"]
 StorageMode = Literal["bind", "volume"]
+NetworkMode = Literal["host", "published"]
 
 
 def _real_system() -> str:
@@ -82,6 +83,7 @@ class HostProfile:
     storage_mode: StorageMode
     gdbstub_addr: str
     ssh_addr: str
+    network_mode: NetworkMode = "published"
 
     @classmethod
     def detect(cls, settings: Settings, workspace: Path, probes: Probes | None = None) -> HostProfile:
@@ -101,10 +103,10 @@ class HostProfile:
         accel, mode = cls._resolve_accel(requested, capable_native_hvf, capable_kvm, os_name)
 
         storage = cls._resolve_storage(settings, os_name, workspace, probes)
-        # gdb is always containerized; on macOS it reaches QEMU via the host (the host process for
-        # native-HVF, or the in-container QEMU's published port). On Linux it shares the net/localhost.
-        # This realizes ADR-0001's "host.docker.internal on macOS" for the in-container case too.
-        addr = "localhost" if os_name == "linux" else "host.docker.internal"
+        network_mode = cls._resolve_network(settings.debuggee.network, os_name)
+        # gdb is always containerized; it reaches QEMU on localhost (host networking, Linux)
+        # or via the Docker gateway host.docker.internal (published port, macOS / native-host).
+        addr = "localhost" if network_mode == "host" else "host.docker.internal"
         return cls(
             os=os_name,
             host_arch=host_arch,
@@ -113,6 +115,7 @@ class HostProfile:
             storage_mode=storage,
             gdbstub_addr=addr,
             ssh_addr=addr,
+            network_mode=network_mode,
         )
 
     @staticmethod
@@ -150,3 +153,16 @@ class HostProfile:
         if override == "volume":
             return "volume"
         return "bind" if probes.workspace_case_sensitive(workspace) else "volume"
+
+    @staticmethod
+    def _resolve_network(requested: str, os_name: str) -> NetworkMode:
+        if requested == "host":
+            if os_name == "darwin":
+                raise HostCapabilityError(
+                    "network=host is Linux-only (host networking on macOS targets the Docker VM, not the host)",
+                    remedy="use network=auto or network=published on macOS",
+                )
+            return "host"
+        if requested == "published":
+            return "published"
+        return "host" if os_name == "linux" else "published"  # auto
