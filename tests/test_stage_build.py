@@ -199,6 +199,43 @@ def test_build_reuses_when_manifest_present(tmp_path):
     assert c.started is False
 
 
+def test_build_bind_mode_mounts_host_ksrc_and_chowns(tmp_path):
+    c = _BuildFakeC()
+    label = "linux-6.6.30-a1b2c3d4"
+    ctx = _ctx(tmp_path, storage="bind")
+    ctx.build_label = label
+    ctx.kernel_root = None
+    BuildStage(
+        c,
+        recipe=_recipe(),
+        kbuilder_image="like_kbuilder_arm64:latest",
+        workspace=tmp_path,
+        kernel_volume="likedbg_ksrc",
+        chown_to=(1000, 1000),
+    ).run(ctx)
+    vols = str(c.run_kwargs["volumes"])
+    assert str(tmp_path / "artifacts" / "ksrc") in vols and "likedbg_ksrc" not in vols
+    assert any(f"chown -R 1000:1000 /ksrc/{label}" in e for e in c.execs)
+    # in bind, the in-container QEMU needs the HOST image path
+    assert str(ctx.kernel_image) == str(tmp_path / "artifacts" / "ksrc" / label / "arch" / "arm64" / "boot" / "Image")
+
+
+def test_build_volume_mode_does_not_chown(tmp_path):
+    c = _BuildFakeC()
+    ctx = _ctx(tmp_path, storage="volume")
+    ctx.build_label = "linux-6.6.30-a1b2c3d4"
+    ctx.kernel_root = None
+    BuildStage(
+        c,
+        recipe=_recipe(),
+        kbuilder_image="like_kbuilder_arm64:latest",
+        workspace=tmp_path,
+        kernel_volume="likedbg_ksrc",
+        chown_to=(1000, 1000),
+    ).run(ctx)
+    assert all("chown" not in e for e in c.execs)  # chown is bind-only
+
+
 def test_build_compiles_with_recipe_make_vars_then_writes_manifest(tmp_path):
     c = _BuildFakeC()
     label = "linux-6.6.30-a1b2c3d4"

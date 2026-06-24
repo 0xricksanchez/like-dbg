@@ -30,12 +30,14 @@ class BuildStage:
         kbuilder_image: str,
         workspace: Path,
         kernel_volume: str,
+        chown_to: tuple[int, int] | None = None,
     ) -> None:
         self._c = container
         self._recipe = recipe
         self._image = kbuilder_image
         self._workspace = workspace
         self._volume = kernel_volume
+        self._chown_to = chown_to
 
     def should_skip(self, ctx: PipelineContext) -> bool:
         return False
@@ -54,12 +56,16 @@ class BuildStage:
         if cache.manifest_exists(self._workspace, "build", label):
             m = cache.load_manifest(self._workspace, "build", label)
             ctx.vmlinux = Path(m.paths["vmlinux_in_tree"])
-            ctx.kernel_image = Path(m.paths["image_in_tree"])
+            img = m.paths["image_host"] if m.storage_mode != "volume" else m.paths["image_in_tree"]
+            ctx.kernel_image = Path(img)
             return ctx
         env = self._recipe.env()
+        source = cache.tree_mount_source(self._workspace, storage_mode=ctx.host.storage_mode, volume=self._volume)
+        if ctx.host.storage_mode != "volume":
+            Path(source).mkdir(parents=True, exist_ok=True)
         volumes = {
             str(self._workspace): {"bind": _MOUNT, "mode": "ro"},
-            self._volume: {"bind": VOLUME_MOUNT, "mode": "rw"},
+            source: {"bind": VOLUME_MOUNT, "mode": "rw"},
         }
         root = loc.kernel_root
         container = self._c.run_detached(self._image, volumes=volumes, detach=True, tty=True)
@@ -74,10 +80,13 @@ class BuildStage:
                     workdir=root,
                 )
             self._c.exec(container, make_command(env, "all"), workdir=root)
+            if self._chown_to is not None and ctx.host.storage_mode != "volume":
+                uid, gid = self._chown_to
+                self._c.exec(container, f"chown -R {uid}:{gid} {VOLUME_MOUNT}/{label}", workdir=root)
         finally:
             self._c.stop(container)
         ctx.vmlinux = Path(loc.vmlinux_in_tree)
-        ctx.kernel_image = Path(loc.image_in_tree)
+        ctx.kernel_image = Path(loc.image_host if ctx.host.storage_mode != "volume" else loc.image_in_tree)
         cache.write_manifest(
             self._workspace,
             cache.Manifest(

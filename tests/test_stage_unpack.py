@@ -114,3 +114,12 @@ def test_unpack_wipes_then_extracts_on_miss(tmp_path):
     joined = " ; ".join(svc.execs)
     assert f"rm -rf /ksrc/{label}" in joined
     assert f"tar -C /ksrc/{label} --strip-components=1" in joined
+
+
+def test_bind_mode_mounts_host_ksrc_dir(tmp_path):
+    svc = FakeContainerService()
+    UnpackStage(svc, kernel_volume="likedbg_ksrc", workspace=tmp_path).run(_ctx("bind", tmp_path))
+    mounts = str(svc.run_kwargs["volumes"])
+    assert str(tmp_path / "artifacts" / "ksrc") in mounts
+    assert "likedbg_ksrc" not in mounts
+    assert (tmp_path / "artifacts" / "ksrc").is_dir()  # bind source created

@@ -46,9 +46,12 @@ class UnpackStage:
             ) from exc
         archive_in = f"{_MOUNT}/{rel}"
         keyed = f"{VOLUME_MOUNT}/{label}"
+        source = cache.tree_mount_source(self._workspace, storage_mode=ctx.host.storage_mode, volume=self._volume)
+        if ctx.host.storage_mode != "volume":
+            Path(source).mkdir(parents=True, exist_ok=True)
         volumes = {
             str(self._workspace): {"bind": _MOUNT, "mode": "ro"},
-            self._volume: {"bind": VOLUME_MOUNT, "mode": "rw"},
+            source: {"bind": VOLUME_MOUNT, "mode": "rw"},
         }
         container = self._c.run_detached(BASE_IMAGE, volumes=volumes, detach=True, tty=True)
         try:
