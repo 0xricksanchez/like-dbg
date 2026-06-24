@@ -199,6 +199,42 @@ def test_build_reuses_when_manifest_present(tmp_path):
     assert c.started is False
 
 
+def test_build_reuses_bind_manifest_uses_host_image(tmp_path):
+    from likedbg.cache import Manifest
+    from likedbg.cache import write_manifest
+
+    label = "linux-6.6.30-a1b2c3d4"
+    image_host = str(tmp_path / "artifacts" / "ksrc" / label / "arch" / "arm64" / "boot" / "Image")
+    write_manifest(
+        tmp_path,
+        Manifest(
+            kind="build",
+            label=label,
+            key="k",
+            version="6.6.30",
+            arch="arm64",
+            storage_mode="bind",
+            paths={
+                "vmlinux_in_tree": f"/ksrc/{label}/vmlinux",
+                "image_host": image_host,
+            },
+        ),
+    )
+    c = _BuildFakeC()
+    ctx = _ctx(tmp_path, storage="bind")
+    ctx.build_label = label
+    ctx.kernel_root = None
+    out = BuildStage(
+        c,
+        recipe=_recipe(),
+        kbuilder_image="like_kbuilder_arm64:latest",
+        workspace=tmp_path,
+        kernel_volume="likedbg_ksrc",
+    ).run(ctx)
+    assert c.started is False  # cache hit, no container started
+    assert str(out.kernel_image) == image_host  # bind cached path uses image_host, not image_in_tree
+
+
 def test_build_bind_mode_mounts_host_ksrc_and_chowns(tmp_path):
     c = _BuildFakeC()
     label = "linux-6.6.30-a1b2c3d4"
