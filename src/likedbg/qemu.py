@@ -43,7 +43,8 @@ def build_qemu_argv(settings: Settings, host: HostProfile, *, kernel_image: Path
     arch = settings.general.arch
     argv = [_QEMU_BIN[arch]]
     if arch == "arm64":
-        argv += ["-M", "virt", "-cpu", "host" if host.accel == "hvf" else "cortex-a72"]
+        cpu = "host" if host.accel in ("hvf", "kvm") else "cortex-a72"
+        argv += ["-M", "virt", "-cpu", cpu]
         console = "console=ttyAMA0"
     else:
         cpu = "qemu64"
@@ -59,5 +60,5 @@ def build_qemu_argv(settings: Settings, host: HostProfile, *, kernel_image: Path
     append = " ".join([console, root, "earlyprintk=serial", *_mitigations(settings), "oops=panic", _panic(settings)])
     argv += ["-append", append, *drive_args, "-nographic"]
     if settings.debuggee.gdb:
-        argv += ["-S", "-s"]
+        argv += ["-S", "-gdb", f"tcp::{settings.debuggee.gdb_port}"]
     return argv

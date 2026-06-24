@@ -36,7 +36,9 @@ def test_arm64_hvf_machine_and_accel():
 
 def test_gdbstub_flags_present_when_gdb_enabled():
     argv = build_qemu_argv(_settings("arm64", gdb=True), _host(), kernel_image=Path("/w/Image"), rootfs=None)
-    assert "-S" in argv and "-s" in argv
+    assert "-S" in argv
+    assert "-gdb" in argv and "tcp::1234" in argv
+    assert "-s" not in argv  # replaced by the explicit -gdb form
 
 
 def test_no_gdbstub_when_disabled():
@@ -60,3 +62,28 @@ def test_ext4_rootfs_uses_drive():
     argv = build_qemu_argv(_settings("arm64"), _host(), kernel_image=Path("/w/Image"), rootfs=Path("/w/rootfs.img"))
     s = _argstr(argv)
     assert "-drive" in s and "rootfs.img" in s
+
+
+def test_gdb_port_is_configurable():
+    argv = build_qemu_argv(
+        _settings("arm64", gdb=True, gdb_port=4444), _host(), kernel_image=Path("/w/Image"), rootfs=None
+    )
+    assert "tcp::4444" in argv
+
+
+def test_arm64_kvm_uses_cpu_host():
+    argv = build_qemu_argv(_settings("arm64"), _host("kvm", "in-container"), kernel_image=Path("/w/Image"), rootfs=None)
+    assert "-cpu host" in _argstr(argv)
+
+
+def test_arm64_tcg_uses_cortex_a72():
+    argv = build_qemu_argv(_settings("arm64"), _host("tcg", "in-container"), kernel_image=Path("/w/Image"), rootfs=None)
+    assert "-cpu cortex-a72" in _argstr(argv)
+
+
+def test_x86_64_keeps_qemu64_features_under_kvm():
+    argv = build_qemu_argv(
+        _settings("x86_64"), _host("kvm", "in-container"), kernel_image=Path("/w/Image"), rootfs=None
+    )
+    s = _argstr(argv)
+    assert "qemu64" in s and "+smep" in s and "+smap" in s  # toggles preserved even under KVM
