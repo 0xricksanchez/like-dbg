@@ -16,6 +16,10 @@ def _host(addr="host.docker.internal"):
     )
 
 
+def _helper_arg(args):
+    return next(arg for arg in args if "likedbg-reconnect" in arg)
+
+
 def test_pwndbg_uses_target_remote_with_addr():
     args = build_gdb_args(_host(), arch="arm64", vmlinux=Path("/w/vmlinux"), ext="pwndbg", breakpoint="start_kernel")
     s = " ".join(args)
@@ -80,3 +84,31 @@ def test_remote_port_is_configurable():
     assert "gef-remote host.docker.internal 4444" in " ".join(gef)
     pdb = build_gdb_args(_host(), arch="arm64", vmlinux=Path("/w/vmlinux"), ext="pwndbg", breakpoint=None, port=4444)
     assert "target remote host.docker.internal:4444" in " ".join(pdb)
+
+
+def test_gef_reconnect_helper_disconnects_before_gef_remote():
+    args = build_gdb_args(_host(), arch="arm64", vmlinux=Path("/w/vmlinux"), ext="gef", breakpoint="start_kernel")
+    helper = _helper_arg(args)
+    assert "likedbg-reconnect" in helper
+    assert "disconnect" in helper
+    assert "except gdb.error" in helper
+    assert helper.index("disconnect") < helper.index("gef-remote host.docker.internal 1234")
+
+
+def test_pwndbg_reconnect_helper_disconnects_before_target_remote():
+    args = build_gdb_args(_host(), arch="arm64", vmlinux=Path("/w/vmlinux"), ext="pwndbg", breakpoint="start_kernel")
+    helper = _helper_arg(args)
+    assert "likedbg-reconnect" in helper
+    assert "disconnect" in helper
+    assert "except gdb.error" in helper
+    assert helper.index("disconnect") < helper.index("target remote host.docker.internal:1234")
+
+
+def test_reconnect_helper_does_not_resume_or_reapply_initial_breakpoint():
+    args = build_gdb_args(_host(), arch="arm64", vmlinux=Path("/w/vmlinux"), ext="pwndbg", breakpoint="start_kernel")
+    helper = _helper_arg(args)
+    assert "continue" not in helper
+    assert "hbreak start_kernel" not in helper
+    assert "break start_kernel" not in helper
+    assert "hbreak start_kernel" in args
+    assert "continue" in args
