@@ -28,6 +28,8 @@ from likedbg.toolchain import resolve_toolchain
 
 _SLUG_RE = re.compile(r"[^a-z0-9._-]+")
 
+TREE_ROOT = "ksrc"  # host mirror of the /ksrc mount: artifacts/<TREE_ROOT>/<label>
+
 
 def cache_key(inputs: dict[str, str]) -> str:
     blob = json.dumps(inputs, sort_keys=True, separators=(",", ":"))
@@ -187,6 +189,12 @@ class Locations:
     gdb_vmlinux: str
 
 
+def tree_mount_source(workspace: Path, *, storage_mode: str, volume: str = KERNEL_VOLUME) -> str:
+    """The kernel tree's mount source — the named volume (volume mode) or the host
+    artifacts/ksrc dir (bind mode). Mounted at VOLUME_MOUNT (/ksrc) rw by Build/Unpack, ro by gdb."""
+    return volume if storage_mode == "volume" else str(workspace / "artifacts" / TREE_ROOT)
+
+
 def locations(label: str, *, arch: str, storage_mode: str, workspace: Path, volume: str = KERNEL_VOLUME) -> Locations:
     image_name = "bzImage" if arch == "x86_64" else "Image"
     container_root = f"{VOLUME_MOUNT}/{label}"
@@ -197,21 +205,19 @@ def locations(label: str, *, arch: str, storage_mode: str, workspace: Path, volu
             vmlinux_in_tree=f"{container_root}/vmlinux",
             image_in_tree=image_in_tree,
             image_host=str(workspace / "artifacts" / label / image_name.replace("bzImage", "Image")),
-            gdb_mount_source=volume,
+            gdb_mount_source=tree_mount_source(workspace, storage_mode=storage_mode, volume=volume),
             gdb_mount_type="volume",
             gdb_vmlinux=f"{container_root}/vmlinux",
         )
-    host_tree = workspace / "artifacts" / "builds" / label
+    host_tree = workspace / "artifacts" / TREE_ROOT / label  # the real on-host kernel tree (bind)
     return Locations(
-        kernel_root=container_root,
+        kernel_root=container_root,  # /ksrc/<label>  (symmetric with volume)
         vmlinux_in_tree=f"{container_root}/vmlinux",
-        image_in_tree=image_in_tree,
-        image_host="",
-        gdb_mount_source=str(host_tree),
+        image_in_tree=image_in_tree,  # container path (symmetric)
+        image_host=str(host_tree / "arch" / arch / "boot" / image_name),  # real host in-tree file
+        gdb_mount_source=tree_mount_source(workspace, storage_mode=storage_mode, volume=volume),
         gdb_mount_type="bind",
-        # bind mode mounts the single label dir at /ksrc, so vmlinux is at /ksrc/vmlinux
-        # (no label segment); volume mode mounts the whole volume at /ksrc/<label>/vmlinux.
-        gdb_vmlinux=f"{VOLUME_MOUNT}/vmlinux",
+        gdb_vmlinux=f"{container_root}/vmlinux",  # /ksrc/<label>/vmlinux (symmetric)
     )
 
 

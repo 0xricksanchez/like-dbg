@@ -13,12 +13,23 @@ def test_volume_mode_footprint():
     assert loc.gdb_vmlinux == "/ksrc/linux-6.6.30-gef-a1b2c3d4/vmlinux"
 
 
-def test_bind_mode_footprint_has_no_host_export():
-    loc = locations("linux-6.6.30-gef-a1b2c3d4", arch="arm64", storage_mode="bind", workspace=Path("/ws"))
-    assert loc.image_host == ""
+def test_bind_mode_footprint_is_symmetric_and_host_in_tree():
+    from likedbg.cache import tree_mount_source
+
+    label = "linux-6.6.30-gef-a1b2c3d4"
+    loc = locations(label, arch="x86_64", storage_mode="bind", workspace=Path("/ws"))
+    # container-side paths are identical to volume mode (mode-invariant)
+    assert loc.kernel_root == f"/ksrc/{label}"
+    assert loc.image_in_tree == f"/ksrc/{label}/arch/x86_64/boot/bzImage"
+    assert loc.gdb_vmlinux == f"/ksrc/{label}/vmlinux"
+    # image_host is the REAL host in-tree file (no export step in bind)
+    assert loc.image_host == f"/ws/artifacts/ksrc/{label}/arch/x86_64/boot/bzImage"
+    # the tree's mount source is the parent ksrc dir, mounted at /ksrc
+    assert loc.gdb_mount_source == "/ws/artifacts/ksrc"
     assert loc.gdb_mount_type == "bind"
-    assert loc.gdb_mount_source == "/ws/artifacts/builds/linux-6.6.30-gef-a1b2c3d4"
-    assert loc.gdb_vmlinux == "/ksrc/vmlinux"
+    # the helper returns the same source (used rw by build/unpack, ro by gdb)
+    assert tree_mount_source(Path("/ws"), storage_mode="bind") == "/ws/artifacts/ksrc"
+    assert tree_mount_source(Path("/ws"), storage_mode="volume") == "likedbg_ksrc"
 
 
 def test_x86_uses_bzimage():
