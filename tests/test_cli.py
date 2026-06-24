@@ -17,7 +17,37 @@ from likedbg.container_service import ContainerService
 from likedbg.errors import CacheError
 from likedbg.errors import HostCapabilityError
 from likedbg.host_profile import HostProfile
-from likedbg.session import Session
+from likedbg.pipeline import PipelineContext
+
+
+class _FakeSession:
+    def __init__(self):
+        self.options: list[tuple[str, str]] = []
+        self.unset_options: list[str] = []
+        self.pane_launches: list[dict[str, object]] = []
+        self._panes = iter(["%2", "%3"])
+
+    def current_pane_id(self) -> str:
+        return "%1"
+
+    def run_in_new_pane(self, *, target, direction, percent, cmd):
+        pane = next(self._panes)
+        self.pane_launches.append(
+            {
+                "target": target,
+                "direction": direction,
+                "percent": percent,
+                "cmd": cmd,
+                "pane": pane,
+            }
+        )
+        return pane
+
+    def set_option(self, name, value):
+        self.options.append((name, value))
+
+    def unset_option(self, name):
+        self.unset_options.append(name)
 
 
 class _FakeContainer(ContainerService):
@@ -38,11 +68,10 @@ def test_build_pipeline_includes_all_stage_names(tmp_path):
     settings = Settings.model_validate({"general": {"arch": "arm64"}})
     br = build_recipe(settings, version="6.6.30", workspace=tmp_path, fragments=[])
     rr = rootfs_recipe(settings)
-    session = Session("X", runner=lambda a: 0)
-    object.__setattr__(session, "send_keys", lambda cmd: None)
+    session = _FakeSession()
     pipe = build_pipeline(
         ContainerService(SimpleNamespace()),
-        session,
+        session,  # type: ignore[arg-type]
         host=_host("volume"),
         workspace=tmp_path,
         kernel_volume="likedbg_ksrc",
@@ -50,7 +79,6 @@ def test_build_pipeline_includes_all_stage_names(tmp_path):
         debugger_image="like_debugger:latest",
         debuggee_image="like_debuggee:latest",
         ext="gef",
-        panes=(1, 2),
         build_recipe=br,
         rootfs_recipe=rr,
     )
@@ -144,21 +172,69 @@ def test_cmd_clean_all_removes_every_manifest(tmp_path):
 
 
 def test_build_use_pipeline_is_launch_only(tmp_path):
-    session = Session("X", runner=lambda a: 0)
-    object.__setattr__(session, "send_keys", lambda cmd: None)
+    session = _FakeSession()
     pipe = build_use_pipeline(
         _FakeContainer(),
-        session,
+        session,  # type: ignore[arg-type]
         host=_host("volume"),
         workspace=tmp_path,
         kernel_volume="likedbg_ksrc",
         debugger_image="like_debugger:latest",
         debuggee_image="like_debuggee:latest",
         ext="pwndbg",
-        panes=(1, 2),
         gdb_mount_source="likedbg_ksrc",
     )
     assert [s.name for s in pipe._stages] == ["export", "debuggee", "debugger"]  # type: ignore[attr-defined]
+
+
+def test_pipeline_launches_process_panes_and_stores_session_options(tmp_path):
+    settings = Settings.model_validate({"general": {"arch": "arm64"}})
+    br = build_recipe(settings, version="6.6.30", workspace=tmp_path, fragments=[])
+    rr = rootfs_recipe(settings)
+    session = _FakeSession()
+    pipe = build_pipeline(
+        ContainerService(SimpleNamespace()),
+        session,  # type: ignore[arg-type]
+        host=_host("volume"),
+        workspace=tmp_path,
+        kernel_volume="likedbg_ksrc",
+        dl_dir=tmp_path / "kernels",
+        debugger_image="like_debugger:latest",
+        debuggee_image="like_debuggee:latest",
+        ext="gef",
+        build_recipe=br,
+        rootfs_recipe=rr,
+    )
+    ctx = PipelineContext(settings=settings, host=_host("volume"), build_label=br.label, rootfs_label=rr.label)
+    ctx.kernel_image = tmp_path / "artifacts" / br.label / "Image"
+    ctx.rootfs_image = tmp_path / "artifacts" / "rootfs.img"
+    ctx.vmlinux = tmp_path / "artifacts" / br.label / "vmlinux"
+
+    pipe._stages[-2].run(ctx)  # type: ignore[attr-defined]
+    pipe._stages[-1].run(ctx)  # type: ignore[attr-defined]
+
+    assert session.pane_launches[0]["target"] == "%1"
+    assert session.pane_launches[0]["direction"] == "h"
+    assert session.pane_launches[0]["percent"] == 66
+    assert session.pane_launches[1]["target"] == "%2"
+    assert session.pane_launches[1]["direction"] == "v"
+    assert session.pane_launches[1]["percent"] == 50
+    assert session.unset_options == [
+        "@likedbg_restart_in_progress",
+        "@likedbg_debuggee_cmd",
+        "@likedbg_debugger_cmd",
+        "@likedbg_debuggee_pane",
+        "@likedbg_debugger_pane",
+    ]
+    assert session.options[0:2] == [
+        ("@likedbg_workspace", str(tmp_path)),
+        ("@likedbg_base_pane_id", "%1"),
+    ]
+    options = dict(session.options)
+    assert options["@likedbg_debuggee_cmd"] == session.pane_launches[0]["cmd"]
+    assert options["@likedbg_debugger_cmd"] == session.pane_launches[1]["cmd"]
+    assert options["@likedbg_debuggee_pane"] == "%2"
+    assert options["@likedbg_debugger_pane"] == "%3"
 
 
 def test_main_build_images_is_docker_only_and_invokes_build_images(monkeypatch):

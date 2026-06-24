@@ -15,7 +15,8 @@
 - **Command strings remain byte-equivalent.** `qemu.py`, `launchers.py`, and the Docker/QEMU command construction should not change except for GDB reconnect helper additions.
 - **No shell-history pollution.** QEMU/GDB commands must be pane processes (`split-window ... <cmd>` / `respawn-pane ... <cmd>`), not text sent into interactive shells.
 - **No runtime tmux key mutation.** The project `.tmux.conf` owns `C-b B`; application code does not call `bind-key`.
-- **Process panes stay inspectable.** Debuggee/Debugger panes have pane-local `remain-on-exit on`; Debuggee restart reasserts it.
+- **Process panes stay inspectable.** Debuggee/Debugger panes have pane-local `remain-on-exit on`; new panes set it
+  inside the pane before `exec` to avoid a fast-exit race, and Debuggee restart reasserts it before respawn.
 - **Restart is state-scoped.** Use current tmux session `@likedbg_*` options, not the session name.
 - **Focus preservation:** restart never steals focus, including fallback recreate.
 - **Per-task gate before commit:** `uv run ruff check src tests && uv run ruff format --check src tests && uv run mypy src/likedbg && uv run pytest -q`.
@@ -50,9 +51,9 @@ Update `tests/test_session.py`:
 - Keep `select_pane`, nonzero runner, and `pane_base_index` fallback tests.
 - Add tests:
   - `run_in_new_pane` calls:
-    `tmux split-window -d -P -F "#{pane_id}" -h -p 66 -t %1 <cmd>`, then
-    `tmux set-option -p -t %2 remain-on-exit on`, and returns `%2`.
-  - `respawn_pane` calls `tmux respawn-pane -k -t %2 <cmd>`, then reasserts `remain-on-exit on`.
+    `tmux split-window -d -P -F "#{pane_id}" -h -p 66 -t %1 "tmux set-option -p remain-on-exit on; exec <cmd>"`
+    and returns `%2`.
+  - `respawn_pane` reasserts `remain-on-exit on`, then calls `tmux respawn-pane -k -t %2 <cmd>`.
   - `current_pane_id` queries `tmux display-message -p "#{pane_id}"`.
   - `get_option` queries `tmux show-option -qv @likedbg_workspace`; `set_option` and `unset_option` call tmux session options.
   - `pane_exists("%2")` returns true on runner rc 0 and false on rc nonzero.
@@ -68,8 +69,10 @@ Expected: FAIL because the new methods do not exist and old methods still exist.
 - [ ] **Step 3: Implement `Session` methods**
 
 Implementation notes:
-- `run_in_new_pane` uses `_query(...)` for `split-window -d -P -F "#{pane_id}" ... cmd`, then `set_remain_on_exit(pane)`.
-- `respawn_pane` uses `_tmux("respawn-pane", "-k", "-t", pane, cmd)`, then `set_remain_on_exit(pane)`.
+- `run_in_new_pane` uses `_query(...)` for `split-window -d -P -F "#{pane_id}" ... wrapped_cmd`, where
+  `wrapped_cmd = "tmux set-option -p remain-on-exit on; exec <cmd>"`. This avoids a fast-exit race before the
+  parent could set pane-local options.
+- `respawn_pane` calls `set_remain_on_exit(pane)` before `_tmux("respawn-pane", "-k", "-t", pane, cmd)`.
 - `pane_exists` should use runner return code, not `_query`, so stale pane checks are explicit.
 - `get_option` should return `""` for missing options.
 - `set_option`/`unset_option` operate on the current tmux session, not `-g`.

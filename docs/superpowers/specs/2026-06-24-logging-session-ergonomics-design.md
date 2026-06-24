@@ -249,12 +249,14 @@ def exec(self, container, cmd, *, workdir=None) -> ExecResult:
   ```python
   def run_in_new_pane(self, *, target: int | str, direction: Literal["h","v"], percent: int, cmd: str) -> str:
       pane = self._query(["tmux", "split-window", "-d", "-P", "-F", "#{pane_id}",
-                          f"-{direction}", "-p", str(percent), "-t", str(target), cmd])
-      self._tmux("set-option", "-p", "-t", pane, "remain-on-exit", "on")
+                          f"-{direction}", "-p", str(percent), "-t", str(target),
+                          f"tmux set-option -p remain-on-exit on; exec {cmd}"])
       return pane                      # the new pane's stable %id
   ```
   The `cmd` becomes the pane's process (tmux runs it via a non-interactive shell, not an interactive one) →
   **no history**. `-d` keeps focus on the user's base pane (matching today's `select_pane(base)` end-state).
+  The pane-local `remain-on-exit` option is set inside the new pane before `exec`, avoiding a fast-exit race
+  where QEMU/GDB could terminate before a parent-side `set-option` runs.
   `-P -F '#{pane_id}'` returns the new pane's stable id so the debugger splits from the debuggee's pane
   deterministically (no reliance on the active pane). `cmd` is one argv element — the existing `shlex`-joined
   command string (from `launchers.py`) reaches tmux's shell intact, same parsing as the old `send-keys` path.
@@ -328,7 +330,8 @@ Unit (in `./tests/`). **Plan 1:**
 
 **Plan 2:**
 - `Session.run_in_new_pane`: emits `split-window -d -P -F #{pane_id} -<dir> -p <pct> -t <target> '<cmd>'` (fake
-  runner/query), sets `remain-on-exit on`, returns the queried pane id. `Session` no longer has `send_keys`/
+  runner/query) with an in-pane `tmux set-option -p remain-on-exit on; exec <cmd>` wrapper, returns the queried
+  pane id. `Session` no longer has `send_keys`/
   `open_debug_layout`/`split` (those tests removed); `select_pane` stays for restart focus restoration.
 - `DebuggeeStage`/`DebuggerStage` (fake `launch`): the launch callable receives the expected qemu/gdb command
   (in-container vs native-host for debuggee; gef/pwndbg for debugger) — same assertions as today, via `launch`.

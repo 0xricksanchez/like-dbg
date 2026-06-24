@@ -15,8 +15,8 @@ from likedbg.qemu import build_qemu_argv
 class DebuggeeStage:
     name = "debuggee"
 
-    def __init__(self, *, send: Callable[[str], None], debuggee_image: str) -> None:
-        self._send = send
+    def __init__(self, *, launch: Callable[[str], None], debuggee_image: str) -> None:
+        self._launch = launch
         self._debuggee_image = debuggee_image
 
     def should_skip(self, ctx: PipelineContext) -> bool:
@@ -40,5 +40,5 @@ class DebuggeeStage:
             )
         else:
             cmd = qemu_pane_command(argv)
-        self._send(cmd)
+        self._launch(cmd)
         return ctx

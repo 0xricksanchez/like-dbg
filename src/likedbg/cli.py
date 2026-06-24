@@ -51,6 +51,14 @@ _FRAGMENTS = (
     "configs/fragments/generic.config",
 )
 
+_SESSION_STATE_OPTIONS = (
+    "@likedbg_restart_in_progress",
+    "@likedbg_debuggee_cmd",
+    "@likedbg_debugger_cmd",
+    "@likedbg_debuggee_pane",
+    "@likedbg_debugger_pane",
+)
+
 
 def _fetch(url: str, dest: Path) -> None:
     urllib.request.urlretrieve(url, str(dest))  # noqa: S310
@@ -68,17 +76,26 @@ def build_pipeline(
     debugger_image: str,
     debuggee_image: str,
     ext: str,
-    panes: tuple[int, int],
     build_recipe: BuildRecipe,
     rootfs_recipe: RootfsRecipe,
 ) -> Pipeline:
-    debuggee_pane, debugger_pane = panes
+    base_pane = session.current_pane_id()
+    debuggee_pane: str | None = None
 
-    def send_debuggee(cmd: str) -> None:
-        session.select_pane(debuggee_pane)
-        session.send_keys(cmd)
+    for opt in _SESSION_STATE_OPTIONS:
+        session.unset_option(opt)
+    session.set_option("@likedbg_workspace", str(workspace))
+    session.set_option("@likedbg_base_pane_id", base_pane)
+
+    def launch_debuggee(cmd: str) -> None:
+        nonlocal debuggee_pane
+        session.set_option("@likedbg_debuggee_cmd", cmd)
+        debuggee_pane = session.run_in_new_pane(target=base_pane, direction="h", percent=66, cmd=cmd)
+        session.set_option("@likedbg_debuggee_pane", debuggee_pane)
 
     def run_gdb(args: list[str]) -> None:
+        if debuggee_pane is None:
+            raise RuntimeError("debuggee pane has not been launched")
         loc = cache.locations(
             build_recipe.label,
             arch=build_recipe.arch,
@@ -86,12 +103,17 @@ def build_pipeline(
             workspace=workspace,
             volume=kernel_volume,
         )
-        session.select_pane(debugger_pane)
-        session.send_keys(
-            gdb_pane_command(
-                args, image=debugger_image, mount_source=loc.gdb_mount_source, network_mode=host.network_mode
-            )
+        cmd = gdb_pane_command(
+            args, image=debugger_image, mount_source=loc.gdb_mount_source, network_mode=host.network_mode
         )
+        session.set_option("@likedbg_debugger_cmd", cmd)
+        debugger_pane = session.run_in_new_pane(
+            target=debuggee_pane,
+            direction="v",
+            percent=50,
+            cmd=cmd,
+        )
+        session.set_option("@likedbg_debugger_pane", debugger_pane)
 
     return Pipeline(
         [
@@ -112,7 +134,7 @@ def build_pipeline(
                 workspace=workspace,
             ),
             ArtifactExporter(container, kernel_volume=kernel_volume, workspace=workspace),
-            DebuggeeStage(send=send_debuggee, debuggee_image=debuggee_image),
+            DebuggeeStage(launch=launch_debuggee, debuggee_image=debuggee_image),
             DebuggerStage(ext=ext, run_gdb=run_gdb, breakpoint="start_kernel"),
         ]
     )
@@ -128,25 +150,41 @@ def build_use_pipeline(
     debugger_image: str,
     debuggee_image: str,
     ext: str,
-    panes: tuple[int, int],
     gdb_mount_source: str,
 ) -> Pipeline:
-    debuggee_pane, debugger_pane = panes
+    base_pane = session.current_pane_id()
+    debuggee_pane: str | None = None
 
-    def send_debuggee(cmd: str) -> None:
-        session.select_pane(debuggee_pane)
-        session.send_keys(cmd)
+    for opt in _SESSION_STATE_OPTIONS:
+        session.unset_option(opt)
+    session.set_option("@likedbg_workspace", str(workspace))
+    session.set_option("@likedbg_base_pane_id", base_pane)
+
+    def launch_debuggee(cmd: str) -> None:
+        nonlocal debuggee_pane
+        session.set_option("@likedbg_debuggee_cmd", cmd)
+        debuggee_pane = session.run_in_new_pane(target=base_pane, direction="h", percent=66, cmd=cmd)
+        session.set_option("@likedbg_debuggee_pane", debuggee_pane)
 
     def run_gdb(args: list[str]) -> None:
-        session.select_pane(debugger_pane)
-        session.send_keys(
-            gdb_pane_command(args, image=debugger_image, mount_source=gdb_mount_source, network_mode=host.network_mode)
+        if debuggee_pane is None:
+            raise RuntimeError("debuggee pane has not been launched")
+        cmd = gdb_pane_command(
+            args, image=debugger_image, mount_source=gdb_mount_source, network_mode=host.network_mode
         )
+        session.set_option("@likedbg_debugger_cmd", cmd)
+        debugger_pane = session.run_in_new_pane(
+            target=debuggee_pane,
+            direction="v",
+            percent=50,
+            cmd=cmd,
+        )
+        session.set_option("@likedbg_debugger_pane", debugger_pane)
 
     return Pipeline(
         [
             ArtifactExporter(container, kernel_volume=kernel_volume, workspace=workspace),
-            DebuggeeStage(send=send_debuggee, debuggee_image=debuggee_image),
+            DebuggeeStage(launch=launch_debuggee, debuggee_image=debuggee_image),
             DebuggerStage(ext=ext, run_gdb=run_gdb, breakpoint="start_kernel"),
         ]
     )
@@ -160,7 +198,6 @@ def cmd_use(
     custom_ini: Path | None,
     label: str,
     rootfs_label: str | None,
-    panes: tuple[int, int],
 ) -> int:
     if not cache.manifest_exists(workspace, "build", label):
         raise CacheError(f"no cached build labelled {label!r}", remedy="run `start_kgdb --list`")
@@ -205,7 +242,6 @@ def cmd_use(
         debugger_image=DEBUGGER_IMAGE,
         debuggee_image=DEBUGGEE_IMAGE,
         ext=use_settings.debugger.ext,
-        panes=panes,
         gdb_mount_source=bm.paths["gdb_mount_source"],
     )
     pipeline.run(ctx)
@@ -303,7 +339,6 @@ def main(argv: list[str] | None = None) -> int:
             _ensure_images(container, workspace, specs=images.USE_IMAGES)
             session = Session("LIKE-DBG")
             session.start("LIKE-DBG")
-            panes = session.open_debug_layout()
             return cmd_use(
                 container,
                 session,
@@ -311,7 +346,6 @@ def main(argv: list[str] | None = None) -> int:
                 custom_ini=Path(args.config) if args.config else None,
                 label=args.use,
                 rootfs_label=args.rootfs or None,
-                panes=panes,
             )
         # --adopt and the default run both need the recipes (and the network/hash work):
         version = resolve_version(settings.kernel_dl)
@@ -333,7 +367,6 @@ def main(argv: list[str] | None = None) -> int:
         chown_to = (os.getuid(), os.getgid()) if host.os == "linux" and host.storage_mode == "bind" else None
         session = Session("LIKE-DBG")
         session.start("LIKE-DBG")
-        panes = session.open_debug_layout()
         ctx = PipelineContext(settings=settings, host=host, build_label=br.label, rootfs_label=rr.label)
         pipeline = build_pipeline(
             container,
@@ -346,7 +379,6 @@ def main(argv: list[str] | None = None) -> int:
             debugger_image=DEBUGGER_IMAGE,
             debuggee_image=DEBUGGEE_IMAGE,
             ext=settings.debugger.ext,
-            panes=panes,
             build_recipe=br,
             rootfs_recipe=rr,
         )
