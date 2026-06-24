@@ -11,14 +11,20 @@ can continue the rework with one prompt. `dev` represents the FULL rewrite and s
 
 ## Status (2026-06-24)
 
-M1 Sub-project A (Foundation) is **complete** — §A, §B1, §B2, **and §B3 all merged to `dev`** (tip
-`d537573`). §B (Foundation completion) is fully done. Landed 2026-06-24: **§B3 — un-gate the
+M1 Sub-project A (Foundation) is **complete** — §A, §B1, §B2, **and §B3 all merged to `dev`**.
+§B (Foundation completion) is fully done. Landed 2026-06-24: **§B3 — un-gate the
 bind/Linux runtime — DONE + LIVE-GATE PASSED on a real arm64 Ubuntu 26.04 VM for BOTH arches**
 (x86_64 foreign-arch *and* arm64 native-arch: bind build→rootfs→in-container TCG boot→gdb at
 start_kernel→systemd userspace; host-editable trees; auto→host + published topology; configurable
 gdb_port). Earlier on `dev`: §A deferred-polish batch, §B1 image-build lifecycle, §B2 x86_64-on-Mac
-in-container TCG (live-gate PASSED on the M5) + 3 ubuntu:26.04 build-chain fixes. Next unstarted:
-**Sub-projects C–E**, or the §C cache niceties, or the rootfs robustness follow-up (see below).
+in-container TCG (live-gate PASSED on the M5) + 3 ubuntu:26.04 build-chain fixes.
+
+Post-B3 follow-up landed 2026-06-24: **Observability/logging Plan 1 is merged to `dev`** — stderr +
+per-run log files, streaming `ContainerService.exec`, rootfs log routing + one retry, per-stage timings,
+and default-visible cache-hit notices. Next planned continuation:
+**Plan 2 `feat/process-panes`** from `docs/superpowers/specs/2026-06-24-logging-session-ergonomics-design.md`
+(§3.4–3.5): shell-history isolation via tmux process panes, plus ADR-0005. A dedicated Plan 2
+implementation plan is not written yet. After that: **Sub-projects C–E** or the §C cache niceties.
 Don't re-derive history — read these:
 - Project state & decisions: the auto-loaded memory `project-like-dbg-revival.md`.
 - Glossary: `CONTEXT.md`. Decisions: `docs/adr/0001..0003`.
@@ -123,10 +129,12 @@ threading), not detection.
   `hbreak start_kernel` (source-level) → continue → systemd userspace root shell. Verified live: live
   QEMU argv `--network host` (auto) and `-p PORT:PORT` (published override), bind image path, `-gdb
   tcp::PORT` (incl. custom 4444), `--list`/`--clean` (bind rmtree), no leftover containers.
-  **Follow-up (orthogonal, NOT done): rootfs robustness** — the FIRST foreign-arch rootfs build failed
-  once (non-reproducible first-run env transient; 3 later fresh builds OK). Exposed a real gap:
-  `RootfsStage` discards the rootfs container's logs (`_ = line`) → failures are undiagnosable. Planned
-  separate cycle (branch `fix/rootfs-diagnosability`): surface the container logs on failure + one retry.
+  **Follow-up done (2026-06-24): rootfs robustness + observability Plan 1** — the FIRST foreign-arch
+  rootfs build failed once (non-reproducible first-run env transient; 3 later fresh builds OK). The gap is
+  now closed: `RootfsStage` routes streamed rootfs container logs into loguru, retries once on
+  image-not-produced, and failures point at `artifacts/logs/latest.log`. `ContainerService.exec` streams
+  build/container output to DEBUG, stderr gets stage timings, and cache-hit branches now log default-visible
+  reuse notices.
 
 ### C. Cache niceties (small)
 - `--use` rootfs **build-if-absent** (currently requires a cached rootfs; spec §4.5 v1 note).
