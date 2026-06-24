@@ -59,6 +59,8 @@ def build_pipeline(
     container: ContainerService,
     session: Session,
     *,
+    host: HostProfile,
+    chown_to: tuple[int, int] | None = None,
     workspace: Path,
     kernel_volume: str,
     dl_dir: Path,
@@ -79,12 +81,16 @@ def build_pipeline(
         loc = cache.locations(
             build_recipe.label,
             arch=build_recipe.arch,
-            storage_mode="volume",  # volume mode enforced upstream by require_volume_mode
+            storage_mode=host.storage_mode,
             workspace=workspace,
             volume=kernel_volume,
         )
         session.select_pane(debugger_pane)
-        session.send_keys(gdb_pane_command(args, image=debugger_image, mount_source=loc.gdb_mount_source))
+        session.send_keys(
+            gdb_pane_command(
+                args, image=debugger_image, mount_source=loc.gdb_mount_source, network_mode=host.network_mode
+            )
+        )
 
     return Pipeline(
         [
@@ -96,6 +102,7 @@ def build_pipeline(
                 kbuilder_image=KBUILDER_IMAGE,
                 workspace=workspace,
                 kernel_volume=kernel_volume,
+                chown_to=chown_to,
             ),
             RootfsStage(
                 container,
@@ -114,6 +121,7 @@ def build_use_pipeline(
     container: ContainerService,
     session: Session,
     *,
+    host: HostProfile,
     workspace: Path,
     kernel_volume: str,
     debugger_image: str,
@@ -130,7 +138,9 @@ def build_use_pipeline(
 
     def run_gdb(args: list[str]) -> None:
         session.select_pane(debugger_pane)
-        session.send_keys(gdb_pane_command(args, image=debugger_image, mount_source=gdb_mount_source))
+        session.send_keys(
+            gdb_pane_command(args, image=debugger_image, mount_source=gdb_mount_source, network_mode=host.network_mode)
+        )
 
     return Pipeline(
         [
@@ -163,7 +173,6 @@ def cmd_use(
         overrides={"general": {"arch": bm.arch}},
     )
     host = HostProfile.detect(use_settings, workspace)
-    require_volume_mode(host)
     rlabel = rootfs_label or make_rootfs_recipe(use_settings).label
     if not cache.manifest_exists(workspace, "rootfs", rlabel):
         raise CacheError(
@@ -174,12 +183,13 @@ def cmd_use(
     rootfs_image = Path(rm.paths["image_host"])
     if not rootfs_image.is_file():
         raise CacheError(f"cached rootfs {rlabel} image is gone", remedy=f"`start_kgdb --clean {rlabel}` and rebuild")
+    kernel_image_path = bm.paths["image_host"] if bm.storage_mode != "volume" else bm.paths["image_in_tree"]
     ctx = PipelineContext(
         settings=use_settings,
         host=host,
         kernel_root=Path(bm.paths["kernel_root"]),
         vmlinux=Path(bm.paths["gdb_vmlinux"]),
-        kernel_image=Path(bm.paths["image_in_tree"]),
+        kernel_image=Path(kernel_image_path),
         rootfs_image=rootfs_image,
         build_label=label,
         rootfs_label=rlabel,
@@ -187,6 +197,7 @@ def cmd_use(
     pipeline = build_use_pipeline(
         container,
         session,
+        host=host,
         workspace=workspace,
         kernel_volume=KERNEL_VOLUME,
         debugger_image=DEBUGGER_IMAGE,
@@ -199,11 +210,11 @@ def cmd_use(
     return 0
 
 
-def require_volume_mode(host: HostProfile) -> None:
+def _require_volume_for_adopt(host: HostProfile) -> None:
     if host.storage_mode != "volume":
         raise HostCapabilityError(
-            f"build-cache runtime supports volume storage only (got {host.storage_mode!r})",
-            remedy="this milestone targets macOS volume mode; bind/Linux runtime is not yet wired",
+            "--adopt migrates the legacy in-volume tree and is volume-mode only",
+            remedy="bind/Linux builds fresh — just run start_kgdb",
         )
 
 
@@ -306,6 +317,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.force_rebuild:
             cache.manifest_path(workspace, "build", br.label).unlink(missing_ok=True)
         if args.adopt:
+            _require_volume_for_adopt(HostProfile.detect(settings, workspace))
             label = adopt_legacy_build(container, workspace=workspace, recipe=br)
             logger.info(f"adopted legacy build as {label}")
             return 0
@@ -313,8 +325,8 @@ def main(argv: list[str] | None = None) -> int:
             logger.error("Not running inside a TMUX session. Start tmux first.")
             return 2
         host = HostProfile.detect(settings, workspace)
-        require_volume_mode(host)
         _ensure_images(container, workspace, specs=images.required_for(host))
+        chown_to = (os.getuid(), os.getgid()) if host.os == "linux" and host.storage_mode == "bind" else None
         session = Session("LIKE-DBG")
         session.start("LIKE-DBG")
         panes = session.open_debug_layout()
@@ -322,6 +334,8 @@ def main(argv: list[str] | None = None) -> int:
         pipeline = build_pipeline(
             container,
             session,
+            host=host,
+            chown_to=chown_to,
             workspace=workspace,
             kernel_volume=KERNEL_VOLUME,
             dl_dir=workspace / "kernels",

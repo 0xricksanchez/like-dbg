@@ -7,10 +7,10 @@ from likedbg.cache import Manifest
 from likedbg.cache import build_recipe
 from likedbg.cache import rootfs_recipe
 from likedbg.cache import write_manifest
+from likedbg.cli import _require_volume_for_adopt
 from likedbg.cli import build_pipeline
 from likedbg.cli import build_use_pipeline
 from likedbg.cli import cmd_clean
-from likedbg.cli import require_volume_mode
 from likedbg.cli import summarize_cache
 from likedbg.config import Settings
 from likedbg.container_service import ContainerService
@@ -43,6 +43,7 @@ def test_build_pipeline_includes_all_stage_names(tmp_path):
     pipe = build_pipeline(
         ContainerService(SimpleNamespace()),
         session,
+        host=_host("volume"),
         workspace=tmp_path,
         kernel_volume="likedbg_ksrc",
         dl_dir=tmp_path / "kernels",
@@ -69,13 +70,13 @@ def _host(mode):
     )
 
 
-def test_require_volume_mode_accepts_volume():
-    require_volume_mode(_host("volume"))  # no raise
-
-
-def test_require_volume_mode_rejects_bind():
+def test_adopt_guard_rejects_bind():
     with pytest.raises(HostCapabilityError):
-        require_volume_mode(_host("bind"))
+        _require_volume_for_adopt(_host("bind"))
+
+
+def test_adopt_guard_accepts_volume():
+    _require_volume_for_adopt(_host("volume"))  # no raise
 
 
 def test_summarize_cache_empty(tmp_path):
@@ -148,6 +149,7 @@ def test_build_use_pipeline_is_launch_only(tmp_path):
     pipe = build_use_pipeline(
         _FakeContainer(),
         session,
+        host=_host("volume"),
         workspace=tmp_path,
         kernel_volume="likedbg_ksrc",
         debugger_image="like_debugger:latest",
