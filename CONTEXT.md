@@ -18,9 +18,20 @@ _Avoid_: guest, VM, target.
 Where the Debuggee's QEMU runs. **Native-host**: QEMU as a host process (macOS, same architecture,
 hardware-accelerated). **In-container**: QEMU inside the debuggee Container image (Linux, or
 x86_64-on-Mac under emulation). Chosen automatically from the host and guest architecture (see
-ADR-0001) and recorded on the host profile; it determines how the Debugger reaches the gdbstub.
+ADR-0001) and recorded on the host profile; together with Network mode it governs how the
+Debugger reaches the gdbstub.
 _Avoid_: confusing it with Storage mode (a separate axis — where the kernel *source* lives);
 naming the concept after the `debuggee_mode` field.
+
+**Network mode**:
+How the Debugger reaches the Debuggee's gdbstub across the container boundary. **Host**: the
+Debuggee shares the host network, so the stub is reached on `localhost` with no gateway hop
+(the Linux default). **Published**: the Debuggee publishes the stub's port and the Debugger
+reaches it through the Docker gateway at `host.docker.internal` (the macOS default — and the
+only option when QEMU is a host process or Docker offers no host networking). Auto-selected
+per host, overridable, and the stub's port is configurable. See ADR-0001.
+_Avoid_: naming the concept after the `network` field; conflating it with Debuggee mode
+(*where* QEMU runs) — Network mode is *how the Debugger connects*, a separate axis.
 
 **Debugger**:
 The interactive GDB session (driven by GEF or pwndbg) attached to the debuggee's stub.
