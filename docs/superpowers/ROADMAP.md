@@ -9,15 +9,16 @@ can continue the rework with one prompt. `dev` represents the FULL rewrite and s
 > unstarted item, brainstorm→spec→plan→subagent-driven-development (or systematic-debugging
 > for bugs), and keep dev local."*
 
-## Status (2026-06-23)
+## Status (2026-06-24)
 
-M1 Sub-project A (Foundation) is complete and extended; all merged to `dev` (tip `4cde38d`).
-Landed 2026-06-23: the §A deferred-polish batch (all 7 items), §B1 image-build lifecycle, and
-§B2 x86_64-on-Mac in-container TCG — **live-gate PASSED on the M5** (x86_64 build→foreign-arch
-rootfs→in-container TCG boot→gdb→systemd userspace), incl. 3 ubuntu:26.04 build-chain fixes that
-also unblock the arm64 daily driver (see §B2). Next unstarted: **§B3** (un-gate bind/Linux runtime)
-— least valuable to a macOS user and not fully live-gateable on a Mac — or move to Sub-projects
-C–E. (Maintainer commits `a365bdc`/`4cde38d` (ubuntu:26.04 bump + shell-script whitespace) also on `dev`.)
+M1 Sub-project A (Foundation) is **complete** — §A, §B1, §B2, **and §B3 all merged to `dev`** (tip
+`d537573`). §B (Foundation completion) is fully done. Landed 2026-06-24: **§B3 — un-gate the
+bind/Linux runtime — DONE + LIVE-GATE PASSED on a real arm64 Ubuntu 26.04 VM for BOTH arches**
+(x86_64 foreign-arch *and* arm64 native-arch: bind build→rootfs→in-container TCG boot→gdb at
+start_kernel→systemd userspace; host-editable trees; auto→host + published topology; configurable
+gdb_port). Earlier on `dev`: §A deferred-polish batch, §B1 image-build lifecycle, §B2 x86_64-on-Mac
+in-container TCG (live-gate PASSED on the M5) + 3 ubuntu:26.04 build-chain fixes. Next unstarted:
+**Sub-projects C–E**, or the §C cache niceties, or the rootfs robustness follow-up (see below).
 Don't re-derive history — read these:
 - Project state & decisions: the auto-loaded memory `project-like-dbg-revival.md`.
 - Glossary: `CONTEXT.md`. Decisions: `docs/adr/0001..0003`.
@@ -105,16 +106,34 @@ threading), not detection.
   rootfs disk must be `:rw` (was `:ro`). Observation: the build cache is fragment-**comment**-sensitive
   (ADR-0003 hashes file content), so doc-only fragment edits force a kernel rebuild.
   Deferred minors: `_GDB_ARCH` unguarded (unreachable via the arch Literal); empty-mounts double-space (unreachable).
-- **B3 — bind/Linux runtime (un-gate `require_volume_mode`):** the cache architecture is already
-  storage-mode-aware (`cache.locations`), but the live wiring is volume-only. Needs: thread
-  `storage_mode` into `cli.run_gdb`'s `locations()` call (currently hardcoded `"volume"`);
-  a host-readable Image path for the bind-mode Debuggee (Export is volume-only — "the build
-  is the export" in bind); in-container QEMU launch (Linux `/dev/kvm`, reusing B2's launcher);
-  then drop the guard.
+- **B3 — bind/Linux runtime — ✅ DONE + LIVE-GATE PASSED (2026-06-24; merged to `dev`, commits
+  `b276c2f..d537573`):** un-gated the bind storage runtime so the daily-driver runs on Linux.
+  **Layout B** (bind-mount the parent `artifacts/ksrc/` host dir at `/ksrc`, mirroring the volume
+  mount → container-side paths are mode-invariant, only the `-v` source differs) + `tree_mount_source`
+  helper; new **Network mode** axis (`[debuggee] network = auto|host|published`; Linux→host net+localhost,
+  macOS→published+host.docker.internal; `network=host` rejected on macOS) + configurable
+  `[debuggee] gdb_port` (QEMU `-gdb tcp::PORT`, not `-s`); arm64 `-cpu host` under KVM (cortex-a72 under
+  TCG); `--device /dev/kvm` passthrough (unit-tested-only — no KVM on the gate VM); root build +
+  `chown -R uid:gid` (Linux+bind) for host-editable trees; bind `remove_cached` (host rmtree); deleted
+  `require_volume_mode`. 187 tests; opus whole-branch review clean. CONTEXT.md gains `Network mode`; no
+  new ADR (realizes ADR-0001/0002). Spec/plan: `docs/superpowers/{specs,plans}/2026-06-24-b3-bind-linux-runtime*`.
+  **LIVE-GATE PASSED on a real arm64 Ubuntu 26.04 VM (Docker 29.6, no /dev/kvm → TCG) — BOTH arches:**
+  x86_64 (foreign-arch amd64 rootfs) *and* arm64 (native rootfs) → bind build (tree on host at
+  `artifacts/ksrc/<label>`, owned by the host user, editable w/o sudo) → in-container TCG boot → gdb
+  `hbreak start_kernel` (source-level) → continue → systemd userspace root shell. Verified live: live
+  QEMU argv `--network host` (auto) and `-p PORT:PORT` (published override), bind image path, `-gdb
+  tcp::PORT` (incl. custom 4444), `--list`/`--clean` (bind rmtree), no leftover containers.
+  **Follow-up (orthogonal, NOT done): rootfs robustness** — the FIRST foreign-arch rootfs build failed
+  once (non-reproducible first-run env transient; 3 later fresh builds OK). Exposed a real gap:
+  `RootfsStage` discards the rootfs container's logs (`_ = line`) → failures are undiagnosable. Planned
+  separate cycle (branch `fix/rootfs-diagnosability`): surface the container logs on failure + one retry.
 
 ### C. Cache niceties (small)
 - `--use` rootfs **build-if-absent** (currently requires a cached rootfs; spec §4.5 v1 note).
-- `--list` build size shows the host-export Image only; add the in-volume tree size (container `du`).
+- `--list` build size: shows `-` for **bind** builds (B3 live-gate confirmed — `cli._artifact_size`
+  looks for the volume-export path `artifacts/<label>/Image`; bind images live at
+  `artifacts/ksrc/<label>/arch/<arch>/boot/<image>`); for volume it shows the host-export Image only.
+  Fix: in bind stat `manifest.paths["image_host"]`; add the in-volume tree size for volume (container `du`).
 - `--adopt-rootfs` analogue (`--adopt` only migrates kernel builds; rootfs adoption was manual).
 
 ### D. Sub-projects B–E (large; see foundation spec §1 for the vision)
