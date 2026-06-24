@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import docker.errors
+from loguru import logger
 
 from likedbg.errors import ContainerError
 
@@ -14,6 +15,11 @@ from likedbg.errors import ContainerError
 class ExecResult:
     exit_code: int
     output: str
+
+
+def _tail(text: str, n: int = 40) -> str:
+    lines = text.splitlines()
+    return "\n".join(lines[-n:])
 
 
 class ContainerService:
@@ -59,16 +65,24 @@ class ContainerService:
         return self._client.containers.run(image, auto_remove=auto_remove, **kwargs)
 
     def exec(self, container: Any, cmd: str, *, workdir: str | None = None) -> ExecResult:
-        # Run via a shell so build commands using $(nproc), &&, and other shell
-        # features evaluate correctly (docker-py does not wrap a string cmd in a shell).
-        result = container.exec_run(["/bin/sh", "-c", cmd], workdir=workdir)
-        output = result.output.decode() if isinstance(result.output, bytes) else str(result.output)
-        if result.exit_code != 0:
+        # Stream via the low-level API with tty=True so output is a single clean merged stream
+        # (no stdout/stderr multiplex frames) and every line is logged live at DEBUG.
+        api = self._client.api
+        exec_id = api.exec_create(container.id, ["/bin/sh", "-c", cmd], workdir=workdir, tty=True)["Id"]
+        chunks: list[str] = []
+        for chunk in api.exec_start(exec_id, tty=True, stream=True):
+            text = chunk.decode(errors="replace") if isinstance(chunk, bytes) else str(chunk)
+            chunks.append(text)
+            for line in text.splitlines():
+                logger.debug(line)
+        output = "".join(chunks)
+        exit_code = api.exec_inspect(exec_id)["ExitCode"]
+        if exit_code != 0:
             raise ContainerError(
-                f"command failed (exit {result.exit_code}): {cmd}\n{output}",
-                remedy="inspect the command output above",
+                f"command failed (exit {exit_code}): {cmd}\n{_tail(output)}",
+                remedy="inspect the output above / artifacts/logs/latest.log",
             )
-        return ExecResult(exit_code=result.exit_code, output=output)
+        return ExecResult(exit_code=exit_code, output=output)
 
     def image_labels(self, tag: str) -> dict[str, str]:
         try:
