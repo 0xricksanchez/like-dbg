@@ -14,7 +14,9 @@ _EXT_SOURCE = {"gef": "/opt/gef/gef.py", "pwndbg": "/opt/pwndbg/gdbinit.py"}
 _GDB_ARCH = {"arm64": "aarch64", "x86_64": "i386:x86-64"}
 
 
-def build_gdb_args(host: HostProfile, *, arch: str, vmlinux: Path, ext: str, breakpoint: str | None) -> list[str]:
+def build_gdb_args(
+    host: HostProfile, *, arch: str, vmlinux: Path, ext: str, breakpoint: str | None, port: int = 1234
+) -> list[str]:
     addr = host.gdbstub_addr
     # Source the chosen extension and enable auto-load BEFORE the symbol file loads
     # (mirrors ~/.gdbinit): the kernel's vmlinux-gdb.py / lx- helpers and the gef/pwndbg
@@ -24,9 +26,9 @@ def build_gdb_args(host: HostProfile, *, arch: str, vmlinux: Path, ext: str, bre
     args += ["-iex", "set auto-load safe-path /", str(vmlinux)]
     args += ["-ex", f"set architecture {_GDB_ARCH[arch]}"]
     if ext == "gef":
-        args += ["-ex", f"gef-remote {addr} 1234"]
+        args += ["-ex", f"gef-remote {addr} {port}"]
     else:
-        args += ["-ex", f"target remote {addr}:1234"]
+        args += ["-ex", f"target remote {addr}:{port}"]
     if breakpoint is not None:
         # Hardware breakpoint: a software `break` cannot be written to the kernel's
         # high-half virtual address before the MMU is enabled at early boot (e.g.

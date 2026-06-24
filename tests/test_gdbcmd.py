@@ -73,3 +73,10 @@ def test_sets_x86_64_gdb_architecture():
 def test_sets_arm64_gdb_architecture():
     args = build_gdb_args(_host(), arch="arm64", vmlinux=Path("/w/vmlinux"), ext="gef", breakpoint=None)
     assert "set architecture aarch64" in " ".join(args)
+
+
+def test_remote_port_is_configurable():
+    gef = build_gdb_args(_host(), arch="arm64", vmlinux=Path("/w/vmlinux"), ext="gef", breakpoint=None, port=4444)
+    assert "gef-remote host.docker.internal 4444" in " ".join(gef)
+    pdb = build_gdb_args(_host(), arch="arm64", vmlinux=Path("/w/vmlinux"), ext="pwndbg", breakpoint=None, port=4444)
+    assert "target remote host.docker.internal:4444" in " ".join(pdb)
