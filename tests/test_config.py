@@ -54,3 +54,24 @@ def test_custom_ini_overrides_user(tmp_path):
     custom.write_text("[general]\narch = x86_64\n")
     s = _load(custom_ini=custom)
     assert s.general.arch == "x86_64"  # custom beats user.ini's arm64
+
+
+def test_gdb_port_and_network_defaults():
+    s = _load()
+    assert s.debuggee.gdb_port == 1234
+    assert s.debuggee.network == "auto"
+
+
+def test_gdb_port_and_network_overrides(tmp_path):
+    custom = tmp_path / "custom.ini"
+    custom.write_text("[debuggee]\ngdb_port = 4444\nnetwork = published\n")
+    s = _load(custom_ini=custom)
+    assert s.debuggee.gdb_port == 4444
+    assert s.debuggee.network == "published"
+
+
+def test_invalid_network_raises_configerror(tmp_path):
+    custom = tmp_path / "custom.ini"
+    custom.write_text("[debuggee]\nnetwork = bridge\n")
+    with pytest.raises(ConfigError):
+        _load(custom_ini=custom)

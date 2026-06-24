@@ -23,6 +23,7 @@ MacStorage = Literal["auto", "bind", "volume"]
 BuildMode = Literal["generic", "syzkaller", "custom", "config"]
 Compiler = Literal["clang", "gcc"]
 Ext = Literal["gef", "pwndbg"]
+Network = Literal["auto", "host", "published"]
 
 
 class _Base(BaseModel):
@@ -71,6 +72,8 @@ class DebuggeeCfg(_Base):
     kpti: bool = True
     panic: str = "halt"
     accel: Accel = "auto"
+    gdb_port: int = 1234
+    network: Network = "auto"
 
 
 class DebuggerCfg(_Base):
