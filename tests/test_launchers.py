@@ -57,3 +57,44 @@ def test_qemu_container_command_omits_absent_rootfs():
     )
     assert "-v /ws/Image:/ws/Image:ro" in cmd
     assert ":rw" not in cmd  # no writable mount when there's no rootfs disk
+
+
+def test_qemu_container_host_network_omits_published_port():
+    cmd = qemu_container_command(
+        ["qemu-system-aarch64", "-kernel", "/w/Image"],
+        image="like_debuggee:latest",
+        ro_mounts=[Path("/w/Image")],
+        rw_mounts=[],
+        network_mode="host",
+    )
+    assert "--network host" in cmd
+    assert "-p 1234:1234" not in cmd  # host net and -p are mutually exclusive
+
+
+def test_qemu_container_kvm_passes_device():
+    cmd = qemu_container_command(
+        ["qemu-system-aarch64", "-kernel", "/w/Image"],
+        image="like_debuggee:latest",
+        ro_mounts=[Path("/w/Image")],
+        rw_mounts=[],
+        network_mode="host",
+        kvm=True,
+    )
+    assert "--device /dev/kvm" in cmd
+
+
+def test_qemu_container_no_kvm_omits_device():
+    cmd = qemu_container_command(
+        ["qemu-system-aarch64", "-kernel", "/w/Image"],
+        image="like_debuggee:latest",
+        ro_mounts=[Path("/w/Image")],
+        rw_mounts=[],
+    )
+    assert "/dev/kvm" not in cmd
+
+
+def test_gdb_pane_host_network_uses_localhost_path_not_gateway():
+    cmd = gdb_pane_command(["gdb-multiarch"], image="img", mount_source="/ws/artifacts/ksrc", network_mode="host")
+    assert "--network host" in cmd
+    assert "--add-host=host.docker.internal:host-gateway" not in cmd
+    assert "-v /ws/artifacts/ksrc:/ksrc:ro" in cmd
