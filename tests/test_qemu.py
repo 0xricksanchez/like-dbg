@@ -52,6 +52,12 @@ def test_nokaslr_in_append_when_kaslr_false():
     assert "nokaslr" in append and "console=ttyAMA0" in append
 
 
+def test_append_disables_predictable_nic_names():
+    argv = build_qemu_argv(_settings("arm64"), _host(), kernel_image=Path("/w/Image"), rootfs=Path("/w/rootfs.img"))
+    append = argv[argv.index("-append") + 1]
+    assert "net.ifnames=0" in append
+
+
 def test_cpio_rootfs_uses_initrd():
     argv = build_qemu_argv(_settings("arm64"), _host(), kernel_image=Path("/w/Image"), rootfs=Path("/w/rootfs.cpio.gz"))
     s = _argstr(argv)

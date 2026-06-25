@@ -57,7 +57,9 @@ def build_qemu_argv(settings: Settings, host: HostProfile, *, kernel_image: Path
     argv += ["-accel", host.accel, "-m", str(settings.debuggee.memory), "-smp", str(settings.debuggee.smp)]
     argv += ["-kernel", str(kernel_image)]
     drive_args, root = _rootfs_args(rootfs)
-    append = " ".join([console, root, "earlyprintk=serial", *_mitigations(settings), "oops=panic", _panic(settings)])
+    append = " ".join(
+        [console, root, "earlyprintk=serial", "net.ifnames=0", *_mitigations(settings), "oops=panic", _panic(settings)]
+    )
     argv += ["-append", append, *drive_args, "-nographic"]
     if settings.debuggee.gdb:
         argv += ["-S", "-gdb", f"tcp::{settings.debuggee.gdb_port}"]
