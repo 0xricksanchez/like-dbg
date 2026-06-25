@@ -75,9 +75,6 @@ def test_list_manifests_returns_all_of_a_kind_sorted(tmp_path):
 
 
 def test_write_manifest_leaves_no_tmp_residue(tmp_path):
-    from likedbg.cache import Manifest
-    from likedbg.cache import write_manifest
-
     write_manifest(
         tmp_path,
         Manifest(

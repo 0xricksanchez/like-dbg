@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
+import likedbg.cli as cli
 from likedbg import cache
 from likedbg.cache import Manifest
 from likedbg.cache import build_recipe
@@ -268,8 +269,6 @@ def test_build_use_pipeline_includes_rootfs_before_launch(tmp_path):
 
 
 def test_cmd_use_builds_default_rootfs_when_manifest_is_missing(tmp_path, monkeypatch):
-    import likedbg.cli as cli
-
     settings = Settings.model_validate(
         {"general": {"arch": "arm64"}, "debuggee": {"accel": "tcg", "network": "host"}}
     )
@@ -320,8 +319,6 @@ def test_cmd_use_builds_default_rootfs_when_manifest_is_missing(tmp_path, monkey
 
 
 def test_cmd_use_ensures_images_after_host_detection(tmp_path, monkeypatch):
-    import likedbg.cli as cli
-
     settings = Settings.model_validate({"general": {"arch": "arm64"}})
     rr = rootfs_recipe(settings)
     rimg = rootfs_target(tmp_path, rr.label)
@@ -432,8 +429,6 @@ def _restart_options():
 
 
 def test_restart_debuggee_respawns_existing_pane_in_place():
-    import likedbg.cli as cli
-
     session = _RestartSession(options=_restart_options())
     assert cli.cmd_restart_debuggee(session) == 0  # type: ignore[arg-type]
     assert session.sets[0] == ("@likedbg_restart_in_progress", "1")
@@ -448,8 +443,6 @@ def test_restart_debuggee_respawns_existing_pane_in_place():
 
 
 def test_restart_debuggee_recreates_when_debuggee_pane_stale():
-    import likedbg.cli as cli
-
     session = _RestartSession(options=_restart_options(), existing=("%1", "%3"))
     assert cli.cmd_restart_debuggee(session) == 0  # type: ignore[arg-type]
     assert session.respawns == []
@@ -470,8 +463,6 @@ def test_restart_debuggee_recreates_when_debuggee_pane_stale():
 
 
 def test_restart_debuggee_missing_command_or_workspace_raises_remedy():
-    import likedbg.cli as cli
-
     for missing in ("@likedbg_workspace", "@likedbg_debuggee_cmd"):
         options = _restart_options()
         options.pop(missing)
@@ -481,8 +472,6 @@ def test_restart_debuggee_missing_command_or_workspace_raises_remedy():
 
 
 def test_restart_debuggee_clears_lock_on_post_acquire_failure():
-    import likedbg.cli as cli
-
     options = _restart_options()
     options.pop("@likedbg_workspace")
     session = _RestartSession(options=options)
@@ -493,8 +482,6 @@ def test_restart_debuggee_clears_lock_on_post_acquire_failure():
 
 
 def test_restart_debuggee_missing_base_only_fatal_for_recreate():
-    import likedbg.cli as cli
-
     existing_debuggee = _RestartSession(options=_restart_options(), existing=("%2", "%3"))
     assert cli.cmd_restart_debuggee(existing_debuggee) == 0  # type: ignore[arg-type]
 
@@ -505,8 +492,6 @@ def test_restart_debuggee_missing_base_only_fatal_for_recreate():
 
 
 def test_restart_debuggee_lock_prevents_double_tap():
-    import likedbg.cli as cli
-
     options = _restart_options()
     options["@likedbg_restart_in_progress"] = "1"
     session = _RestartSession(options=options)
@@ -519,8 +504,6 @@ def test_restart_debuggee_lock_prevents_double_tap():
 
 
 def test_main_restart_bypasses_config_and_docker(monkeypatch):
-    import likedbg.cli as cli
-
     restarted = []
     monkeypatch.setenv("TMUX", "/tmp/tmux")
     monkeypatch.setattr(cli, "load_settings", lambda *a, **k: pytest.fail("load_settings should not run"))
@@ -531,8 +514,6 @@ def test_main_restart_bypasses_config_and_docker(monkeypatch):
 
 
 def test_main_restart_failure_displays_tmux_message(monkeypatch):
-    import likedbg.cli as cli
-
     created = []
 
     class FakeSession(_RestartSession):
@@ -552,16 +533,12 @@ def test_main_restart_failure_displays_tmux_message(monkeypatch):
 
 
 def test_main_restart_requires_tmux(monkeypatch):
-    import likedbg.cli as cli
-
     monkeypatch.delenv("TMUX", raising=False)
     monkeypatch.setattr(cli, "load_settings", lambda *a, **k: pytest.fail("load_settings should not run"))
     assert cli.main(["--restart-debuggee"]) == 2
 
 
 def test_main_build_images_is_docker_only_and_invokes_build_images(monkeypatch):
-    import likedbg.cli as cli
-
     built = []
     monkeypatch.setattr(cli, "load_settings", lambda *a, **k: Settings())
     monkeypatch.setattr(cli.docker_env, "resolve_docker_host", lambda env: "unix:///x")
@@ -574,8 +551,6 @@ def test_main_build_images_is_docker_only_and_invokes_build_images(monkeypatch):
 
 
 def test_ensure_images_helper_warns_each_stale_tag(monkeypatch):
-    import likedbg.cli as cli
-
     monkeypatch.setattr(cli.images, "ensure_current", lambda container, workspace, specs: ["like_rootfs:latest"])
     msgs = []
     monkeypatch.setattr(cli.logger, "warning", lambda msg: msgs.append(msg))
@@ -586,8 +561,6 @@ def test_ensure_images_helper_warns_each_stale_tag(monkeypatch):
 
 
 def test_main_configures_stderr_always_but_logfile_only_for_runs(monkeypatch):
-    import likedbg.cli as cli
-
     calls = {"stderr": 0, "logfile": 0}
     monkeypatch.setattr(cli, "load_settings", lambda *a, **k: Settings())
     monkeypatch.setattr(cli.docker_env, "resolve_docker_host", lambda env: "unix:///x")

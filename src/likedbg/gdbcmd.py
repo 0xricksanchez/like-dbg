@@ -91,13 +91,16 @@ def build_gdb_args(
     host: HostProfile, *, arch: str, vmlinux: Path, ext: str, breakpoint: str | None, port: int = 1234
 ) -> list[str]:
     addr = host.gdbstub_addr
+    gdb_arch = _GDB_ARCH.get(arch)
+    if gdb_arch is None:
+        raise ValueError(f"unsupported gdb architecture: {arch}")
     # Source the chosen extension and enable auto-load BEFORE the symbol file loads
     # (mirrors ~/.gdbinit): the kernel's vmlinux-gdb.py / lx- helpers and the gef/pwndbg
     # hooks must be in place first (a later -ex is too late).
     args = ["gdb-multiarch", "-q"]
     args += ["-iex", f"source {_EXT_SOURCE[ext]}"]
     args += ["-iex", "set auto-load safe-path /", str(vmlinux)]
-    args += ["-ex", f"set architecture {_GDB_ARCH[arch]}"]
+    args += ["-ex", f"set architecture {gdb_arch}"]
     args += ["-ex", _reconnect_helper(ext, addr, port, breakpoint)]
     args += ["-ex", _remote_command(ext, addr, port)]
     if breakpoint is not None:

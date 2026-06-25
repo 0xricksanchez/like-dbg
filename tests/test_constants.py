@@ -22,5 +22,11 @@ def test_base_image_is_like_dbg_base():
     assert constants.BASE_IMAGE == "like_dbg_base:latest"
 
 
+def test_build_helper_image_values():
+    assert constants.KBUILDER_IMAGE == "like_kbuilder_arm64:latest"
+    assert constants.ROOTFS_IMAGE == "like_rootfs:latest"
+    assert constants.DEBUGGER_IMAGE == "like_debugger:latest"
+
+
 def test_debuggee_image_value():
     assert constants.DEBUGGEE_IMAGE == "like_debuggee:latest"

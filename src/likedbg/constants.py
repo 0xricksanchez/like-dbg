@@ -5,8 +5,6 @@ Volume mode (see CONTEXT.md -> Storage mode, ADR-0002). They are infra identifie
 user configuration, so they live here rather than in the Pydantic Settings schema.
 """
 
-from __future__ import annotations
-
 KERNEL_VOLUME = "likedbg_ksrc"
 VOLUME_MOUNT = "/ksrc"
 

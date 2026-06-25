@@ -28,12 +28,8 @@ def test_slug_is_filesystem_safe():
 
 
 def test_slug_empty_string():
-    from likedbg.cache import slug
-
     assert slug("") == ""
 
 
 def test_slug_already_clean_roundtrips():
-    from likedbg.cache import slug
-
     assert slug("linux-6.6.30") == "linux-6.6.30"

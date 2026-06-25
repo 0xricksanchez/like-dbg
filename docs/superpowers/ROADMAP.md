@@ -81,9 +81,12 @@ All seven Plan 5/6 deferred items cleared via branch `chore/section-a-hardening`
 **Outstanding runtime check (M5, spec §5 — not yet run):** `uv run ./start_kgdb`, then confirm
 `docker ps -a` shows no leftover `like_dbg_base`/`like_kbuilder_arm64`/`like_rootfs` helper
 containers, and a deliberately-broken build still surfaces output via `ContainerError`.
-**Deferred cosmetics (tiny, optional future pass):** inert `from __future__ import annotations`
-in `constants.py`; exact-value asserts for KBUILDER/ROOTFS/DEBUGGER in `test_constants.py`;
-`cache.py` comment still says `/ksrc` literally; a few function-scope test imports vs module-level.
+**Polish done (2026-06-25):** removed the inert `from __future__ import annotations` in
+`constants.py`; added exact-value asserts for KBUILDER/ROOTFS/DEBUGGER; cleaned cache comments
+to refer to `VOLUME_MOUNT`; moved remaining function-scope test imports to module scope.
+**Smoke note (2026-06-25):** the cache-niceties smoke left no running containers; `docker ps -a`
+still showed three old exited containers from prior work, so the historical helper-container audit
+is not fully closed.
 
 ### B. Foundation completion (medium; finishes Sub-project A's stated scope)
 Decomposed (2026-06-23) into three independent pieces: **B1** image-build lifecycle (done),
@@ -103,8 +106,9 @@ threading), not detection.
   **Outstanding runtime check (M5, spec §5 — not yet run):** `uv run ./start_kgdb --build-images`
   builds 4 + stamps `likedbg.input_sha`; touch `io/scripts/rootfs.sh` → stale WARN fires;
   `docker rmi like_debugger:latest` → auto-build on next run.
-  **Deferred minors (future pass):** `build_image` test under-asserts (no rm/nocache/path or
-  `labels=None` checks); `copy_sources` `--from` substring vs token-anchored check.
+  **Polish done (2026-06-25):** `build_image` tests now assert path/rm/nocache/labels forwarding,
+  including `labels=None`; `copy_sources` now treats only tokenized `--from` flags as multi-stage
+  copies.
 - **B2 — x86_64-on-Mac (in-container TCG) — ✅ DONE + LIVE-GATE PASSED (2026-06-23; on `dev`,
   mechanism `6131a1a..dcbe133`, 26.04 fixes `3c562c5..324a719`):** debuggee image
   (`like_debuggee:latest`) in `images.IMAGES` + mode-aware `images.required_for(host)`;
@@ -122,7 +126,8 @@ threading), not detection.
   kernel 6.6.30 → `# CONFIG_WERROR is not set` in `generic.config`; (3) `324a719` in-container QEMU —
   rootfs disk must be `:rw` (was `:ro`). Observation: the build cache is fragment-**comment**-sensitive
   (ADR-0003 hashes file content), so doc-only fragment edits force a kernel rebuild.
-  Deferred minors: `_GDB_ARCH` unguarded (unreachable via the arch Literal); empty-mounts double-space (unreachable).
+  Polish done (2026-06-25): `_GDB_ARCH` now raises a clear error for unsupported arch values, and
+  empty in-container QEMU mount lists no longer introduce double spaces in the generated command.
 - **B3 — bind/Linux runtime — ✅ DONE + LIVE-GATE PASSED (2026-06-24; merged to `dev`, commits
   `b276c2f..d537573`):** un-gated the bind storage runtime so the daily-driver runs on Linux.
   **Layout B** (bind-mount the parent `artifacts/ksrc/` host dir at `/ksrc`, mirroring the volume

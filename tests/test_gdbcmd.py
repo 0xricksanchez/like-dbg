@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from likedbg.gdbcmd import build_gdb_args
 from likedbg.host_profile import HostProfile
 
@@ -80,6 +82,11 @@ def test_sets_x86_64_gdb_architecture():
 def test_sets_arm64_gdb_architecture():
     args = build_gdb_args(_host(), arch="arm64", vmlinux=Path("/w/vmlinux"), ext="gef", breakpoint=None)
     assert "set architecture aarch64" in " ".join(args)
+
+
+def test_unknown_arch_raises_clear_error():
+    with pytest.raises(ValueError, match="unsupported gdb architecture"):
+        build_gdb_args(_host(), arch="riscv64", vmlinux=Path("/w/vmlinux"), ext="gef", breakpoint=None)
 
 
 def test_remote_port_is_configurable():

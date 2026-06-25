@@ -79,11 +79,12 @@ def copy_sources(dockerfile_text: str) -> list[str]:
         if not m:
             continue
         rest = m.group(1).strip()
-        if "--from" in rest:
-            continue  # multi-stage copy: sources live in another build stage, not the workspace
         if rest.startswith("["):
             raise ValueError(f"unhandled JSON-array COPY/ADD form: {line!r}")
-        tokens = [t for t in rest.split() if not t.startswith("--")]  # drop flags (e.g. --chown=)
+        raw_tokens = rest.split()
+        if any(t == "--from" or t.startswith("--from=") for t in raw_tokens if t.startswith("--")):
+            continue  # multi-stage copy: sources live in another build stage, not the workspace
+        tokens = [t for t in raw_tokens if not t.startswith("--")]  # drop flags (e.g. --chown=)
         if len(tokens) < 2:
             raise ValueError(f"unparseable COPY/ADD (need source + dest): {line!r}")
         for src in tokens[:-1]:  # last token is the destination

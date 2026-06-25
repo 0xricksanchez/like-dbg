@@ -41,10 +41,12 @@ def qemu_container_command(
     # paths resolve unchanged (kernel :ro, rootfs disk :rw). Network mode: host net (Linux,
     # gdb→localhost) or a published gdbstub port (macOS / forced, gdb→host.docker.internal).
     q = shlex.quote
-    ro = [f"-v {q(str(p))}:{q(str(p))}:ro" for p in ro_mounts]
-    rw = [f"-v {q(str(p))}:{q(str(p))}:rw" for p in rw_mounts]
-    binds = " ".join(ro + rw)
+    mounts = [f"-v {q(str(p))}:{q(str(p))}:ro" for p in ro_mounts]
+    mounts += [f"-v {q(str(p))}:{q(str(p))}:rw" for p in rw_mounts]
     net = "--network host" if network_mode == "host" else f"-p {gdbstub_port}:{gdbstub_port}"
-    dev = " --device /dev/kvm" if kvm else ""
-    docker = f"docker run --rm -it {net}{dev} {binds} {image} "
+    parts = ["docker run --rm -it", net, *mounts]
+    if kvm:
+        parts.append("--device /dev/kvm")
+    parts.append(image)
+    docker = " ".join(parts) + " "
     return docker + shlex.join(argv)

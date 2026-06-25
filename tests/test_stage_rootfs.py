@@ -8,6 +8,7 @@ from likedbg.cache import Manifest
 from likedbg.cache import RootfsRecipe
 from likedbg.cache import manifest_exists
 from likedbg.cache import write_manifest
+from likedbg.config import GeneralCfg
 from likedbg.config import Settings
 from likedbg.container_service import ContainerService
 from likedbg.errors import CacheError
@@ -38,8 +39,6 @@ def _rrecipe():
 
 
 def _ctx(tmp_path):
-    from likedbg.config import GeneralCfg
-
     settings = Settings(general=GeneralCfg(arch="arm64"))
     host = HostProfile(
         os="darwin",
