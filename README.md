@@ -128,9 +128,17 @@ uv run ./start_kgdb
 ```
 
 The `-L likedbg` socket name makes tmux start an isolated project server, so
-the checked-in `.tmux.conf` is definitely loaded. If you intentionally run
-LIKE-DBG inside an existing tmux server, load the project config into that
-server first:
+the checked-in `.tmux.conf` is definitely loaded. Because this is not the
+default tmux server, use the same socket name when listing or reattaching:
+
+```sh
+# Detach with C-b d
+tmux -L likedbg ls
+tmux -L likedbg attach -t LIKE-DBG
+```
+
+If you intentionally run LIKE-DBG inside an existing tmux server, load the
+project config into that server first:
 
 ```sh
 tmux source-file "$PWD/.tmux.conf"
