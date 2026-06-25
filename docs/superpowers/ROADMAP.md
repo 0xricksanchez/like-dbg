@@ -147,13 +147,15 @@ threading), not detection.
   build/container output to DEBUG, stderr gets stage timings, and cache-hit branches now log default-visible
   reuse notices.
 
-### C. Cache niceties (small)
-- `--use` rootfs **build-if-absent** (currently requires a cached rootfs; spec §4.5 v1 note).
-- `--list` build size: shows `-` for **bind** builds (B3 live-gate confirmed — `cli._artifact_size`
-  looks for the volume-export path `artifacts/<label>/Image`; bind images live at
-  `artifacts/ksrc/<label>/arch/<arch>/boot/<image>`); for volume it shows the host-export Image only.
-  Fix: in bind stat `manifest.paths["image_host"]`; add the in-volume tree size for volume (container `du`).
-- `--adopt-rootfs` analogue (`--adopt` only migrates kernel builds; rootfs adoption was manual).
+### C. Cache niceties (small) — landed 2026-06-25
+- `--use` rootfs **build-if-absent** now uses the existing `RootfsStage`, so a cached kernel build can
+  boot with the active rootfs even when that rootfs has not been cached yet.
+- `--list` build size now stats `manifest.paths["image_host"]` first, fixing **bind** builds whose
+  images live at `artifacts/ksrc/<label>/arch/<arch>/boot/<image>`. Volume builds intentionally keep
+  the Docker-free host-export Image fallback for this pass; in-volume tree `du` remains a separate
+  Docker-backed enhancement.
+- `--adopt-rootfs [SOURCE]` now copies a manually created legacy rootfs image into the keyed rootfs
+  cache and writes the rootfs manifest.
 
 ### D. Sub-projects B–E (large; see foundation spec §1 for the vision)
 Each gets its own brainstorm→spec→grill→plan→subagent-driven cycle.

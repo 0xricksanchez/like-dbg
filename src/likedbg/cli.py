@@ -16,6 +16,7 @@ from likedbg import docker_env
 from likedbg import images
 from likedbg import logsetup
 from likedbg.adopt import adopt_legacy_build
+from likedbg.adopt import adopt_legacy_rootfs
 from likedbg.cache import BuildRecipe
 from likedbg.cache import Manifest
 from likedbg.cache import RootfsRecipe
@@ -152,6 +153,7 @@ def build_use_pipeline(
     debuggee_image: str,
     ext: str,
     gdb_mount_source: str,
+    rootfs_recipe: RootfsRecipe,
 ) -> Pipeline:
     base_pane = session.current_pane_id()
     debuggee_pane: str | None = None
@@ -184,6 +186,12 @@ def build_use_pipeline(
 
     return Pipeline(
         [
+            RootfsStage(
+                container,
+                recipe=rootfs_recipe,
+                rootfs_image=ROOTFS_IMAGE,
+                workspace=workspace,
+            ),
             ArtifactExporter(container, kernel_volume=kernel_volume, workspace=workspace),
             DebuggeeStage(launch=launch_debuggee, debuggee_image=debuggee_image),
             DebuggerStage(ext=ext, run_gdb=run_gdb, breakpoint="start_kernel"),
@@ -213,16 +221,14 @@ def cmd_use(
     )
     host = HostProfile.detect(use_settings, workspace)
     logsetup.add_run_logfile(workspace)
-    rlabel = rootfs_label or make_rootfs_recipe(use_settings).label
-    if not cache.manifest_exists(workspace, "rootfs", rlabel):
+    _ensure_images(container, workspace, specs=images.required_for_use(host))
+    rr = make_rootfs_recipe(use_settings)
+    rlabel = rootfs_label or rr.label
+    if rootfs_label is not None and rootfs_label != rr.label and not cache.manifest_exists(workspace, "rootfs", rlabel):
         raise CacheError(
             f"no cached rootfs labelled {rlabel!r}",
-            remedy="run `start_kgdb` once to build a rootfs, or pass --rootfs <label> (see `--list`)",
+            remedy="omit --rootfs to build the active rootfs, or run `start_kgdb --list`",
         )
-    rm = cache.load_manifest(workspace, "rootfs", rlabel)
-    rootfs_image = Path(rm.paths["image_host"])
-    if not rootfs_image.is_file():
-        raise CacheError(f"cached rootfs {rlabel} image is gone", remedy=f"`start_kgdb --clean {rlabel}` and rebuild")
     kernel_image_path = bm.paths["image_host"] if bm.storage_mode != "volume" else bm.paths["image_in_tree"]
     ctx = PipelineContext(
         settings=use_settings,
@@ -230,7 +236,6 @@ def cmd_use(
         kernel_root=Path(bm.paths["kernel_root"]),
         vmlinux=Path(bm.paths["gdb_vmlinux"]),
         kernel_image=Path(kernel_image_path),
-        rootfs_image=rootfs_image,
         build_label=label,
         rootfs_label=rlabel,
     )
@@ -244,6 +249,7 @@ def cmd_use(
         debuggee_image=DEBUGGEE_IMAGE,
         ext=use_settings.debugger.ext,
         gdb_mount_source=bm.paths["gdb_mount_source"],
+        rootfs_recipe=rr,
     )
     pipeline.run(ctx)
     return 0
@@ -264,10 +270,11 @@ def _ensure_images(container: ContainerService, workspace: Path, *, specs: tuple
 
 def _artifact_size(workspace: Path, manifest: Manifest) -> str:
     if manifest.kind == "build":
-        image = workspace / "artifacts" / manifest.label / "Image"
+        candidates = [Path(manifest.paths.get("image_host", "")), workspace / "artifacts" / manifest.label / "Image"]
     else:
-        image = Path(manifest.paths.get("image_host", ""))
-    return str(image.stat().st_size) if image.is_file() else "-"
+        candidates = [Path(manifest.paths.get("image_host", ""))]
+    image = next((candidate for candidate in candidates if candidate.is_file()), None)
+    return str(image.stat().st_size) if image is not None else "-"
 
 
 def summarize_cache(workspace: Path) -> list[str]:
@@ -355,6 +362,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--verbose", "-v", action="store_true")
     parser.add_argument("--force-rebuild", action="store_true")
     parser.add_argument("--adopt", action="store_true")
+    parser.add_argument("--adopt-rootfs", nargs="?", const="", default=None, metavar="SOURCE")
     parser.add_argument("--list", action="store_true")
     parser.add_argument("--clean", default="")
     parser.add_argument("--clean-all", action="store_true")
@@ -387,6 +395,12 @@ def main(argv: list[str] | None = None) -> int:
             workspace / "configs" / "user.ini",
             custom_ini=Path(args.config) if args.config else None,
         )
+        rr = make_rootfs_recipe(settings)
+        if args.adopt_rootfs is not None:
+            source = Path(args.adopt_rootfs) if args.adopt_rootfs else None
+            label = adopt_legacy_rootfs(workspace=workspace, recipe=rr, source=source)
+            logger.info(f"adopted legacy rootfs as {label}")
+            return 0
         client = docker_env.make_client(docker_env.resolve_docker_host(env=os.environ))
         container = ContainerService(client)
         if args.build_images:
@@ -398,7 +412,6 @@ def main(argv: list[str] | None = None) -> int:
             if not os.getenv("TMUX"):
                 logger.error("Not running inside a TMUX session. Start tmux first.")
                 return 2
-            _ensure_images(container, workspace, specs=images.USE_IMAGES)
             session = Session("LIKE-DBG")
             session.start("LIKE-DBG")
             return cmd_use(
@@ -412,7 +425,6 @@ def main(argv: list[str] | None = None) -> int:
         # --adopt and the default run both need the recipes (and the network/hash work):
         version = resolve_version(settings.kernel_dl)
         br = make_build_recipe(settings, version=version, workspace=workspace, fragments=list(_FRAGMENTS))
-        rr = make_rootfs_recipe(settings)
         if args.force_rebuild:
             cache.manifest_path(workspace, "build", br.label).unlink(missing_ok=True)
         if args.adopt:

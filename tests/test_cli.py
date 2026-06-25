@@ -19,6 +19,7 @@ from likedbg.errors import HostCapabilityError
 from likedbg.errors import SessionError
 from likedbg.host_profile import HostProfile
 from likedbg.pipeline import PipelineContext
+from likedbg.stages.rootfs import rootfs_target
 
 
 class _FakeSession:
@@ -186,6 +187,37 @@ def test_summarize_cache_lists_build_and_rootfs(tmp_path):
     assert "build" in joined and "rootfs" in joined
 
 
+def test_summarize_cache_uses_bind_build_image_host_size(tmp_path):
+    image = tmp_path / "artifacts" / "ksrc" / "linux-6.6.30-bind" / "arch" / "arm64" / "boot" / "Image"
+    image.parent.mkdir(parents=True)
+    image.write_bytes(b"x" * 4096)
+    write_manifest(
+        tmp_path,
+        Manifest(
+            kind="build",
+            label="linux-6.6.30-bind",
+            key="k",
+            version="6.6.30",
+            arch="arm64",
+            storage_mode="bind",
+            paths={"image_host": str(image)},
+        ),
+    )
+    assert "4096" in "\n".join(summarize_cache(tmp_path))
+
+
+def test_summarize_cache_preserves_legacy_volume_image_size_fallback(tmp_path):
+    label = "linux-6.6.30-volume"
+    image = tmp_path / "artifacts" / label / "Image"
+    image.parent.mkdir(parents=True)
+    image.write_bytes(b"x" * 1024)
+    write_manifest(
+        tmp_path,
+        Manifest(kind="build", label=label, key="k", version="6.6.30", arch="arm64", storage_mode="volume"),
+    )
+    assert "1024" in "\n".join(summarize_cache(tmp_path))
+
+
 def test_cmd_clean_unknown_label_raises(tmp_path):
     with pytest.raises(CacheError) as exc:
         cmd_clean(_FakeContainer(), tmp_path, label="nope", clean_all=False)
@@ -217,7 +249,8 @@ def test_cmd_clean_all_removes_every_manifest(tmp_path):
     assert cache.list_manifests(tmp_path, "rootfs") == []
 
 
-def test_build_use_pipeline_is_launch_only(tmp_path):
+def test_build_use_pipeline_includes_rootfs_before_launch(tmp_path):
+    settings = Settings.model_validate({"general": {"arch": "arm64"}})
     session = _FakeSession()
     pipe = build_use_pipeline(
         _FakeContainer(),
@@ -229,8 +262,114 @@ def test_build_use_pipeline_is_launch_only(tmp_path):
         debuggee_image="like_debuggee:latest",
         ext="pwndbg",
         gdb_mount_source="likedbg_ksrc",
+        rootfs_recipe=rootfs_recipe(settings),
     )
-    assert [s.name for s in pipe._stages] == ["export", "debuggee", "debugger"]  # type: ignore[attr-defined]
+    assert [s.name for s in pipe._stages] == ["rootfs", "export", "debuggee", "debugger"]  # type: ignore[attr-defined]
+
+
+def test_cmd_use_builds_default_rootfs_when_manifest_is_missing(tmp_path, monkeypatch):
+    import likedbg.cli as cli
+
+    settings = Settings.model_validate(
+        {"general": {"arch": "arm64"}, "debuggee": {"accel": "tcg", "network": "host"}}
+    )
+    rr = rootfs_recipe(settings)
+    target = rootfs_target(tmp_path, rr.label)
+
+    class RootfsContainer(_FakeContainer):
+        def __init__(self):
+            super().__init__()
+            self.rootfs_runs = []
+
+        def run_detached(self, image, **kwargs):
+            self.rootfs_runs.append({"image": image, **kwargs})
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(b"img")
+            return SimpleNamespace(id="rootfs", logs=lambda **k: iter([]))
+
+    label = "linux-6.6.30-bind"
+    kernel_image = tmp_path / "artifacts" / "ksrc" / label / "arch" / "arm64" / "boot" / "Image"
+    write_manifest(
+        tmp_path,
+        Manifest(
+            kind="build",
+            label=label,
+            key="k",
+            version="6.6.30",
+            arch="arm64",
+            storage_mode="bind",
+            paths={
+                "kernel_root": f"/ksrc/{label}",
+                "gdb_vmlinux": f"/ksrc/{label}/vmlinux",
+                "image_host": str(kernel_image),
+                "image_in_tree": f"/ksrc/{label}/arch/arm64/boot/Image",
+                "gdb_mount_source": str(tmp_path / "artifacts" / "ksrc"),
+            },
+        ),
+    )
+    container = RootfsContainer()
+    monkeypatch.setattr(cli, "load_settings", lambda *a, **k: settings)
+    monkeypatch.setattr(cli.HostProfile, "detect", staticmethod(lambda settings, workspace: _host("bind")))
+    monkeypatch.setattr(cli, "_ensure_images", lambda container, workspace, *, specs: None)
+    monkeypatch.setattr(cli.logsetup, "add_run_logfile", lambda workspace: None)
+
+    assert cli.cmd_use(container, _FakeSession(), tmp_path, custom_ini=None, label=label, rootfs_label=None) == 0
+    assert cache.manifest_exists(tmp_path, "rootfs", rr.label)
+    assert target.read_bytes() == b"img"
+    assert container.rootfs_runs and container.rootfs_runs[0]["privileged"] is True
+
+
+def test_cmd_use_ensures_images_after_host_detection(tmp_path, monkeypatch):
+    import likedbg.cli as cli
+
+    settings = Settings.model_validate({"general": {"arch": "arm64"}})
+    rr = rootfs_recipe(settings)
+    rimg = rootfs_target(tmp_path, rr.label)
+    rimg.parent.mkdir(parents=True)
+    rimg.write_bytes(b"img")
+    write_manifest(
+        tmp_path,
+        Manifest(
+            kind="rootfs",
+            label=rr.label,
+            key=rr.key,
+            version="",
+            arch="arm64",
+            storage_mode="volume",
+            paths={"image_host": str(rimg)},
+        ),
+    )
+    label = "linux-6.6.30-volume"
+    write_manifest(
+        tmp_path,
+        Manifest(
+            kind="build",
+            label=label,
+            key="k",
+            version="6.6.30",
+            arch="arm64",
+            storage_mode="volume",
+            paths={
+                "kernel_root": f"/ksrc/{label}",
+                "gdb_vmlinux": f"/ksrc/{label}/vmlinux",
+                "image_host": str(tmp_path / "artifacts" / label / "Image"),
+                "image_in_tree": f"/ksrc/{label}/arch/arm64/boot/Image",
+                "gdb_mount_source": "likedbg_ksrc",
+            },
+        ),
+    )
+    specs_seen = []
+    monkeypatch.setattr(cli, "load_settings", lambda *a, **k: settings)
+    monkeypatch.setattr(cli.HostProfile, "detect", staticmethod(lambda settings, workspace: _host("volume")))
+    monkeypatch.setattr(
+        cli,
+        "_ensure_images",
+        lambda container, workspace, *, specs: specs_seen.append(tuple(s.tag for s in specs)),
+    )
+    monkeypatch.setattr(cli.logsetup, "add_run_logfile", lambda workspace: None)
+
+    assert cli.cmd_use(_FakeContainer(), _FakeSession(), tmp_path, custom_ini=None, label=label, rootfs_label=None) == 0
+    assert specs_seen == [tuple(s.tag for s in cli.images.required_for_use(_host("volume")))]
 
 
 def test_pipeline_launches_process_panes_and_stores_session_options(tmp_path):

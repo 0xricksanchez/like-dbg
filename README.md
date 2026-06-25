@@ -181,9 +181,14 @@ uv run ./start_kgdb --list
 uv run ./start_kgdb --clean <label>
 uv run ./start_kgdb --clean-all
 
-# Reuse an existing Kernel Build, optionally with a specific rootfs image
+# Reuse an existing Kernel Build. If the active rootfs is missing, --use builds it;
+# --rootfs pins a cached rootfs label instead.
 uv run ./start_kgdb --use <build-label>
 uv run ./start_kgdb --use <build-label> --rootfs <rootfs-label>
+
+# Adopt a manually created legacy rootfs image into the keyed cache
+uv run ./start_kgdb --adopt-rootfs
+uv run ./start_kgdb --adopt-rootfs <path-to-rootfs-img>
 
 # Force the current Kernel Build to rebuild
 uv run ./start_kgdb --force-rebuild

@@ -4,6 +4,7 @@ import pytest
 
 from likedbg import images
 from likedbg.constants import BASE_IMAGE
+from likedbg.constants import DEBUGGEE_IMAGE
 from likedbg.constants import DEBUGGER_IMAGE
 from likedbg.constants import KBUILDER_IMAGE
 from likedbg.constants import ROOTFS_IMAGE
@@ -47,8 +48,8 @@ def test_images_manifest_shape():
     assert debuggee.dockerfile == ".dockerfile_dbge"
 
 
-def test_use_images_is_base_and_debugger_in_order():
-    assert tuple(s.tag for s in images.USE_IMAGES) == (BASE_IMAGE, DEBUGGER_IMAGE)
+def test_use_images_is_all_possible_cached_run_images_in_order():
+    assert tuple(s.tag for s in images.USE_IMAGES) == (BASE_IMAGE, ROOTFS_IMAGE, DEBUGGER_IMAGE, DEBUGGEE_IMAGE)
 
 
 def _host(mode):
@@ -66,13 +67,18 @@ def _host(mode):
 
 
 def test_required_for_includes_debuggee_only_in_container():
-    from likedbg.constants import DEBUGGEE_IMAGE
-
     in_container = {s.tag for s in images.required_for(_host("in-container"))}
     native = {s.tag for s in images.required_for(_host("native-host"))}
     assert DEBUGGEE_IMAGE in in_container
     assert DEBUGGEE_IMAGE not in native
     assert len(native) == 4 and len(in_container) == 5
+
+
+def test_required_for_use_includes_debuggee_only_in_container():
+    in_container = tuple(s.tag for s in images.required_for_use(_host("in-container")))
+    native = tuple(s.tag for s in images.required_for_use(_host("native-host")))
+    assert in_container == (BASE_IMAGE, ROOTFS_IMAGE, DEBUGGER_IMAGE, DEBUGGEE_IMAGE)
+    assert native == (BASE_IMAGE, ROOTFS_IMAGE, DEBUGGER_IMAGE)
 
 
 def test_copy_sources_parses_literal_local_files():

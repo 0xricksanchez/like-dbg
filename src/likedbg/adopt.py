@@ -3,15 +3,18 @@ verified against the active config (version + compiler family) before adoption. 
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from typing import Any
 
 from likedbg import cache
 from likedbg.cache import BuildRecipe
+from likedbg.cache import RootfsRecipe
 from likedbg.constants import BASE_IMAGE
 from likedbg.constants import KERNEL_VOLUME
 from likedbg.constants import VOLUME_MOUNT
 from likedbg.errors import CacheError
+from likedbg.stages.rootfs import rootfs_target
 
 
 def _parse_makefile_version(text: str) -> str:
@@ -75,3 +78,41 @@ def adopt_legacy_build(container: Any, *, workspace: Path, recipe: BuildRecipe, 
         ),
     )
     return label
+
+
+def adopt_legacy_rootfs(
+    *,
+    workspace: Path,
+    recipe: RootfsRecipe,
+    source: Path | None = None,
+    storage_mode: str = "volume",
+) -> str:
+    source_path = source or workspace / "artifacts" / f"rootfs-{recipe.arch}.img"
+    if not source_path.is_absolute():
+        source_path = workspace / source_path
+    if not source_path.is_file():
+        raise CacheError(
+            f"legacy rootfs image not found: {source_path}",
+            remedy=(
+                f"place the legacy image at {workspace / 'artifacts' / f'rootfs-{recipe.arch}.img'}, "
+                "pass `--adopt-rootfs <path>`, or run `start_kgdb` to build one"
+            ),
+        )
+    target = rootfs_target(workspace, recipe.label)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if source_path.resolve() != target.resolve():
+        shutil.copy2(source_path, target)
+    cache.write_manifest(
+        workspace,
+        cache.Manifest(
+            kind="rootfs",
+            label=recipe.label,
+            key=recipe.key,
+            version="",
+            arch=recipe.arch,
+            storage_mode=storage_mode,
+            inputs=recipe.cache_inputs(),
+            paths={"image_host": str(target)},
+        ),
+    )
+    return recipe.label
