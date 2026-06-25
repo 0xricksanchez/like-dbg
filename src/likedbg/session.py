@@ -100,7 +100,8 @@ class Session:
         self._tmux("respawn-pane", "-k", "-t", pane, cmd)
 
     def pane_exists(self, pane: str) -> bool:
-        return self._runner(["tmux", "display-message", "-p", "-t", pane, "#{pane_id}"]) == 0
+        rc, _ = self._checked_query(["tmux", "display-message", "-p", "-t", pane, "#{pane_id}"])
+        return rc == 0
 
     def get_option(self, name: str) -> str:
         return self._query(["tmux", "show-option", "-qv", name])

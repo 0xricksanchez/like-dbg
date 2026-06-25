@@ -151,6 +151,10 @@ you use a custom tmux config, keep an equivalent fallback binding or run:
 uv run ./start_kgdb --restart-debuggee
 ```
 
+Restarting the Debuggee relaunches QEMU and keeps the Debugger pane open, but
+GDB loses the old remote target. Run `likedbg-reconnect` in GDB/pwndbg after
+the restart.
+
 There exist 2 users for the automatically created filesystems:
 
 - `root` with no password

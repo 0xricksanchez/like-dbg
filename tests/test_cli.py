@@ -301,6 +301,7 @@ def test_restart_debuggee_respawns_existing_pane_in_place():
     assert session.respawns == [("%2", "qemu-system-aarch64 -S")]
     assert session.launches == []
     assert session.selected == ["%3"]
+    assert session.messages == ["LIKE-DBG Debuggee restarted; run likedbg-reconnect in GDB"]
     assert "@likedbg_restart_in_progress" in session.unsets
     assert session.options["@likedbg_debuggee_pane"] == "%2"
 
@@ -322,6 +323,7 @@ def test_restart_debuggee_recreates_when_debuggee_pane_stale():
     ]
     assert session.options["@likedbg_debuggee_pane"] == "%4"
     assert session.selected == ["%3"]
+    assert session.messages == ["LIKE-DBG Debuggee restarted; run likedbg-reconnect in GDB"]
 
 
 def test_restart_debuggee_missing_command_or_workspace_raises_remedy():

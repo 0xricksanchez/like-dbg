@@ -116,14 +116,21 @@ def test_session_options_use_current_session_scope():
     ]
 
 
-def test_pane_exists_uses_runner_status():
-    ok = Recorder(rc=0)
-    missing = Recorder(rc=1)
-    assert Session("LIKE-DBG", runner=ok).pane_exists("%2") is True
-    assert Session("LIKE-DBG", runner=missing).pane_exists("%2") is False
+def test_pane_exists_uses_checked_query_status():
+    ok = CheckedQueryRecorder(rc=0, response="%2")
+    missing = CheckedQueryRecorder(rc=1)
+    assert Session("LIKE-DBG", checked_query=ok).pane_exists("%2") is True
+    assert Session("LIKE-DBG", checked_query=missing).pane_exists("%2") is False
     expected = ["tmux", "display-message", "-p", "-t", "%2", "#{pane_id}"]
     assert ok.calls == [expected]
     assert missing.calls == [expected]
+
+
+def test_pane_exists_captures_tmux_output_instead_of_writing_to_active_pane():
+    rec = Recorder()
+    query = CheckedQueryRecorder(rc=0, response="%2")
+    assert Session("LIKE-DBG", runner=rec, checked_query=query).pane_exists("%2") is True
+    assert rec.calls == []
 
 
 def test_display_message_calls_tmux_display_message():
