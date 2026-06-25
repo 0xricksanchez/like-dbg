@@ -154,6 +154,9 @@ uv run ./start_kgdb --restart-debuggee
 Restarting the Debuggee relaunches QEMU and keeps the Debugger pane open, but
 GDB loses the old remote target. Run `likedbg-reconnect` in GDB/pwndbg after
 the restart; it reconnects to the new QEMU gdbstub and resumes to `start_kernel`.
+Do not use `target remote :1234` or `target remote localhost:1234` from inside
+the Debugger container: `localhost` is the container, not the host QEMU process.
+If you need a raw manual attach, use `target remote host.docker.internal:1234`.
 
 There exist 2 users for the automatically created filesystems:
 
