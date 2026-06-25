@@ -9,7 +9,7 @@ can continue the rework with one prompt. `dev` represents the FULL rewrite and s
 > unstarted item, brainstorm→spec→plan→subagent-driven-development (or systematic-debugging
 > for bugs), and keep dev local."*
 
-## Status (2026-06-24)
+## Status (2026-06-25)
 
 M1 Sub-project A (Foundation) is **complete** — §A, §B1, §B2, **and §B3 all merged to `dev`**.
 §B (Foundation completion) is fully done. Landed 2026-06-24: **§B3 — un-gate the
@@ -19,37 +19,48 @@ start_kernel→systemd userspace; host-editable trees; auto→host + published t
 gdb_port). Earlier on `dev`: §A deferred-polish batch, §B1 image-build lifecycle, §B2 x86_64-on-Mac
 in-container TCG (live-gate PASSED on the M5) + 3 ubuntu:26.04 build-chain fixes.
 
-Post-B3 follow-up landed 2026-06-24: **Observability/logging Plan 1 is merged to `dev`** — stderr +
-per-run log files, streaming `ContainerService.exec`, rootfs log routing + one retry, per-stage timings,
-and default-visible cache-hit notices. Next planned continuation:
-**Plan 2 `feat/process-panes`** from `docs/superpowers/specs/2026-06-24-logging-session-ergonomics-design.md`
-(§3.4–3.5): shell-history isolation via tmux process panes, plus ADR-0005. A dedicated Plan 2
-implementation plan is not written yet. After that: **Sub-projects C–E** or the §C cache niceties.
+Post-B3 follow-ups landed on `dev`:
+- **Observability/logging Plan 1** — stderr + per-run log files, streaming `ContainerService.exec`, rootfs
+  log routing + one retry, per-stage timings, and default-visible cache-hit notices.
+- **Process panes / tmux workflow Plan 2** — QEMU/GDB launch as tmux process panes instead of shell
+  `send-keys`, pane-local `remain-on-exit`, `C-b B` Debuggee restart in the shipped `.tmux.conf`,
+  `likedbg-reconnect`, README guidance for the dedicated `tmux -L likedbg` server, and ADR-0005.
+
+Next planned continuation: **§C cache niceties** (small), then choose the next large Sub-project B-E track.
 Don't re-derive history — read these:
 - Project state & decisions: the auto-loaded memory `project-like-dbg-revival.md`.
 - Glossary: `CONTEXT.md`. Decisions: `docs/adr/0001..0003`.
 - Specs: `docs/superpowers/specs/2026-06-22-like-dbg-foundation-revival-design.md` (vision
-  + sub-projects A–E), `2026-06-23-build-reuse-cache-design.md` (§4.5 management CLI; §3/§4 v1 scope).
+  + sub-projects A–E), `2026-06-23-build-reuse-cache-design.md` (§4.5 management CLI; §3/§4 v1 scope),
+  `2026-06-24-logging-session-ergonomics-design.md` (observability + process panes).
 - Plans (all executed): `docs/superpowers/plans/2026-06-22-m1-*` (Plans 1–3),
-  `2026-06-23-m1-plan4-one-command-ux.md`, `m1-plan5-build-cache.md`, `m1-plan6-cache-management.md`.
+  `2026-06-23-m1-plan4-one-command-ux.md`, `m1-plan5-build-cache.md`,
+  `m1-plan6-cache-management.md`, `2026-06-24-observability-logging.md`,
+  `2026-06-24-process-panes.md`.
 - Live transcripts: `docs/superpowers/notes/2026-06-23-*` (build-cache-live, cache-management-live, rootfs-build-fix).
 
-**Daily-driver works on the M5 (arm64/macOS/colima, volume mode):** `uv run ./start_kgdb`
-builds-or-reuses → native-HVF boot → gef/pwndbg at `start_kernel`; `--list`/`--clean`/`--use`/
-`--adopt`/`--force-rebuild`; `ext = gef|pwndbg` selectable. Rebuild images after editing any
-dockerfile/baked script with **`just build-images`**.
+**Daily-driver works on the M5 (arm64/macOS/colima, volume mode):** launch a project tmux server with
+`tmux -L likedbg -f .tmux.conf new -s LIKE-DBG`, then run `uv run ./start_kgdb` inside it.
+The command builds-or-reuses → native-HVF boot → gef/pwndbg at `start_kernel`; `C-b B` restarts the
+Debuggee pane in place, then `likedbg-reconnect` in GDB reconnects to the new QEMU gdbstub and resumes
+to `start_kernel`. From the Debugger container, raw manual attach uses
+`target remote host.docker.internal:1234` — **not** localhost. `--list`/`--clean`/`--use`/`--adopt`/
+`--force-rebuild`; `ext = gef|pwndbg` selectable. Rebuild images after editing any dockerfile/baked
+script with **`just build-images`**.
 
 ## Operational gotchas a fresh session MUST know
 - **`dev` stays local — never `git push`.** Feature branch off `dev`, merge locally, delete.
 - **`just build-images`** rebuilds all 4 images from the current dockerfiles (base→kbuilder,
   rootfs, debugger). Stale images silently break the pipeline (root cause of the rootfs bug).
-- Runtime is **volume-mode only** — `cli.require_volume_mode` hard-errors on bind mode.
-- tmux uses **`pane-base-index`** (this host = 1); `Session` queries it, never assume 0.
+- Runtime supports both macOS volume mode and Linux bind mode; the host profile decides storage,
+  debuggee backend, network mode, and acceleration.
+- tmux uses **`pane-base-index`** (this host = 1); `Session` queries it, never assume 0. The shipped
+  workflow uses the named socket `tmux -L likedbg`; list/attach with that same `-L likedbg` socket.
 - User has **uncommitted local edits in flight** (maintainer email `admin@`→`mail@` sweep;
   `.dockerfile_base` `ubuntu:24.04`→`26.04`; `ctf/misc/cpio.sh` reformat). Leave them unless
   asked; if rebuilding images they'll pick up `ubuntu:26.04`.
-- Cache lives in Docker volume `likedbg_ksrc` + host `artifacts/cache/{builds,rootfs}/`.
-  Current entries: build `linux-6.6.30-35e79946`, rootfs `rootfs-arm64-bookworm-1c5f217c`.
+- Cache lives in Docker volume `likedbg_ksrc` or host bind trees, plus
+  `artifacts/cache/{builds,rootfs}/`.
 
 ## Remaining work
 
