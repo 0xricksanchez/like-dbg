@@ -225,7 +225,7 @@ def cmd_use(
     host = HostProfile.detect(use_settings, workspace)
     logsetup.add_run_logfile(workspace)
     _ensure_images(container, workspace, specs=images.required_for_use(host))
-    rr = make_rootfs_recipe(use_settings)
+    rr = make_rootfs_recipe(use_settings, workspace=workspace)
     rlabel = rootfs_label or rr.label
     if rootfs_label is not None and rootfs_label != rr.label and not cache.manifest_exists(workspace, "rootfs", rlabel):
         raise CacheError(
@@ -430,7 +430,7 @@ def main(argv: list[str] | None = None) -> int:
             workspace / "configs" / "user.ini",
             custom_ini=Path(args.config) if args.config else None,
         )
-        rr = make_rootfs_recipe(settings)
+        rr = make_rootfs_recipe(settings, workspace=workspace)
         if args.adopt_rootfs is not None:
             source = Path(args.adopt_rootfs) if args.adopt_rootfs else None
             label = adopt_legacy_rootfs(workspace=workspace, recipe=rr, source=source)

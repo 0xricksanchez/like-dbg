@@ -27,6 +27,7 @@ from likedbg.errors import CacheError
 from likedbg.toolchain import resolve_toolchain
 
 _SLUG_RE = re.compile(r"[^a-z0-9._-]+")
+_ROOTFS_SCRIPT = "io/scripts/rootfs.sh"
 
 TREE_ROOT = "ksrc"  # host mirror of the kernel-source mount: artifacts/<TREE_ROOT>/<label>
 
@@ -83,9 +84,13 @@ class RootfsRecipe:
     arch: str
     distribution: str
     hostname: str
+    script_sha: str = ""
 
     def cache_inputs(self) -> dict[str, str]:
-        return {"arch": self.arch, "distribution": self.distribution, "hostname": self.hostname}
+        inputs = {"arch": self.arch, "distribution": self.distribution, "hostname": self.hostname}
+        if self.script_sha:
+            inputs[f"script:{_ROOTFS_SCRIPT}"] = self.script_sha
+        return inputs
 
     @property
     def key(self) -> str:
@@ -110,11 +115,14 @@ def build_recipe(settings: Settings, *, version: str, workspace: Path, fragments
     )
 
 
-def rootfs_recipe(settings: Settings) -> RootfsRecipe:
+def rootfs_recipe(settings: Settings, *, workspace: Path | None = None) -> RootfsRecipe:
+    script = workspace / _ROOTFS_SCRIPT if workspace is not None else None
+    script_sha = hashlib.sha256(script.read_bytes()).hexdigest() if script is not None and script.exists() else ""
     return RootfsRecipe(
         arch=settings.general.arch,
         distribution=settings.rootfs.distribution,
         hostname=settings.rootfs.hostname,
+        script_sha=script_sha,
     )
 
 

@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import pytest
 from loguru import logger
 
+from likedbg import images
 from likedbg.cache import Manifest
 from likedbg.cache import RootfsRecipe
 from likedbg.cache import manifest_exists
@@ -136,6 +137,25 @@ def test_rootfs_builds_and_writes_manifest_on_miss(tmp_path):
     assert out.rootfs_image == target
     assert manifest_exists(tmp_path, "rootfs", _rrecipe().label) is True
     assert c.run_kwargs["privileged"] is True
+
+
+def test_rootfs_build_rejects_stale_rootfs_image(tmp_path):
+    (tmp_path / ".dockerfile_rootfs").write_text("COPY io/scripts/rootfs.sh .\n")
+    script = tmp_path / "io" / "scripts" / "rootfs.sh"
+    script.parent.mkdir(parents=True)
+    script.write_text("new script\n")
+
+    class _StaleImageC(FakeC):
+        def image_labels(self, tag):
+            return {images.LABEL: "old"}
+
+    c = _StaleImageC()
+    ctx = _ctx(tmp_path)
+    with pytest.raises(RootfsError) as exc:
+        RootfsStage(c, recipe=_rrecipe(), rootfs_image="like_rootfs:latest", workspace=tmp_path).run(ctx)
+    assert "stale" in str(exc.value)
+    assert "--build-images" in (exc.value.remedy or "")
+    assert c.run_kwargs is None
 
 
 def test_rootfs_build_without_image_raises_and_writes_no_manifest(tmp_path):

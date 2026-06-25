@@ -58,3 +58,17 @@ def test_rootfs_recipe_label(tmp_path):
     r = rootfs_recipe(settings)
     assert isinstance(r, RootfsRecipe)
     assert r.label.startswith("rootfs-arm64-bookworm-") and len(r.label.split("-")[-1]) == 8
+
+
+def test_rootfs_recipe_tracks_rootfs_script_content(tmp_path):
+    script = tmp_path / "io" / "scripts" / "rootfs.sh"
+    script.parent.mkdir(parents=True)
+    script.write_text("first\n")
+    settings = Settings.model_validate({"general": {"arch": "arm64"}, "rootfs": {"distribution": "bookworm"}})
+
+    first = rootfs_recipe(settings, workspace=tmp_path)
+    script.write_text("second\n")
+    second = rootfs_recipe(settings, workspace=tmp_path)
+
+    assert "script:io/scripts/rootfs.sh" in first.cache_inputs()
+    assert first.label != second.label

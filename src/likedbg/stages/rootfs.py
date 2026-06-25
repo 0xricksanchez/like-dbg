@@ -8,6 +8,7 @@ from pathlib import Path
 from loguru import logger
 
 from likedbg import cache
+from likedbg import images
 from likedbg.cache import RootfsRecipe
 from likedbg.container_service import ContainerService
 from likedbg.errors import CacheError
@@ -56,6 +57,7 @@ class RootfsStage:
             ctx.rootfs_image = img
             return ctx
 
+        self._require_current_rootfs_image()
         if not self._attempt(target):
             logger.warning(f"rootfs build did not produce {target}; retrying once...")
             if not self._attempt(target):
@@ -78,6 +80,28 @@ class RootfsStage:
             ),
         )
         return ctx
+
+    def _require_current_rootfs_image(self) -> None:
+        spec = next((s for s in images.IMAGES if s.tag == self._image), None)
+        if spec is None:
+            return
+        try:
+            wanted = images.input_sha(spec, self._workspace)
+        except FileNotFoundError:
+            # Unit tests often use temp workspaces that are not full repo checkouts.
+            return
+        try:
+            actual = self._c.image_labels(self._image).get(images.LABEL)
+        except Exception as exc:  # noqa: BLE001
+            raise RootfsError(
+                f"failed to inspect rootfs image {self._image}",
+                remedy="run `uv run ./start_kgdb --build-images`",
+            ) from exc
+        if actual != wanted:
+            raise RootfsError(
+                f"rootfs image {self._image} is stale",
+                remedy="run `uv run ./start_kgdb --build-images` before rebuilding rootfs",
+            )
 
     def _attempt(self, target: Path) -> bool:
         target.parent.mkdir(parents=True, exist_ok=True)
