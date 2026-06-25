@@ -25,8 +25,11 @@ Post-B3 follow-ups landed on `dev`:
 - **Process panes / tmux workflow Plan 2** — QEMU/GDB launch as tmux process panes instead of shell
   `send-keys`, pane-local `remain-on-exit`, `C-b B` Debuggee restart in the shipped `.tmux.conf`,
   `likedbg-reconnect`, README guidance for the dedicated `tmux -L likedbg` server, and ADR-0005.
+- **Cache niceties + cleanup Plan 3** — `--use` rootfs build-if-absent, `--adopt-rootfs`,
+  bind and volume-aware `--list` sizes, B1 image lifecycle live checks, helper-container cleanup,
+  and deferred polish cleanup.
 
-Next planned continuation: **§C cache niceties** (small), then choose the next large Sub-project B-E track.
+Next planned continuation: choose the next large Sub-project B-E track.
 Don't re-derive history — read these:
 - Project state & decisions: the auto-loaded memory `project-like-dbg-revival.md`.
 - Glossary: `CONTEXT.md`. Decisions: `docs/adr/0001..0003`.
@@ -50,15 +53,14 @@ script with **`just build-images`**.
 
 ## Operational gotchas a fresh session MUST know
 - **`dev` stays local — never `git push`.** Feature branch off `dev`, merge locally, delete.
-- **`just build-images`** rebuilds all 4 images from the current dockerfiles (base→kbuilder,
-  rootfs, debugger). Stale images silently break the pipeline (root cause of the rootfs bug).
+- **`just build-images`** rebuilds all 5 images from the current dockerfiles (base→kbuilder,
+  rootfs, debugger, debuggee). Stale images silently break the pipeline (root cause of the rootfs bug).
 - Runtime supports both macOS volume mode and Linux bind mode; the host profile decides storage,
   debuggee backend, network mode, and acceleration.
 - tmux uses **`pane-base-index`** (this host = 1); `Session` queries it, never assume 0. The shipped
   workflow uses the named socket `tmux -L likedbg`; list/attach with that same `-L likedbg` socket.
-- User has **uncommitted local edits in flight** (maintainer email `admin@`→`mail@` sweep;
-  `.dockerfile_base` `ubuntu:24.04`→`26.04`; `ctf/misc/cpio.sh` reformat). Leave them unless
-  asked; if rebuilding images they'll pick up `ubuntu:26.04`.
+- No known uncommitted local edits as of 2026-06-25 after the cache cleanup merge; still check
+  `git status` before editing because this is a shared workspace.
 - Cache lives in Docker volume `likedbg_ksrc` or host bind trees, plus
   `artifacts/cache/{builds,rootfs}/`.
 
@@ -78,15 +80,13 @@ All seven Plan 5/6 deferred items cleared via branch `chore/section-a-hardening`
 - Spec: `docs/superpowers/specs/2026-06-23-section-a-hardening-design.md`;
   plan: `docs/superpowers/plans/2026-06-23-section-a-hardening.md`.
 
-**Outstanding runtime check (M5, spec §5 — not yet run):** `uv run ./start_kgdb`, then confirm
-`docker ps -a` shows no leftover `like_dbg_base`/`like_kbuilder_arm64`/`like_rootfs` helper
-containers, and a deliberately-broken build still surfaces output via `ContainerError`.
+**Runtime audit done (2026-06-25):** a deliberately broken helper command raised `ContainerError`
+with the failed command, exit code, and emitted marker output. `docker ps -a` is empty after removing
+three verified old LIKE-DBG image-build helper leftovers.
 **Polish done (2026-06-25):** removed the inert `from __future__ import annotations` in
 `constants.py`; added exact-value asserts for KBUILDER/ROOTFS/DEBUGGER; cleaned cache comments
 to refer to `VOLUME_MOUNT`; moved remaining function-scope test imports to module scope.
-**Smoke note (2026-06-25):** the cache-niceties smoke left no running containers; `docker ps -a`
-still showed three old exited containers from prior work, so the historical helper-container audit
-is not fully closed.
+**Smoke note (2026-06-25):** the cache-niceties smoke left no running containers.
 
 ### B. Foundation completion (medium; finishes Sub-project A's stated scope)
 Decomposed (2026-06-23) into three independent pieces: **B1** image-build lifecycle (done),
@@ -103,9 +103,10 @@ threading), not detection.
   `--use` paths (subset per path), justfile delegates to the package. ADR-0004 (image currency)
   + `Container image` glossary term. 156 tests; opus whole-branch review clean. Spec/plan:
   `docs/superpowers/{specs,plans}/2026-06-23-b1-image-lifecycle*`.
-  **Outstanding runtime check (M5, spec §5 — not yet run):** `uv run ./start_kgdb --build-images`
-  builds 4 + stamps `likedbg.input_sha`; touch `io/scripts/rootfs.sh` → stale WARN fires;
-  `docker rmi like_debugger:latest` → auto-build on next run.
+  **Runtime check done (2026-06-25):** `uv run ./start_kgdb --build-images` rebuilt all 5 images
+  and stamped `likedbg.input_sha`; a temporary content edit to `io/scripts/rootfs.sh` triggered the
+  stale warning for `like_rootfs:latest`; removing `like_debugger:latest` triggered the missing-image
+  auto-build path and restored the image with the expected label.
   **Polish done (2026-06-25):** `build_image` tests now assert path/rm/nocache/labels forwarding,
   including `labels=None`; `copy_sources` now treats only tokenized `--from` flags as multi-stage
   copies.
@@ -155,10 +156,9 @@ threading), not detection.
 ### C. Cache niceties (small) — landed 2026-06-25
 - `--use` rootfs **build-if-absent** now uses the existing `RootfsStage`, so a cached kernel build can
   boot with the active rootfs even when that rootfs has not been cached yet.
-- `--list` build size now stats `manifest.paths["image_host"]` first, fixing **bind** builds whose
-  images live at `artifacts/ksrc/<label>/arch/<arch>/boot/<image>`. Volume builds intentionally keep
-  the Docker-free host-export Image fallback for this pass; in-volume tree `du` remains a separate
-  Docker-backed enhancement.
+- `--list` build size now stats `manifest.paths["image_host"]` for bind builds and uses Docker
+  `du -sb` for volume-mode kernel trees when Docker is reachable, with the host-export Image fallback
+  preserved if volume inspection is unavailable.
 - `--adopt-rootfs [SOURCE]` now copies a manually created legacy rootfs image into the keyed rootfs
   cache and writes the rootfs manifest.
 

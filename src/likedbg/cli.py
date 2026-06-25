@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shlex
 import urllib.request
 from datetime import UTC
 from datetime import datetime
@@ -23,11 +24,13 @@ from likedbg.cache import RootfsRecipe
 from likedbg.cache import build_recipe as make_build_recipe
 from likedbg.cache import rootfs_recipe as make_rootfs_recipe
 from likedbg.config import load_settings
+from likedbg.constants import BASE_IMAGE
 from likedbg.constants import DEBUGGEE_IMAGE
 from likedbg.constants import DEBUGGER_IMAGE
 from likedbg.constants import KBUILDER_IMAGE
 from likedbg.constants import KERNEL_VOLUME
 from likedbg.constants import ROOTFS_IMAGE
+from likedbg.constants import VOLUME_MOUNT
 from likedbg.container_service import ContainerService
 from likedbg.errors import CacheError
 from likedbg.errors import HostCapabilityError
@@ -268,8 +271,33 @@ def _ensure_images(container: ContainerService, workspace: Path, *, specs: tuple
         logger.warning(f"image {tag} looks stale (build inputs changed); run `start_kgdb --build-images` to refresh")
 
 
-def _artifact_size(workspace: Path, manifest: Manifest) -> str:
+def _volume_build_size(container: ContainerService, manifest: Manifest, *, volume: str = KERNEL_VOLUME) -> str | None:
+    kernel_root = manifest.paths.get("kernel_root")
+    if manifest.storage_mode != "volume" or not kernel_root:
+        return None
+    try:
+        c = container.run_detached(
+            BASE_IMAGE,
+            volumes={volume: {"bind": VOLUME_MOUNT, "mode": "ro"}},
+            detach=True,
+            tty=True,
+        )
+        try:
+            out = container.exec(c, f"du -sb {shlex.quote(kernel_root)}").output.strip()
+        finally:
+            container.stop(c)
+        size = int(out.split()[0])
+    except Exception:  # noqa: BLE001 - `--list` should remain best-effort if Docker/du is unavailable.
+        return None
+    return str(size)
+
+
+def _artifact_size(workspace: Path, manifest: Manifest, *, container: ContainerService | None = None) -> str:
     if manifest.kind == "build":
+        if container is not None:
+            volume_size = _volume_build_size(container, manifest)
+            if volume_size is not None:
+                return volume_size
         candidates = [Path(manifest.paths.get("image_host", "")), workspace / "artifacts" / manifest.label / "Image"]
     else:
         candidates = [Path(manifest.paths.get("image_host", ""))]
@@ -277,7 +305,7 @@ def _artifact_size(workspace: Path, manifest: Manifest) -> str:
     return str(image.stat().st_size) if image is not None else "-"
 
 
-def summarize_cache(workspace: Path) -> list[str]:
+def summarize_cache(workspace: Path, *, container: ContainerService | None = None) -> list[str]:
     builds = cache.list_manifests(workspace, "build")
     rootfs = cache.list_manifests(workspace, "rootfs")
     if not builds and not rootfs:
@@ -286,12 +314,15 @@ def summarize_cache(workspace: Path) -> list[str]:
     for m in [*builds, *rootfs]:
         mp = cache.manifest_path(workspace, m.kind, m.label)
         created = datetime.fromtimestamp(mp.stat().st_mtime, tz=UTC).date().isoformat()
-        lines.append(f"{m.kind}  {m.label}  {m.version or '-'}  {m.arch}  {_artifact_size(workspace, m)}  {created}")
+        lines.append(
+            f"{m.kind}  {m.label}  {m.version or '-'}  {m.arch}  "
+            f"{_artifact_size(workspace, m, container=container)}  {created}"
+        )
     return lines
 
 
-def cmd_list(workspace: Path) -> int:
-    for line in summarize_cache(workspace):
+def cmd_list(workspace: Path, *, container: ContainerService | None = None) -> int:
+    for line in summarize_cache(workspace, container=container):
         logger.info(line)
     return 0
 
@@ -389,7 +420,11 @@ def main(argv: list[str] | None = None) -> int:
                     pass
                 return 1
         if args.list:
-            return cmd_list(workspace)
+            try:
+                list_container = ContainerService(docker_env.make_client(docker_env.resolve_docker_host(env=os.environ)))
+            except Exception:  # noqa: BLE001 - fall back to host-visible sizes when Docker is unavailable.
+                list_container = None
+            return cmd_list(workspace, container=list_container)
         settings = load_settings(
             workspace / "configs" / "system.ini",
             workspace / "configs" / "user.ini",

@@ -112,6 +112,29 @@ class _FakeContainer(ContainerService):
         pass
 
 
+class _DuContainer(_FakeContainer):
+    def __init__(self, output="8192\t/ksrc/linux-6.6.30-volume\n", *, fail=False):
+        self.output = output
+        self.fail = fail
+        self.runs = []
+        self.execs = []
+        self.stopped = []
+
+    def run_detached(self, image, **kwargs):
+        handle = SimpleNamespace(id="du-helper")
+        self.runs.append({"image": image, **kwargs})
+        return handle
+
+    def exec(self, container, cmd, *, workdir=None):
+        self.execs.append(cmd)
+        if self.fail:
+            raise RuntimeError("du unavailable")
+        return SimpleNamespace(exit_code=0, output=self.output)
+
+    def stop(self, container):
+        self.stopped.append(container.id)
+
+
 def test_build_pipeline_includes_all_stage_names(tmp_path):
     settings = Settings.model_validate({"general": {"arch": "arm64"}})
     br = build_recipe(settings, version="6.6.30", workspace=tmp_path, fragments=[])
@@ -217,6 +240,53 @@ def test_summarize_cache_preserves_legacy_volume_image_size_fallback(tmp_path):
         Manifest(kind="build", label=label, key="k", version="6.6.30", arch="arm64", storage_mode="volume"),
     )
     assert "1024" in "\n".join(summarize_cache(tmp_path))
+
+
+def test_summarize_cache_uses_volume_tree_du_when_container_available(tmp_path):
+    label = "linux-6.6.30-volume"
+    image = tmp_path / "artifacts" / label / "Image"
+    image.parent.mkdir(parents=True)
+    image.write_bytes(b"x" * 1024)
+    write_manifest(
+        tmp_path,
+        Manifest(
+            kind="build",
+            label=label,
+            key="k",
+            version="6.6.30",
+            arch="arm64",
+            storage_mode="volume",
+            paths={"kernel_root": f"/ksrc/{label}", "image_host": str(image)},
+        ),
+    )
+    container = _DuContainer(output=f"8192\t/ksrc/{label}\n")
+    joined = "\n".join(summarize_cache(tmp_path, container=container))
+    assert "8192" in joined
+    assert "1024" not in joined
+    assert container.runs[0]["volumes"]["likedbg_ksrc"]["bind"] == "/ksrc"
+    assert container.runs[0]["volumes"]["likedbg_ksrc"]["mode"] == "ro"
+    assert container.execs == [f"du -sb /ksrc/{label}"]
+    assert container.stopped == ["du-helper"]
+
+
+def test_summarize_cache_falls_back_when_volume_du_fails(tmp_path):
+    label = "linux-6.6.30-volume"
+    image = tmp_path / "artifacts" / label / "Image"
+    image.parent.mkdir(parents=True)
+    image.write_bytes(b"x" * 1024)
+    write_manifest(
+        tmp_path,
+        Manifest(
+            kind="build",
+            label=label,
+            key="k",
+            version="6.6.30",
+            arch="arm64",
+            storage_mode="volume",
+            paths={"kernel_root": f"/ksrc/{label}", "image_host": str(image)},
+        ),
+    )
+    assert "1024" in "\n".join(summarize_cache(tmp_path, container=_DuContainer(fail=True)))
 
 
 def test_cmd_clean_unknown_label_raises(tmp_path):
@@ -567,7 +637,7 @@ def test_main_configures_stderr_always_but_logfile_only_for_runs(monkeypatch):
     monkeypatch.setattr(cli.docker_env, "make_client", lambda host: SimpleNamespace())
     monkeypatch.setattr(cli.logsetup, "configure_stderr", lambda **k: calls.__setitem__("stderr", calls["stderr"] + 1))
     monkeypatch.setattr(cli.logsetup, "add_run_logfile", lambda ws: calls.__setitem__("logfile", calls["logfile"] + 1))
-    monkeypatch.setattr(cli, "summarize_cache", lambda ws: ["(cache empty)"])
+    monkeypatch.setattr(cli, "summarize_cache", lambda ws, **kwargs: ["(cache empty)"])
 
     assert cli.main(["--list"]) == 0
     assert calls["stderr"] == 1  # configure_stderr runs for every invocation
