@@ -373,7 +373,7 @@ git commit -m "feat(gdb): add likedbg-reconnect helper"
 - Status line: ASCII separators, balanced colors, active-window contrast, no permanent shortcut hint.
 - LIKE-DBG binding:
   ```tmux
-  bind B run-shell -b 'cd "#{@likedbg_workspace}" && uv run ./start_kgdb --restart-debuggee'
+  bind B run-shell -b 'if [ -n "#{@likedbg_workspace}" ]; then cd "#{@likedbg_workspace}" || { tmux display-message "LIKE-DBG restart failed: workspace unavailable"; exit 1; }; uv run ./start_kgdb --restart-debuggee; else tmux display-message "LIKE-DBG restart failed: missing @likedbg_workspace"; fi'
   ```
 - Keep `prefix+?` default help intact.
 

@@ -76,11 +76,11 @@ the urgent rootfs follow-up + logging first, then Plan 2 (off updated `dev`) doe
 - **Debugging-session controls use the CLI as the stable interface.** `uv run ./start_kgdb --restart-debuggee`
   is the stable contract for relaunching the Debuggee process pane from stored tmux state. The checked-in
   LIKE-DBG `.tmux.conf` owns the default tmux sugar: **`prefix + B`** (mnemonic: reboot Debuggee), bound to
-  `run-shell -b 'cd "#{@likedbg_workspace}" && uv run ./start_kgdb --restart-debuggee'`. The README-recommended
-  launch path is `tmux -f .tmux.conf`, so this binding can stay in the project config. LIKE-DBG does **not**
-  mutate the user's live tmux key table at runtime; users on a custom tmux config still have the stable CLI
-  fallback or can add their own binding. Initial launch stores `@likedbg_workspace` so the project-config
-  binding is independent of the active pane/window's current directory.
+  `run-shell -b 'if [ -n "#{@likedbg_workspace}" ]; then cd "#{@likedbg_workspace}" || { tmux display-message "LIKE-DBG restart failed: workspace unavailable"; exit 1; }; uv run ./start_kgdb --restart-debuggee; else tmux display-message "LIKE-DBG restart failed: missing @likedbg_workspace"; fi'`.
+  The README-recommended launch path is `tmux -f .tmux.conf`, so this binding can stay in the project config.
+  LIKE-DBG does **not** mutate the user's live tmux key table at runtime; users on a custom tmux config still
+  have the stable CLI fallback or can add their own binding. Initial launch stores `@likedbg_workspace` so the
+  project-config binding is independent of the active pane/window's current directory.
 - **The project `.tmux.conf` is a shipped workflow surface.** Plan 2 modernizes the existing checked-in
   `.tmux.conf` in place and adds the restart binding there, instead of creating a parallel config file or
   treating tmux setup as external documentation. The current file is old, but it is the correct starting point
@@ -341,11 +341,11 @@ Unit (in `./tests/`). **Plan 1:**
   target, then emits the extension-specific reconnect command (`gef-remote` or `target remote`) and does not
   auto-continue or reapply the initial breakpoint.
 - tmux restart sugar: the checked-in `.tmux.conf` binds `prefix + B` to
-  `run-shell -b 'cd "#{@likedbg_workspace}" && uv run ./start_kgdb --restart-debuggee'`. LIKE-DBG does not
-  call `bind-key` at runtime. Initial launch stores `@likedbg_workspace`; missing workspace state makes
-  `--restart-debuggee` fail with a remedy. The binding is not wrapped in `confirm-before`; the CLI remains the
-  stable fallback for users not running the project tmux config. Binding-launched restart failures also emit a
-  one-line `tmux display-message` so background errors are visible.
+  `run-shell -b 'if [ -n "#{@likedbg_workspace}" ]; then cd "#{@likedbg_workspace}" || { tmux display-message "LIKE-DBG restart failed: workspace unavailable"; exit 1; }; uv run ./start_kgdb --restart-debuggee; else tmux display-message "LIKE-DBG restart failed: missing @likedbg_workspace"; fi'`.
+  LIKE-DBG does not call `bind-key` at runtime. Initial launch stores `@likedbg_workspace`; missing workspace
+  state makes `--restart-debuggee` fail with a remedy. The binding is not wrapped in `confirm-before`; the CLI
+  remains the stable fallback for users not running the project tmux config. Binding-launched restart failures
+  also emit a one-line `tmux display-message` so background errors are visible.
 - project tmux config: update the existing checked-in `.tmux.conf` in place (do not create a second config),
   preserving intentional workflow choices while removing obsolete/plugin-heavy cruft that hurts the LIKE-DBG
   debugging loop. The shipped prefix is `C-b` (tmux default), not the current `C-s`; `C-a` remains available for
