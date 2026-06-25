@@ -1,5 +1,6 @@
 from loguru import logger
 
+from likedbg.config import KernelDlCfg
 from likedbg.config import Settings
 from likedbg.host_profile import HostProfile
 from likedbg.pipeline import PipelineContext
@@ -23,8 +24,6 @@ def _ctx(tmp_path, **dl):
 
 
 def test_resolve_version_priority_mmp_over_tag():
-    from likedbg.config import KernelDlCfg
-
     assert resolve_version(KernelDlCfg(mmp="6.6.30", tag="6.6")) == "6.6.30"
 
 

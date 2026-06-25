@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
+import likedbg.cli as cli
 from likedbg import cache
 from likedbg.cache import Manifest
 from likedbg.cache import build_recipe
@@ -19,6 +20,7 @@ from likedbg.errors import HostCapabilityError
 from likedbg.errors import SessionError
 from likedbg.host_profile import HostProfile
 from likedbg.pipeline import PipelineContext
+from likedbg.stages.rootfs import rootfs_target
 
 
 class _FakeSession:
@@ -186,6 +188,37 @@ def test_summarize_cache_lists_build_and_rootfs(tmp_path):
     assert "build" in joined and "rootfs" in joined
 
 
+def test_summarize_cache_uses_bind_build_image_host_size(tmp_path):
+    image = tmp_path / "artifacts" / "ksrc" / "linux-6.6.30-bind" / "arch" / "arm64" / "boot" / "Image"
+    image.parent.mkdir(parents=True)
+    image.write_bytes(b"x" * 4096)
+    write_manifest(
+        tmp_path,
+        Manifest(
+            kind="build",
+            label="linux-6.6.30-bind",
+            key="k",
+            version="6.6.30",
+            arch="arm64",
+            storage_mode="bind",
+            paths={"image_host": str(image)},
+        ),
+    )
+    assert "4096" in "\n".join(summarize_cache(tmp_path))
+
+
+def test_summarize_cache_preserves_legacy_volume_image_size_fallback(tmp_path):
+    label = "linux-6.6.30-volume"
+    image = tmp_path / "artifacts" / label / "Image"
+    image.parent.mkdir(parents=True)
+    image.write_bytes(b"x" * 1024)
+    write_manifest(
+        tmp_path,
+        Manifest(kind="build", label=label, key="k", version="6.6.30", arch="arm64", storage_mode="volume"),
+    )
+    assert "1024" in "\n".join(summarize_cache(tmp_path))
+
+
 def test_cmd_clean_unknown_label_raises(tmp_path):
     with pytest.raises(CacheError) as exc:
         cmd_clean(_FakeContainer(), tmp_path, label="nope", clean_all=False)
@@ -217,7 +250,8 @@ def test_cmd_clean_all_removes_every_manifest(tmp_path):
     assert cache.list_manifests(tmp_path, "rootfs") == []
 
 
-def test_build_use_pipeline_is_launch_only(tmp_path):
+def test_build_use_pipeline_includes_rootfs_before_launch(tmp_path):
+    settings = Settings.model_validate({"general": {"arch": "arm64"}})
     session = _FakeSession()
     pipe = build_use_pipeline(
         _FakeContainer(),
@@ -229,8 +263,110 @@ def test_build_use_pipeline_is_launch_only(tmp_path):
         debuggee_image="like_debuggee:latest",
         ext="pwndbg",
         gdb_mount_source="likedbg_ksrc",
+        rootfs_recipe=rootfs_recipe(settings),
     )
-    assert [s.name for s in pipe._stages] == ["export", "debuggee", "debugger"]  # type: ignore[attr-defined]
+    assert [s.name for s in pipe._stages] == ["rootfs", "export", "debuggee", "debugger"]  # type: ignore[attr-defined]
+
+
+def test_cmd_use_builds_default_rootfs_when_manifest_is_missing(tmp_path, monkeypatch):
+    settings = Settings.model_validate(
+        {"general": {"arch": "arm64"}, "debuggee": {"accel": "tcg", "network": "host"}}
+    )
+    rr = rootfs_recipe(settings)
+    target = rootfs_target(tmp_path, rr.label)
+
+    class RootfsContainer(_FakeContainer):
+        def __init__(self):
+            super().__init__()
+            self.rootfs_runs = []
+
+        def run_detached(self, image, **kwargs):
+            self.rootfs_runs.append({"image": image, **kwargs})
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(b"img")
+            return SimpleNamespace(id="rootfs", logs=lambda **k: iter([]))
+
+    label = "linux-6.6.30-bind"
+    kernel_image = tmp_path / "artifacts" / "ksrc" / label / "arch" / "arm64" / "boot" / "Image"
+    write_manifest(
+        tmp_path,
+        Manifest(
+            kind="build",
+            label=label,
+            key="k",
+            version="6.6.30",
+            arch="arm64",
+            storage_mode="bind",
+            paths={
+                "kernel_root": f"/ksrc/{label}",
+                "gdb_vmlinux": f"/ksrc/{label}/vmlinux",
+                "image_host": str(kernel_image),
+                "image_in_tree": f"/ksrc/{label}/arch/arm64/boot/Image",
+                "gdb_mount_source": str(tmp_path / "artifacts" / "ksrc"),
+            },
+        ),
+    )
+    container = RootfsContainer()
+    monkeypatch.setattr(cli, "load_settings", lambda *a, **k: settings)
+    monkeypatch.setattr(cli.HostProfile, "detect", staticmethod(lambda settings, workspace: _host("bind")))
+    monkeypatch.setattr(cli, "_ensure_images", lambda container, workspace, *, specs: None)
+    monkeypatch.setattr(cli.logsetup, "add_run_logfile", lambda workspace: None)
+
+    assert cli.cmd_use(container, _FakeSession(), tmp_path, custom_ini=None, label=label, rootfs_label=None) == 0
+    assert cache.manifest_exists(tmp_path, "rootfs", rr.label)
+    assert target.read_bytes() == b"img"
+    assert container.rootfs_runs and container.rootfs_runs[0]["privileged"] is True
+
+
+def test_cmd_use_ensures_images_after_host_detection(tmp_path, monkeypatch):
+    settings = Settings.model_validate({"general": {"arch": "arm64"}})
+    rr = rootfs_recipe(settings)
+    rimg = rootfs_target(tmp_path, rr.label)
+    rimg.parent.mkdir(parents=True)
+    rimg.write_bytes(b"img")
+    write_manifest(
+        tmp_path,
+        Manifest(
+            kind="rootfs",
+            label=rr.label,
+            key=rr.key,
+            version="",
+            arch="arm64",
+            storage_mode="volume",
+            paths={"image_host": str(rimg)},
+        ),
+    )
+    label = "linux-6.6.30-volume"
+    write_manifest(
+        tmp_path,
+        Manifest(
+            kind="build",
+            label=label,
+            key="k",
+            version="6.6.30",
+            arch="arm64",
+            storage_mode="volume",
+            paths={
+                "kernel_root": f"/ksrc/{label}",
+                "gdb_vmlinux": f"/ksrc/{label}/vmlinux",
+                "image_host": str(tmp_path / "artifacts" / label / "Image"),
+                "image_in_tree": f"/ksrc/{label}/arch/arm64/boot/Image",
+                "gdb_mount_source": "likedbg_ksrc",
+            },
+        ),
+    )
+    specs_seen = []
+    monkeypatch.setattr(cli, "load_settings", lambda *a, **k: settings)
+    monkeypatch.setattr(cli.HostProfile, "detect", staticmethod(lambda settings, workspace: _host("volume")))
+    monkeypatch.setattr(
+        cli,
+        "_ensure_images",
+        lambda container, workspace, *, specs: specs_seen.append(tuple(s.tag for s in specs)),
+    )
+    monkeypatch.setattr(cli.logsetup, "add_run_logfile", lambda workspace: None)
+
+    assert cli.cmd_use(_FakeContainer(), _FakeSession(), tmp_path, custom_ini=None, label=label, rootfs_label=None) == 0
+    assert specs_seen == [tuple(s.tag for s in cli.images.required_for_use(_host("volume")))]
 
 
 def test_pipeline_launches_process_panes_and_stores_session_options(tmp_path):
@@ -293,8 +429,6 @@ def _restart_options():
 
 
 def test_restart_debuggee_respawns_existing_pane_in_place():
-    import likedbg.cli as cli
-
     session = _RestartSession(options=_restart_options())
     assert cli.cmd_restart_debuggee(session) == 0  # type: ignore[arg-type]
     assert session.sets[0] == ("@likedbg_restart_in_progress", "1")
@@ -309,8 +443,6 @@ def test_restart_debuggee_respawns_existing_pane_in_place():
 
 
 def test_restart_debuggee_recreates_when_debuggee_pane_stale():
-    import likedbg.cli as cli
-
     session = _RestartSession(options=_restart_options(), existing=("%1", "%3"))
     assert cli.cmd_restart_debuggee(session) == 0  # type: ignore[arg-type]
     assert session.respawns == []
@@ -331,8 +463,6 @@ def test_restart_debuggee_recreates_when_debuggee_pane_stale():
 
 
 def test_restart_debuggee_missing_command_or_workspace_raises_remedy():
-    import likedbg.cli as cli
-
     for missing in ("@likedbg_workspace", "@likedbg_debuggee_cmd"):
         options = _restart_options()
         options.pop(missing)
@@ -342,8 +472,6 @@ def test_restart_debuggee_missing_command_or_workspace_raises_remedy():
 
 
 def test_restart_debuggee_clears_lock_on_post_acquire_failure():
-    import likedbg.cli as cli
-
     options = _restart_options()
     options.pop("@likedbg_workspace")
     session = _RestartSession(options=options)
@@ -354,8 +482,6 @@ def test_restart_debuggee_clears_lock_on_post_acquire_failure():
 
 
 def test_restart_debuggee_missing_base_only_fatal_for_recreate():
-    import likedbg.cli as cli
-
     existing_debuggee = _RestartSession(options=_restart_options(), existing=("%2", "%3"))
     assert cli.cmd_restart_debuggee(existing_debuggee) == 0  # type: ignore[arg-type]
 
@@ -366,8 +492,6 @@ def test_restart_debuggee_missing_base_only_fatal_for_recreate():
 
 
 def test_restart_debuggee_lock_prevents_double_tap():
-    import likedbg.cli as cli
-
     options = _restart_options()
     options["@likedbg_restart_in_progress"] = "1"
     session = _RestartSession(options=options)
@@ -380,8 +504,6 @@ def test_restart_debuggee_lock_prevents_double_tap():
 
 
 def test_main_restart_bypasses_config_and_docker(monkeypatch):
-    import likedbg.cli as cli
-
     restarted = []
     monkeypatch.setenv("TMUX", "/tmp/tmux")
     monkeypatch.setattr(cli, "load_settings", lambda *a, **k: pytest.fail("load_settings should not run"))
@@ -392,8 +514,6 @@ def test_main_restart_bypasses_config_and_docker(monkeypatch):
 
 
 def test_main_restart_failure_displays_tmux_message(monkeypatch):
-    import likedbg.cli as cli
-
     created = []
 
     class FakeSession(_RestartSession):
@@ -413,16 +533,12 @@ def test_main_restart_failure_displays_tmux_message(monkeypatch):
 
 
 def test_main_restart_requires_tmux(monkeypatch):
-    import likedbg.cli as cli
-
     monkeypatch.delenv("TMUX", raising=False)
     monkeypatch.setattr(cli, "load_settings", lambda *a, **k: pytest.fail("load_settings should not run"))
     assert cli.main(["--restart-debuggee"]) == 2
 
 
 def test_main_build_images_is_docker_only_and_invokes_build_images(monkeypatch):
-    import likedbg.cli as cli
-
     built = []
     monkeypatch.setattr(cli, "load_settings", lambda *a, **k: Settings())
     monkeypatch.setattr(cli.docker_env, "resolve_docker_host", lambda env: "unix:///x")
@@ -435,8 +551,6 @@ def test_main_build_images_is_docker_only_and_invokes_build_images(monkeypatch):
 
 
 def test_ensure_images_helper_warns_each_stale_tag(monkeypatch):
-    import likedbg.cli as cli
-
     monkeypatch.setattr(cli.images, "ensure_current", lambda container, workspace, specs: ["like_rootfs:latest"])
     msgs = []
     monkeypatch.setattr(cli.logger, "warning", lambda msg: msgs.append(msg))
@@ -447,8 +561,6 @@ def test_ensure_images_helper_warns_each_stale_tag(monkeypatch):
 
 
 def test_main_configures_stderr_always_but_logfile_only_for_runs(monkeypatch):
-    import likedbg.cli as cli
-
     calls = {"stderr": 0, "logfile": 0}
     monkeypatch.setattr(cli, "load_settings", lambda *a, **k: Settings())
     monkeypatch.setattr(cli.docker_env, "resolve_docker_host", lambda env: "unix:///x")

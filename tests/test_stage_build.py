@@ -4,7 +4,9 @@ from types import SimpleNamespace
 from loguru import logger
 
 from likedbg.cache import BuildRecipe
+from likedbg.cache import Manifest
 from likedbg.cache import manifest_exists
+from likedbg.cache import write_manifest
 from likedbg.config import Settings
 from likedbg.container_service import ContainerService
 from likedbg.host_profile import HostProfile
@@ -166,9 +168,6 @@ def test_build_volume_mode_mounts_named_volume_and_workspace(tmp_path):
 
 
 def test_build_reuses_when_manifest_present(tmp_path):
-    from likedbg.cache import Manifest
-    from likedbg.cache import write_manifest
-
     label = "linux-6.6.30-a1b2c3d4"
     write_manifest(
         tmp_path,
@@ -209,9 +208,6 @@ def test_build_reuses_when_manifest_present(tmp_path):
 
 
 def test_build_reuses_bind_manifest_uses_host_image(tmp_path):
-    from likedbg.cache import Manifest
-    from likedbg.cache import write_manifest
-
     label = "linux-6.6.30-a1b2c3d4"
     image_host = str(tmp_path / "artifacts" / "ksrc" / label / "arch" / "arm64" / "boot" / "Image")
     write_manifest(

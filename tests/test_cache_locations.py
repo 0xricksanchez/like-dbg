@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from likedbg.cache import locations
+from likedbg.cache import tree_mount_source
 
 
 def test_volume_mode_footprint():
@@ -14,8 +15,6 @@ def test_volume_mode_footprint():
 
 
 def test_bind_mode_footprint_is_symmetric_and_host_in_tree():
-    from likedbg.cache import tree_mount_source
-
     label = "linux-6.6.30-gef-a1b2c3d4"
     loc = locations(label, arch="x86_64", storage_mode="bind", workspace=Path("/ws"))
     # container-side paths are identical to volume mode (mode-invariant)

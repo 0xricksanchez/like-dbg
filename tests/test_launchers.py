@@ -57,6 +57,7 @@ def test_qemu_container_command_omits_absent_rootfs():
     )
     assert "-v /ws/Image:/ws/Image:ro" in cmd
     assert ":rw" not in cmd  # no writable mount when there's no rootfs disk
+    assert "  " not in cmd.split("like_debuggee:latest", 1)[0]
 
 
 def test_qemu_container_host_network_omits_published_port():

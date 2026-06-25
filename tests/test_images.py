@@ -4,9 +4,11 @@ import pytest
 
 from likedbg import images
 from likedbg.constants import BASE_IMAGE
+from likedbg.constants import DEBUGGEE_IMAGE
 from likedbg.constants import DEBUGGER_IMAGE
 from likedbg.constants import KBUILDER_IMAGE
 from likedbg.constants import ROOTFS_IMAGE
+from likedbg.host_profile import HostProfile
 from likedbg.images import ImageSpec
 
 REPO = Path(__file__).resolve().parents[1]
@@ -34,8 +36,6 @@ def test_input_sha_ignores_files_not_in_build_inputs(tmp_path):
 
 
 def test_images_manifest_shape():
-    from likedbg.constants import DEBUGGEE_IMAGE
-
     assert images.IMAGES[0].tag == BASE_IMAGE  # base first (dependency order)
     assert {s.tag for s in images.IMAGES} == {BASE_IMAGE, KBUILDER_IMAGE, ROOTFS_IMAGE, DEBUGGER_IMAGE, DEBUGGEE_IMAGE}
     for s in images.IMAGES:
@@ -47,13 +47,11 @@ def test_images_manifest_shape():
     assert debuggee.dockerfile == ".dockerfile_dbge"
 
 
-def test_use_images_is_base_and_debugger_in_order():
-    assert tuple(s.tag for s in images.USE_IMAGES) == (BASE_IMAGE, DEBUGGER_IMAGE)
+def test_use_images_is_all_possible_cached_run_images_in_order():
+    assert tuple(s.tag for s in images.USE_IMAGES) == (BASE_IMAGE, ROOTFS_IMAGE, DEBUGGER_IMAGE, DEBUGGEE_IMAGE)
 
 
 def _host(mode):
-    from likedbg.host_profile import HostProfile
-
     return HostProfile(
         os="darwin",
         host_arch="arm64",
@@ -66,13 +64,18 @@ def _host(mode):
 
 
 def test_required_for_includes_debuggee_only_in_container():
-    from likedbg.constants import DEBUGGEE_IMAGE
-
     in_container = {s.tag for s in images.required_for(_host("in-container"))}
     native = {s.tag for s in images.required_for(_host("native-host"))}
     assert DEBUGGEE_IMAGE in in_container
     assert DEBUGGEE_IMAGE not in native
     assert len(native) == 4 and len(in_container) == 5
+
+
+def test_required_for_use_includes_debuggee_only_in_container():
+    in_container = tuple(s.tag for s in images.required_for_use(_host("in-container")))
+    native = tuple(s.tag for s in images.required_for_use(_host("native-host")))
+    assert in_container == (BASE_IMAGE, ROOTFS_IMAGE, DEBUGGER_IMAGE, DEBUGGEE_IMAGE)
+    assert native == (BASE_IMAGE, ROOTFS_IMAGE, DEBUGGER_IMAGE)
 
 
 def test_copy_sources_parses_literal_local_files():
@@ -83,6 +86,11 @@ def test_copy_sources_parses_literal_local_files():
 def test_copy_sources_skips_urls_and_multistage():
     text = "COPY --from=builder /out/bin /usr/bin/bin\nADD https://x/y.tgz /tmp/\n"
     assert images.copy_sources(text) == []
+
+
+def test_copy_sources_does_not_treat_source_substring_as_multistage_flag():
+    text = "COPY app--from-builder.txt /opt/app--from-builder.txt\n"
+    assert images.copy_sources(text) == ["app--from-builder.txt"]
 
 
 def test_copy_sources_strict_rejects_glob_and_dir():

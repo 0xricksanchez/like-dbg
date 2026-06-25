@@ -120,10 +120,24 @@ def test_build_image_forwards_labels_and_args():
     svc = ContainerService(client)
     svc.build_image(".dockerfile_base", "like_dbg_base:latest", {"USER": "user"}, labels={"likedbg.input_sha": "abc"})
     kw = client.images.build_kwargs
+    assert kw["path"] == "."
     assert kw["dockerfile"] == ".dockerfile_base"
     assert kw["tag"] == "like_dbg_base:latest"
     assert kw["buildargs"] == {"USER": "user"}
+    assert kw["nocache"] is False
+    assert kw["rm"] is True
     assert kw["labels"] == {"likedbg.input_sha": "abc"}
+
+
+def test_build_image_forwards_nocache_and_default_labels():
+    client = FakeClient()
+    svc = ContainerService(client)
+    svc.build_image(".dockerfile_dbg", "like_debugger:latest", {"USER": "user"}, nocache=True)
+    kw = client.images.build_kwargs
+    assert kw["path"] == "."
+    assert kw["nocache"] is True
+    assert kw["rm"] is True
+    assert kw["labels"] is None
 
 
 def test_image_labels_returns_image_labels():

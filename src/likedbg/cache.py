@@ -28,7 +28,7 @@ from likedbg.toolchain import resolve_toolchain
 
 _SLUG_RE = re.compile(r"[^a-z0-9._-]+")
 
-TREE_ROOT = "ksrc"  # host mirror of the /ksrc mount: artifacts/<TREE_ROOT>/<label>
+TREE_ROOT = "ksrc"  # host mirror of the kernel-source mount: artifacts/<TREE_ROOT>/<label>
 
 
 def cache_key(inputs: dict[str, str]) -> str:
@@ -191,7 +191,7 @@ class Locations:
 
 def tree_mount_source(workspace: Path, *, storage_mode: str, volume: str = KERNEL_VOLUME) -> str:
     """The kernel tree's mount source — the named volume (volume mode) or the host
-    artifacts/ksrc dir (bind mode). Mounted at VOLUME_MOUNT (/ksrc) rw by Build/Unpack, ro by gdb."""
+    artifacts/ksrc dir (bind mode). Mounted at VOLUME_MOUNT rw by Build/Unpack, ro by gdb."""
     return volume if storage_mode == "volume" else str(workspace / "artifacts" / TREE_ROOT)
 
 
@@ -211,13 +211,13 @@ def locations(label: str, *, arch: str, storage_mode: str, workspace: Path, volu
         )
     host_tree = workspace / "artifacts" / TREE_ROOT / label  # the real on-host kernel tree (bind)
     return Locations(
-        kernel_root=container_root,  # /ksrc/<label>  (symmetric with volume)
+        kernel_root=container_root,  # VOLUME_MOUNT/<label>  (symmetric with volume)
         vmlinux_in_tree=f"{container_root}/vmlinux",
         image_in_tree=image_in_tree,  # container path (symmetric)
         image_host=str(host_tree / "arch" / arch / "boot" / image_name),  # real host in-tree file
         gdb_mount_source=tree_mount_source(workspace, storage_mode=storage_mode, volume=volume),
         gdb_mount_type="bind",
-        gdb_vmlinux=f"{container_root}/vmlinux",  # /ksrc/<label>/vmlinux (symmetric)
+        gdb_vmlinux=f"{container_root}/vmlinux",  # VOLUME_MOUNT/<label>/vmlinux (symmetric)
     )
 
 

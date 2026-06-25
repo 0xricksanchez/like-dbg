@@ -44,9 +44,11 @@ IMAGES: tuple[ImageSpec, ...] = (
     ImageSpec(DEBUGGEE_IMAGE, ".dockerfile_dbge", (".dockerfile_dbge",), {"USER": "user"}),
 )
 
-# `--use` is launch-only (boots a cached build): it needs gdb's debugger image, and base only for
-# the rare re-export when the host Image was deleted. It never builds a kernel or rootfs.
-USE_IMAGES: tuple[ImageSpec, ...] = tuple(s for s in IMAGES if s.tag in (BASE_IMAGE, DEBUGGER_IMAGE))
+# `--use` reuses a cached build, but may still re-export the volume Image (base), build the active
+# rootfs when it is absent (rootfs), launch gdb (debugger), and launch QEMU in-container (debuggee).
+USE_IMAGES: tuple[ImageSpec, ...] = tuple(
+    s for s in IMAGES if s.tag in (BASE_IMAGE, ROOTFS_IMAGE, DEBUGGER_IMAGE, DEBUGGEE_IMAGE)
+)
 
 
 def input_sha(spec: ImageSpec, workspace: Path) -> str:
@@ -77,11 +79,12 @@ def copy_sources(dockerfile_text: str) -> list[str]:
         if not m:
             continue
         rest = m.group(1).strip()
-        if "--from" in rest:
-            continue  # multi-stage copy: sources live in another build stage, not the workspace
         if rest.startswith("["):
             raise ValueError(f"unhandled JSON-array COPY/ADD form: {line!r}")
-        tokens = [t for t in rest.split() if not t.startswith("--")]  # drop flags (e.g. --chown=)
+        raw_tokens = rest.split()
+        if any(t == "--from" or t.startswith("--from=") for t in raw_tokens if t.startswith("--")):
+            continue  # multi-stage copy: sources live in another build stage, not the workspace
+        tokens = [t for t in raw_tokens if not t.startswith("--")]  # drop flags (e.g. --chown=)
         if len(tokens) < 2:
             raise ValueError(f"unparseable COPY/ADD (need source + dest): {line!r}")
         for src in tokens[:-1]:  # last token is the destination
@@ -123,3 +126,10 @@ def required_for(host: HostProfile) -> tuple[ImageSpec, ...]:
     if host.debuggee_mode == "in-container":
         return IMAGES
     return tuple(s for s in IMAGES if s.tag != DEBUGGEE_IMAGE)
+
+
+def required_for_use(host: HostProfile) -> tuple[ImageSpec, ...]:
+    """Images a cached-build `--use` run needs, with debuggee only for in-container QEMU."""
+    if host.debuggee_mode == "in-container":
+        return USE_IMAGES
+    return tuple(s for s in USE_IMAGES if s.tag != DEBUGGEE_IMAGE)
