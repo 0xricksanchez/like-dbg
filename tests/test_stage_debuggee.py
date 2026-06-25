@@ -23,23 +23,23 @@ def _ctx(mode):
 
 
 def test_native_debuggee_sends_plain_qemu_argv():
-    sent = {}
-    DebuggeeStage(send=lambda cmd: sent.setdefault("cmd", cmd), debuggee_image="like_debuggee:latest").run(
+    launched = {}
+    DebuggeeStage(launch=lambda cmd: launched.setdefault("cmd", cmd), debuggee_image="like_debuggee:latest").run(
         _ctx("native-host")
     )
-    assert sent["cmd"].startswith("qemu-system-aarch64")
-    assert "docker run" not in sent["cmd"]
+    assert launched["cmd"].startswith("qemu-system-aarch64")
+    assert "docker run" not in launched["cmd"]
 
 
 def test_in_container_debuggee_wraps_docker_run():
-    sent = {}
-    DebuggeeStage(send=lambda cmd: sent.setdefault("cmd", cmd), debuggee_image="like_debuggee:latest").run(
+    launched = {}
+    DebuggeeStage(launch=lambda cmd: launched.setdefault("cmd", cmd), debuggee_image="like_debuggee:latest").run(
         _ctx("in-container")
     )
-    assert sent["cmd"].startswith("docker run --rm -it -p 1234:1234")
-    assert "like_debuggee:latest" in sent["cmd"]
-    assert "qemu-system-x86_64" in sent["cmd"]
-    assert "-v /ws/artifacts/x/Image:/ws/artifacts/x/Image:ro" in sent["cmd"]
+    assert launched["cmd"].startswith("docker run --rm -it -p 1234:1234")
+    assert "like_debuggee:latest" in launched["cmd"]
+    assert "qemu-system-x86_64" in launched["cmd"]
+    assert "-v /ws/artifacts/x/Image:/ws/artifacts/x/Image:ro" in launched["cmd"]
 
 
 def _linux_ctx(*, accel="tcg"):
@@ -60,16 +60,18 @@ def _linux_ctx(*, accel="tcg"):
 
 
 def test_linux_in_container_uses_host_network():
-    sent = {}
-    DebuggeeStage(send=lambda cmd: sent.setdefault("cmd", cmd), debuggee_image="like_debuggee:latest").run(_linux_ctx())
-    assert "--network host" in sent["cmd"]
-    assert "-p 1234:1234" not in sent["cmd"]
-    assert "/dev/kvm" not in sent["cmd"]  # tcg → no kvm device
+    launched = {}
+    DebuggeeStage(launch=lambda cmd: launched.setdefault("cmd", cmd), debuggee_image="like_debuggee:latest").run(
+        _linux_ctx()
+    )
+    assert "--network host" in launched["cmd"]
+    assert "-p 1234:1234" not in launched["cmd"]
+    assert "/dev/kvm" not in launched["cmd"]  # tcg → no kvm device
 
 
 def test_linux_kvm_passes_device():
-    sent = {}
-    DebuggeeStage(send=lambda cmd: sent.setdefault("cmd", cmd), debuggee_image="like_debuggee:latest").run(
+    launched = {}
+    DebuggeeStage(launch=lambda cmd: launched.setdefault("cmd", cmd), debuggee_image="like_debuggee:latest").run(
         _linux_ctx(accel="kvm")
     )
-    assert "--device /dev/kvm" in sent["cmd"]
+    assert "--device /dev/kvm" in launched["cmd"]

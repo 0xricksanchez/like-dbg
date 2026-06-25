@@ -16,6 +16,10 @@ def _host(addr="host.docker.internal"):
     )
 
 
+def _helper_arg(args):
+    return next(arg for arg in args if "likedbg-reconnect" in arg)
+
+
 def test_pwndbg_uses_target_remote_with_addr():
     args = build_gdb_args(_host(), arch="arm64", vmlinux=Path("/w/vmlinux"), ext="pwndbg", breakpoint="start_kernel")
     s = " ".join(args)
@@ -41,7 +45,10 @@ def test_gef_uses_gef_remote_not_qemu_user():
 
 def test_no_breakpoint_omits_break():
     args = build_gdb_args(_host(), arch="arm64", vmlinux=Path("/w/vmlinux"), ext="pwndbg", breakpoint=None)
-    assert all("break" not in a for a in args)
+    assert "hbreak start_kernel" not in args
+    assert "continue" not in args
+    helper = _helper_arg(args)
+    assert "breakpoint = None" in helper
 
 
 def test_gef_sources_only_the_gef_plugin():
@@ -80,3 +87,35 @@ def test_remote_port_is_configurable():
     assert "gef-remote host.docker.internal 4444" in " ".join(gef)
     pdb = build_gdb_args(_host(), arch="arm64", vmlinux=Path("/w/vmlinux"), ext="pwndbg", breakpoint=None, port=4444)
     assert "target remote host.docker.internal:4444" in " ".join(pdb)
+
+
+def test_gef_reconnect_helper_disconnects_before_gef_remote():
+    args = build_gdb_args(_host(), arch="arm64", vmlinux=Path("/w/vmlinux"), ext="gef", breakpoint="start_kernel")
+    helper = _helper_arg(args)
+    assert "likedbg-reconnect" in helper
+    assert "disconnect" in helper
+    assert "except gdb.error" in helper
+    assert helper.index("disconnect") < helper.index("gef-remote host.docker.internal 1234")
+
+
+def test_pwndbg_reconnect_helper_disconnects_before_target_remote():
+    args = build_gdb_args(_host(), arch="arm64", vmlinux=Path("/w/vmlinux"), ext="pwndbg", breakpoint="start_kernel")
+    helper = _helper_arg(args)
+    assert "likedbg-reconnect" in helper
+    assert "disconnect" in helper
+    assert "except gdb.error" in helper
+    assert helper.index("disconnect") < helper.index("target remote host.docker.internal:1234")
+
+
+def test_reconnect_helper_reapplies_initial_breakpoint_and_continues():
+    args = build_gdb_args(_host(), arch="arm64", vmlinux=Path("/w/vmlinux"), ext="pwndbg", breakpoint="start_kernel")
+    helper = _helper_arg(args)
+    assert '_set_pwndbg_context_sections("")' in helper
+    assert "pwndbg.config.context_sections.value = value" in helper
+    assert "set context-sections" in helper
+    assert 'getattr(bp, "enabled", True)' in helper
+    assert "if not _breakpoint_exists(breakpoint)" in helper
+    assert 'hbreak " + breakpoint' in helper
+    assert 'gdb.execute("continue", from_tty=from_tty)' in helper
+    assert "hbreak start_kernel" in args
+    assert "continue" in args

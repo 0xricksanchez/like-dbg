@@ -84,13 +84,11 @@ To get started, you have to ensure to have the following requirements set up in 
 
 - `docker`
 - `tmux`
-- `python>=3.11`
-- `poetry` # <https://python-poetry.org/docs/>
+- `python>=3.12`
+- `uv` # <https://docs.astral.sh/uv/>
 
 It is recommended to not run this as the `root` user, e.g. for testing purposes on a VPS.
 It may work fine but in general I highly encourage creating a dedicated non-root user to put in the `docker` and `sudo` group!
-
-**Note**: If you're using a custom TMUX config, make sure that your first pane starts at `0`!
 
 ### Optional
 
@@ -102,7 +100,7 @@ This section covers tools that are _not_ required to run LIKE-DBG but are nice t
 
 ## Setup
 
-Inside `like-dbg` run `poetry install`
+Inside `like-dbg` run `uv sync`
 
 ## Configuration
 
@@ -113,17 +111,52 @@ However, all the ones to customize the environment to your needs should be self-
 
 ## Usage
 
-**Note:** On first time usage run `poetry install`.
+**Note:** On first time usage run `uv sync`.
 
 Once you're set with writing/adapting a configuration, the usage depends on your scenario.
 The easiest way to get started, which is based on the `configs/user.ini` configuration is the following:
 
 ```sh
-tmux -f .tmux.conf
-poetry shell
-# This checks out a kernel, builds it, creates a root file system and starts the debugger and debuggee eventually
-./start_kgdb.py
+tmux -L likedbg -f .tmux.conf new -s LIKE-DBG
 ```
+
+Then inside that tmux session:
+
+```sh
+# This checks out a kernel, builds it, creates a root file system and starts the debugger and debuggee eventually
+uv run ./start_kgdb
+```
+
+The `-L likedbg` socket name makes tmux start an isolated project server, so
+the checked-in `.tmux.conf` is definitely loaded. Because this is not the
+default tmux server, use the same socket name when listing or reattaching:
+
+```sh
+# Detach with C-b d
+tmux -L likedbg ls
+tmux -L likedbg attach -t LIKE-DBG
+```
+
+If you intentionally run LIKE-DBG inside an existing tmux server, load the
+project config into that server first:
+
+```sh
+tmux source-file "$PWD/.tmux.conf"
+```
+
+The project tmux config binds `C-b B` to restart the Debuggee pane in place. If
+you use a custom tmux config, keep an equivalent fallback binding or run:
+
+```sh
+uv run ./start_kgdb --restart-debuggee
+```
+
+Restarting the Debuggee relaunches QEMU and keeps the Debugger pane open, but
+GDB loses the old remote target. Run `likedbg-reconnect` in GDB/pwndbg after
+the restart; it reconnects to the new QEMU gdbstub and resumes to `start_kernel`.
+Do not use `target remote :1234` or `target remote localhost:1234` from inside
+the Debugger container: `localhost` is the container, not the host QEMU process.
+If you need a raw manual attach, use `target remote host.docker.internal:1234`.
 
 There exist 2 users for the automatically created filesystems:
 
@@ -135,25 +168,28 @@ This is intended so you can develop and exploit from either perspective easily.
 ### Extended Usage
 
 ```sh
-# If you want to try a CTF challenge where you were given a (compressed) Linux Image and a root filesystem try:
-./start_kgdb.py --ctf <Image> <RootFS>
-
-# If you want to kill the current debugging session
-./start_kgdb.py -k
-
 # If you want to provide a custom 'user.ini' for a specific debugging setup
-./start_kgdb.py -c <path_to_cfg> [other_args]
+uv run ./start_kgdb -c <path_to_cfg> [other_args]
 
-# If you want to test some partial functionality of LIKE-DBG
-# Stage 1: Download Kernel
-# Stage 2: Stage 1 & unpack Kernel
-# Stage 3: Stage 2 & build Kernel
-# Stage 4: Only build a root file system
-# Stage 5: Stage 3+4 & start debuggee
-./start_kgdb.py -p <stage_nr>
+# Rebuild all LIKE-DBG container images
+uv run ./start_kgdb --build-images
 
-# Update all containers
-./start_kgdb.py -u
+# List cached Kernel Builds and rootfs images
+uv run ./start_kgdb --list
+
+# Remove one cached artifact, or clear the cache
+uv run ./start_kgdb --clean <label>
+uv run ./start_kgdb --clean-all
+
+# Reuse an existing Kernel Build, optionally with a specific rootfs image
+uv run ./start_kgdb --use <build-label>
+uv run ./start_kgdb --use <build-label> --rootfs <rootfs-label>
+
+# Force the current Kernel Build to rebuild
+uv run ./start_kgdb --force-rebuild
+
+# Restart the Debuggee pane from stored tmux session state
+uv run ./start_kgdb --restart-debuggee
 ```
 
 ### Examples
