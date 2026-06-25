@@ -64,14 +64,16 @@ the urgent rootfs follow-up + logging first, then Plan 2 (off updated `dev`) doe
   serial console (guest access is mandatory); the Debugger pane remains the GDB/GEF/pwndbg interface. Losing
   a post-exit shell is acceptable and intentional.
 - **Expanded Plan 2 owns the first Debugging-session control:** restart the Debuggee process pane while
-  keeping the existing Debugger/GDB process alive. The first version is manual reconnect: restart relaunches
-  QEMU paused with the same generated command; the user runs `likedbg-reconnect` in GDB and then chooses when
-  to `continue`.
-- **`likedbg-reconnect` is extension-aware and reconnect-only.** `gdbcmd.py` owns reconnect semantics for every
-  officially supported Debugger extension. The helper first attempts `disconnect` and tolerates failure/no
-  existing target, then reconnects. GEF reconnects via `gef-remote <addr> <port>`; pwndbg reconnects via
-  `target remote <addr>:<port>`. It does **not** auto-continue and does **not** reapply the initial
-  `start_kernel` breakpoint. No short alias is added in the first version; `likedbg-reconnect` is the only
+  keeping the existing Debugger/GDB process alive. Restart relaunches QEMU paused with the same generated
+  command; the user runs `likedbg-reconnect` in GDB to reconnect to the new gdbstub and resume to
+  `start_kernel`.
+- **`likedbg-reconnect` is extension-aware and resumes to the initial breakpoint.** `gdbcmd.py` owns reconnect
+  semantics for every officially supported Debugger extension. The helper first attempts `disconnect` and
+  tolerates failure/no existing target, then reconnects. GEF reconnects via `gef-remote <addr> <port>`; pwndbg
+  reconnects via `target remote <addr>:<port>`. When an initial breakpoint is configured, the helper ensures
+  that the hardware breakpoint exists and continues to it. For pwndbg, the helper temporarily suppresses context
+  rendering during the reset-vector reconnect so pwndbg does not inspect unmapped kernel virtual addresses before
+  the kernel reaches `start_kernel`. No short alias is added in the first version; `likedbg-reconnect` is the only
   public GDB helper name.
 - **Debugging-session controls use the CLI as the stable interface.** `uv run ./start_kgdb --restart-debuggee`
   is the stable contract for relaunching the Debuggee process pane from stored tmux state. The checked-in
@@ -340,8 +342,9 @@ Unit (in `./tests/`). **Plan 1:**
 - `cli.build_pipeline`/`build_use_pipeline`: stage-name lists unchanged; constructed with `session`/base (no
   `panes`); `open_debug_layout` no longer referenced; the debuggee/debugger closures call `run_in_new_pane`.
 - `gdbcmd.py`: `likedbg-reconnect` helper generation attempts `disconnect` first while tolerating no existing
-  target, then emits the extension-specific reconnect command (`gef-remote` or `target remote`) and does not
-  auto-continue or reapply the initial breakpoint.
+  target, emits the extension-specific reconnect command (`gef-remote` or `target remote`), then ensures the
+  initial hardware breakpoint exists and continues to it. For pwndbg, reconnect temporarily disables context
+  sections during the reset-vector stop and restores them afterward.
 - tmux restart sugar: the checked-in `.tmux.conf` binds `prefix + B` to
   `run-shell -b 'if [ -n "#{@likedbg_workspace}" ]; then cd "#{@likedbg_workspace}" || { tmux display-message "LIKE-DBG restart failed: workspace unavailable"; exit 1; }; uv run ./start_kgdb --restart-debuggee; else tmux display-message "LIKE-DBG restart failed: missing @likedbg_workspace"; fi'`.
   LIKE-DBG does not call `bind-key` at runtime. Initial launch stores `@likedbg_workspace`; missing workspace

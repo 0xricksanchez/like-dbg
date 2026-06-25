@@ -153,7 +153,7 @@ uv run ./start_kgdb --restart-debuggee
 
 Restarting the Debuggee relaunches QEMU and keeps the Debugger pane open, but
 GDB loses the old remote target. Run `likedbg-reconnect` in GDB/pwndbg after
-the restart.
+the restart; it reconnects to the new QEMU gdbstub and resumes to `start_kernel`.
 
 There exist 2 users for the automatically created filesystems:
 

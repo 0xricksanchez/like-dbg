@@ -339,7 +339,7 @@ def cmd_restart_debuggee(session: Session) -> int:
         if active_pane and session.pane_exists(active_pane):
             session.select_pane(active_pane)
         try:
-            session.display_message("LIKE-DBG Debuggee restarted; run likedbg-reconnect in GDB")
+            session.display_message("LIKE-DBG Debuggee restarted; run likedbg-reconnect to resume to start_kernel")
         except LikeDbgError:
             pass
         return 0

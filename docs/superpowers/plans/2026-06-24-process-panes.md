@@ -311,7 +311,9 @@ git commit -m "feat(cli): restart Debuggee process pane from tmux state"
 **Interfaces:**
 - `build_gdb_args(...)` adds extension-aware helper definitions before/alongside the initial attach.
 - Helper name: `likedbg-reconnect`
-- Behavior: attempt `disconnect` while tolerating no target, then reconnect with extension-specific command; no auto-continue; no initial breakpoint reapplication.
+- Behavior: attempt `disconnect` while tolerating no target, then reconnect with extension-specific command.
+- If the initial Debugger stage configured a breakpoint, ensure the hardware breakpoint exists and continue to it.
+- For pwndbg, temporarily suppress context sections during the reset-vector reconnect and restore them afterward.
 
 - [ ] **Step 1: Write tests**
 
@@ -319,7 +321,7 @@ Add tests in `tests/test_gdbcmd.py`:
 - GEF args contain a `likedbg-reconnect` helper and `gef-remote <addr> <port>` inside it.
 - pwndbg args contain a `likedbg-reconnect` helper and `target remote <addr>:<port>` inside it.
 - Helper text attempts `disconnect` before reconnect and tolerates failure/no target.
-- Helper does not contain `continue`, `hbreak start_kernel`, or `break start_kernel`.
+- Helper contains reconnect, optional `hbreak <initial-breakpoint>`, and optional `continue`.
 - Existing initial launch behavior still contains initial attach, optional `hbreak start_kernel`, and optional `continue` when `breakpoint` is not `None`.
 
 - [ ] **Step 2: Run to verify failures**
@@ -497,8 +499,7 @@ From the Debugger pane:
 - press `C-b B`
 - confirm focus remains in the Debugger pane
 - confirm Debuggee restarts in place via `respawn-pane -k` and layout is preserved
-- run `likedbg-reconnect` in GDB
-- choose when to `continue`
+- run `likedbg-reconnect` in GDB and confirm it reconnects to the new gdbstub and resumes to `start_kernel`
 - double-tap `C-b B` and confirm `LIKE-DBG restart already in progress` rather than duplicate panes
 - manually close the Debuggee pane, press `C-b B`, and confirm fallback recreate from base pane works and restores focus
 
