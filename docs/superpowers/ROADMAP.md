@@ -28,6 +28,14 @@ Post-B3 follow-ups landed on `dev`:
 - **Cache niceties + cleanup Plan 3** — `--use` rootfs build-if-absent, `--adopt-rootfs`,
   bind and volume-aware `--list` sizes, B1 image lifecycle live checks, helper-container cleanup,
   and deferred polish cleanup.
+- **Rootfs build/runtime hardening** — `rootfs.sh` now logs phases, uses direct `mkfs.ext4 -d`
+  image population, keeps SSH/build-essential/gcc/clang while dropping Plymouth, emits ed25519
+  keys, conditionally registers host binfmt without resetting handlers, and no longer writes a
+  guest `binfmt_misc` fstab mount that forced emergency mode. The generated guest fstab now uses
+  the real virtio root device (`/dev/vda`, fsck pass `0`) so clean boots remount `/` read-write
+  without stalling on image fsck. Rootfs cache keys now include the baked script hash and stale
+  `like_rootfs:latest` images are rejected before
+  rebuilds. QEMU also passes `net.ifnames=0` so the guest NIC remains `eth0`.
 
 Next planned continuation: choose the next large Sub-project B-E track.
 Don't re-derive history — read these:
@@ -54,7 +62,8 @@ script with **`just build-images`**.
 ## Operational gotchas a fresh session MUST know
 - **`dev` stays local — never `git push`.** Feature branch off `dev`, merge locally, delete.
 - **`just build-images`** rebuilds all 5 images from the current dockerfiles (base→kbuilder,
-  rootfs, debugger, debuggee). Stale images silently break the pipeline (root cause of the rootfs bug).
+  rootfs, debugger, debuggee). The rootfs builder image is content-stamped with
+  `io/scripts/rootfs.sh`; after editing that script, rebuild images before rebuilding rootfs.
 - Runtime supports both macOS volume mode and Linux bind mode; the host profile decides storage,
   debuggee backend, network mode, and acceleration.
 - tmux uses **`pane-base-index`** (this host = 1); `Session` queries it, never assume 0. The shipped

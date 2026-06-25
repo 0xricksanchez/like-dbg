@@ -205,8 +205,7 @@ log "configuring usable defaults"
 sudo sed -i '/^root/ { s/:x:/::/ }' "$MNT/etc/passwd" >/dev/null
 echo 'T0:23:respawn:/sbin/getty -L ttyS0 115200 vt100' | sudo tee -a "$MNT/etc/inittab" >/dev/null
 printf '\nauto eth0\niface eth0 inet dhcp\n' | sudo tee -a "$MNT/etc/network/interfaces" >/dev/null
-# No root (/) fstab entry: the kernel cmdline `root=` mounts it and systemd-remount-fs
-# applies rw. A bogus '/dev/root' entry makes systemd drop to emergency mode.
+echo '/dev/vda / ext4 defaults 0 0' | sudo tee -a "$MNT/etc/fstab" >/dev/null
 echo 'debugfs /sys/kernel/debug debugfs defaults 0 0' | sudo tee -a "$MNT/etc/fstab" >/dev/null
 # echo 'securityfs /sys/kernel/security securityfs defaults 0 0' | sudo tee -a "$MNT/etc/fstab"
 # echo 'configfs /sys/kernel/config/ configfs defaults 0 0' | sudo tee -a "$MNT/etc/fstab"

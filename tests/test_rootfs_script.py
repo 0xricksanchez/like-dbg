@@ -22,6 +22,12 @@ def test_rootfs_uses_direct_ext4_population():
     assert "sudo mount -o loop" not in text
 
 
+def test_rootfs_fstab_mounts_virtio_root_rw():
+    text = _script()
+    assert "/dev/vda / ext4 defaults 0 0" in text
+    assert "/dev/root /" not in text
+
+
 def test_rootfs_binfmt_registration_is_conditional():
     text = _script()
     assert 'if [ -r "$path" ]; then' in text
