@@ -77,24 +77,26 @@ the urgent rootfs follow-up + logging first, then Plan 2 (off updated `dev`) doe
   is the stable contract for relaunching the Debuggee process pane from stored tmux state. The checked-in
   LIKE-DBG `.tmux.conf` owns the default tmux sugar: **`prefix + B`** (mnemonic: reboot Debuggee), bound to
   `run-shell -b 'if [ -n "#{@likedbg_workspace}" ]; then cd "#{@likedbg_workspace}" || { tmux display-message "LIKE-DBG restart failed: workspace unavailable"; exit 1; }; uv run ./start_kgdb --restart-debuggee; else tmux display-message "LIKE-DBG restart failed: missing @likedbg_workspace"; fi'`.
-  The README-recommended launch path is `tmux -f .tmux.conf`, so this binding can stay in the project config.
-  LIKE-DBG does **not** mutate the user's live tmux key table at runtime; users on a custom tmux config still
-  have the stable CLI fallback or can add their own binding. Initial launch stores `@likedbg_workspace` so the
-  project-config binding is independent of the active pane/window's current directory.
+  The README-recommended launch path is `tmux -L likedbg -f .tmux.conf new -s LIKE-DBG`, so this binding can
+  stay in the project config and is loaded when tmux creates the dedicated LIKE-DBG server. LIKE-DBG does
+  **not** mutate the user's live tmux key table at runtime; users on an existing/custom tmux server can
+  `source-file` the project config, use the stable CLI fallback, or add their own binding. Initial launch
+  stores `@likedbg_workspace` so the project-config binding is independent of the active pane/window's current
+  directory.
 - **The project `.tmux.conf` is a shipped workflow surface.** Plan 2 modernizes the existing checked-in
   `.tmux.conf` in place and adds the restart binding there, instead of creating a parallel config file or
   treating tmux setup as external documentation. The current file is old, but it is the correct starting point
-  because the README already recommends `tmux -f .tmux.conf`.
+  because the README already uses the checked-in project config.
 - **The shipped tmux prefix returns to default `C-b`.** The current project config uses `C-s`, but Plan 2
   switches back to tmux's standard prefix for predictability and to avoid `C-s` collisions with terminal
   flow-control/editor habits. `C-a` stays available for QEMU/serial control. In the recommended
-  `tmux -f .tmux.conf` workflow, `prefix + B` means `C-b` then `B`.
+  `tmux -L likedbg -f .tmux.conf new -s LIKE-DBG` workflow, `prefix + B` means `C-b` then `B`.
 - **The shipped tmux config is self-contained: no TPM/plugins.** Plan 2 removes TPM and plugin dependencies
   from `.tmux.conf`. The config should still be modern, ergonomic, and visually polished, but only with tmux
   built-ins: predictable pane/window movement, mouse and copy-mode ergonomics, large scrollback, truecolor,
   a quiet readable status line, LIKE-DBG controls, and split/new-window commands that preserve the current
-  working directory. Fresh VMs must get the intended experience from `tmux -f .tmux.conf` with no plugin
-  install step.
+  working directory. Fresh VMs must get the intended experience from the dedicated `tmux -L likedbg`
+  launch path with no plugin install step.
 - **The status line uses ASCII separators and a balanced color palette.** No Nerd Font/Powerline glyphs or
   terminal-specific symbols. Visual polish comes from restrained foreground/background/accent colors, clear
   active-window contrast, and readable status fields that render correctly over SSH and in fresh VMs. It does
@@ -123,7 +125,7 @@ the urgent rootfs follow-up + logging first, then Plan 2 (off updated `dev`) doe
   and supersedes the old README warning about requiring pane 0.
 - **Mouse mode stays enabled.** The default debugging workspace benefits from quick pane selection, resizing,
   and scrollback inspection. Keyboard navigation remains fully supported, but mouse support is part of the
-  shipped `tmux -f .tmux.conf` experience.
+  shipped project tmux experience.
 - **Restart failures are tmux-visible.** Because the key binding uses background `run-shell -b`, failures in
   `--restart-debuggee` call `tmux display-message` with a one-line summary in addition to normal CLI stderr.
   The typed CLI path still gets the regular error/remedy text.
@@ -382,15 +384,16 @@ writes **no** log file; force an image-not-produced rootfs failure and confirm `
 carry the container tail and the single retry fires; both arches still build→boot→gdb→userspace.
 **Plan 2 gate:** after a run + detach, the host shell's history (arrow-up / `history`) shows only
 `uv run ./start_kgdb` — no `docker run`/qemu/gdb commands; the 3-pane geometry is unchanged; both arches
-still build→boot→gdb→userspace (no regression from the delivery change); in a `tmux -f .tmux.conf` session,
-the project prefix is `C-b` and `C-b B` restarts the Debuggee; in a custom tmux session,
+still build→boot→gdb→userspace (no regression from the delivery change); in a dedicated
+`tmux -L likedbg -f .tmux.conf new -s LIKE-DBG` server, the project prefix is `C-b` and `C-b B` restarts
+the Debuggee; in a custom tmux session,
 `uv run ./start_kgdb --restart-debuggee` remains the fallback and LIKE-DBG does not mutate the user's key
 table. A forced restart error from the binding appears as a tmux status message. Double-tapping `prefix + B`
 reports `LIKE-DBG restart already in progress` and does not create duplicate Debuggee panes. A new normal run
-clears a stale restart lock left by a crashed restart. A fresh VM using `tmux -f .tmux.conf` gets the intended
-navigation/status/copy-mode experience without TPM or plugin installation. A QEMU/kernel-crash exit leaves the
-Debuggee pane visible for inspection instead of closing it. Restarting an existing Debuggee pane preserves the
-current layout via `respawn-pane -k`; manually closing that pane triggers the recreate fallback.
+clears a stale restart lock left by a crashed restart. A fresh VM using the dedicated project tmux launch path
+gets the intended navigation/status/copy-mode experience without TPM or plugin installation. A QEMU/kernel-crash
+exit leaves the Debuggee pane visible for inspection instead of closing it. Restarting an existing Debuggee pane
+preserves the current layout via `respawn-pane -k`; manually closing that pane triggers the recreate fallback.
 
 ## 7. Non-goals
 

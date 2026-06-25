@@ -117,9 +117,23 @@ Once you're set with writing/adapting a configuration, the usage depends on your
 The easiest way to get started, which is based on the `configs/user.ini` configuration is the following:
 
 ```sh
-tmux -f .tmux.conf
+tmux -L likedbg -f .tmux.conf new -s LIKE-DBG
+```
+
+Then inside that tmux session:
+
+```sh
 # This checks out a kernel, builds it, creates a root file system and starts the debugger and debuggee eventually
 uv run ./start_kgdb
+```
+
+The `-L likedbg` socket name makes tmux start an isolated project server, so
+the checked-in `.tmux.conf` is definitely loaded. If you intentionally run
+LIKE-DBG inside an existing tmux server, load the project config into that
+server first:
+
+```sh
+tmux source-file "$PWD/.tmux.conf"
 ```
 
 The project tmux config binds `C-b B` to restart the Debuggee pane in place. If

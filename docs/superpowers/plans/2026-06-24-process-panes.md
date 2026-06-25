@@ -394,7 +394,8 @@ Add comments for:
 - [ ] **Step 2: Update README**
 
 README changes:
-- Keep recommending `tmux -f .tmux.conf`.
+- Recommend `tmux -L likedbg -f .tmux.conf new -s LIKE-DBG` for a fresh dedicated project server.
+- Document `tmux source-file "$PWD/.tmux.conf"` for users intentionally running inside an existing tmux server.
 - Replace old `poetry` usage with current `uv run ./start_kgdb` if this README section is already stale in nearby text.
 - Remove the old warning that custom tmux config must start first pane at `0`; the app queries pane base index and the project config uses 1-based indexes.
 - Document:
@@ -403,12 +404,9 @@ README changes:
 
 - [ ] **Step 3: Syntax-check tmux config**
 
-Run: `tmux -f .tmux.conf start-server \; source-file .tmux.conf \; kill-server`
+Run: `tmux -L likedbg-plan-check -f .tmux.conf start-server \; source-file .tmux.conf \; kill-server`
 
 Expected: exits 0.
-
-If this fails due an active tmux server/socket issue, use a temporary socket:
-`tmux -L likedbg-plan-check -f .tmux.conf start-server \; source-file .tmux.conf \; kill-server`
 
 - [ ] **Step 4: Commit**
 
@@ -472,7 +470,7 @@ Expected: all green.
 
 Run in a fresh project tmux session:
 ```bash
-tmux -f .tmux.conf
+tmux -L likedbg -f .tmux.conf new -s LIKE-DBG
 ```
 
 Verify:
