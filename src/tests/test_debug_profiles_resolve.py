@@ -74,3 +74,25 @@ def test_default_kaslr_off_is_fine(tmp_path: Path) -> None:
     cfg = load_config(tmp_path)
     rr = resolve_run(profile_names=("exploit-dev",), config=cfg, host=_host(tmp_path), workspace=tmp_path)
     assert rr.effective_debuggee.kaslr is False
+
+
+def test_implies_unknown_profile_errors(tmp_path: Path) -> None:
+    _scaffold(tmp_path)
+    pdir = tmp_path / "configs" / "profiles"
+    (pdir / "broken.toml").write_text(
+        'name="broken"\nkind="addon"\ndescription="d"\nimplies=["nonexistent"]\n')
+    cfg = load_config(tmp_path)
+    with pytest.raises(ConfigError):
+        resolve_run(profile_names=("broken",), config=cfg, host=_host(tmp_path), workspace=tmp_path)
+
+
+def test_two_base_profiles_is_exclusivity_error(tmp_path: Path) -> None:
+    _scaffold(tmp_path)
+    pdir = tmp_path / "configs" / "profiles"
+    (pdir / "hardened.toml").write_text(
+        'name="hardened"\nkind="base"\ndescription="d"\n')
+    cfg = load_config(tmp_path)
+    with pytest.raises(ConfigError):
+        resolve_run(
+            profile_names=("exploit-dev", "hardened"), config=cfg, host=_host(tmp_path), workspace=tmp_path
+        )

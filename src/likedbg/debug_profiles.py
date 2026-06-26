@@ -242,6 +242,11 @@ def _expand(
     implied: list[str] = []
     for n in explicit_addons:
         for imp in registry[n].implies:
+            if imp not in registry:
+                raise ConfigError(
+                    f"profile {n!r} implies unknown profile {imp!r}",
+                    remedy=f"choose one of {', '.join(sorted(registry))}",
+                )
             if registry[imp].kind != "addon":
                 continue
             implied_by.setdefault(imp, []).append(n)
@@ -327,6 +332,9 @@ def resolve_run(
         prov = eff_prov.get(("debuggee", toggle))
         explicit = prov in _EXPLICIT_LAYERS
         if wants_on and forbidden_hard:
+            # Only EXPLICIT (user/scenario/CLI) requests are hard errors (Q12). When the toggle is on
+            # via a profile default with no build symbol, the runtime kaslr boot arg is a harmless no-op,
+            # so we silently pass — this is intentional, not a missing else.
             if explicit:
                 raise ConfigError(
                     f"[debuggee] {toggle}=on is impossible: active profiles build {symbol} disabled",
