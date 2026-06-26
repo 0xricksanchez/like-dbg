@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import shlex
 import subprocess
 from collections.abc import Callable
+from pathlib import Path
 from typing import Literal
 
 from likedbg.errors import SessionError
@@ -117,6 +119,10 @@ class Session:
 
     def set_remain_on_exit(self, pane: str) -> None:
         self._tmux("set-option", "-p", "-t", pane, "remain-on-exit", "on")
+
+    def pipe_pane(self, *, pane: str, output: Path) -> None:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        self._tmux("pipe-pane", "-o", "-t", pane, f"cat >> {shlex.quote(str(output))}")
 
     def kill(self) -> None:
         # TODO(plan-3): target panes/session by self.name; name is unused scaffolding for now

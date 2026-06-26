@@ -62,6 +62,7 @@ _SESSION_STATE_OPTIONS = (
     "@likedbg_debugger_cmd",
     "@likedbg_debuggee_pane",
     "@likedbg_debugger_pane",
+    "@likedbg_debuggee_pane_log",
 )
 
 
@@ -374,6 +375,12 @@ def cmd_restart_debuggee(session: Session) -> int:
                 )
             debuggee_pane = session.run_in_new_pane(target=base_pane, direction="h", percent=66, cmd=cmd)
             session.set_option("@likedbg_debuggee_pane", debuggee_pane)
+        pane_log = session.get_option("@likedbg_debuggee_pane_log")
+        if pane_log and debuggee_pane:
+            try:
+                session.pipe_pane(pane=debuggee_pane, output=Path(pane_log))
+            except LikeDbgError:
+                pass
         if active_pane and session.pane_exists(active_pane):
             session.select_pane(active_pane)
         try:

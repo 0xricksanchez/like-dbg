@@ -1,3 +1,6 @@
+import shlex
+from pathlib import Path
+
 import pytest
 
 from likedbg.errors import SessionError
@@ -149,3 +152,13 @@ def test_session_has_no_shell_driving_layout_helpers():
 def test_pane_base_index_falls_back_to_zero_when_unavailable():
     s = Session("X", runner=lambda a: 0, query=lambda a: "")
     assert s.pane_base_index() == 0
+
+
+def test_pipe_pane_command(tmp_path: Path) -> None:
+    calls: list[list[str]] = []
+    s = Session("LIKE-DBG", runner=lambda a: (calls.append(a) or 0))
+    out = tmp_path / "logs" / "debuggee-pane.log"
+    s.pipe_pane(pane="%4", output=out)
+    assert calls[0][:4] == ["tmux", "pipe-pane", "-o", "-t"]
+    assert calls[0][4] == "%4"
+    assert calls[0][5] == f"cat >> {shlex.quote(str(out))}"
