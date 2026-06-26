@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -13,9 +14,11 @@ from likedbg.cli import build_pipeline
 from likedbg.cli import build_use_pipeline
 from likedbg.cli import cmd_clean
 from likedbg.cli import summarize_cache
+from likedbg.config import ConfigResolution
 from likedbg.config import Settings
 from likedbg.container_service import ContainerService
 from likedbg.errors import CacheError
+from likedbg.errors import ConfigError
 from likedbg.errors import HostCapabilityError
 from likedbg.errors import SessionError
 from likedbg.host_profile import HostProfile
@@ -23,11 +26,53 @@ from likedbg.pipeline import PipelineContext
 from likedbg.stages.rootfs import rootfs_target
 
 
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _host(mode):
+    return HostProfile(
+        os="linux",
+        host_arch="arm64",
+        target_arch="arm64",
+        accel="kvm",
+        debuggee_mode="in-container",
+        storage_mode=mode,
+        gdbstub_addr="localhost",
+        ssh_addr="localhost",
+    )
+
+
+def _make_project(tmp_path: Path) -> None:
+    """Minimal project layout with a default.toml and an exploit-dev profile."""
+    cfgs = tmp_path / "configs"
+    (cfgs / "fragments" / "profiles").mkdir(parents=True)
+    (cfgs / "profiles").mkdir(parents=True)
+    (cfgs / "default.toml").write_text('[source]\nkind="mmp"\nvalue="6.6.30"\n')
+    (cfgs / "fragments" / "generic.config").write_text("CONFIG_X=y\n")
+    (cfgs / "profiles" / "exploit-dev.toml").write_text(
+        'name="exploit-dev"\n'
+        'kind="base"\n'
+        'description="d"\n'
+        'fragments=["configs/fragments/generic.config"]\n'
+    )
+
+
+def _config_resolution(tmp_path: Path) -> ConfigResolution:
+    """Return a real ConfigResolution built from a minimal temp project."""
+    _make_project(tmp_path)
+    from likedbg.config import load_config
+
+    return load_config(tmp_path)
+
+
 class _FakeSession:
     def __init__(self):
         self.options: list[tuple[str, str]] = []
         self.unset_options: list[str] = []
         self.pane_launches: list[dict[str, object]] = []
+        self.pipe_pane_calls: list[dict[str, object]] = []
         self._panes = iter(["%2", "%3"])
 
     def current_pane_id(self) -> str:
@@ -51,6 +96,9 @@ class _FakeSession:
 
     def unset_option(self, name):
         self.unset_options.append(name)
+
+    def pipe_pane(self, *, pane: str, output) -> None:
+        self.pipe_pane_calls.append({"pane": pane, "output": output})
 
 
 class _RestartSession:
@@ -97,6 +145,9 @@ class _RestartSession:
     def display_message(self, message):
         self.messages.append(message)
 
+    def pipe_pane(self, *, pane: str, output) -> None:
+        pass
+
 
 class _FakeContainer(ContainerService):
     def __init__(self):
@@ -135,9 +186,14 @@ class _DuContainer(_FakeContainer):
         self.stopped.append(container.id)
 
 
+# ---------------------------------------------------------------------------
+# Pipeline stage-order tests (migrated + updated for new stages)
+# ---------------------------------------------------------------------------
+
+
 def test_build_pipeline_includes_all_stage_names(tmp_path):
     settings = Settings.model_validate({"general": {"arch": "arm64"}})
-    br = build_recipe(settings, version="6.6.30", workspace=tmp_path, fragments=[])
+    br = build_recipe(settings, version="6.6.30", arch="arm64", workspace=tmp_path, fragments=[])
     rr = rootfs_recipe(settings)
     session = _FakeSession()
     pipe = build_pipeline(
@@ -152,21 +208,19 @@ def test_build_pipeline_includes_all_stage_names(tmp_path):
         ext="gef",
         build_recipe=br,
         rootfs_recipe=rr,
+        recorder=None,
     )
     names = [s.name for s in pipe._stages]  # type: ignore[attr-defined]
-    assert names == ["download", "unpack", "build", "rootfs", "export", "debuggee", "debugger"]
-
-
-def _host(mode):
-    return HostProfile(
-        os="linux",
-        host_arch="arm64",
-        accel="kvm",
-        debuggee_mode="in-container",
-        storage_mode=mode,
-        gdbstub_addr="localhost",
-        ssh_addr="localhost",
-    )
+    assert names == [
+        "download",
+        "unpack",
+        "build",
+        "profile-verification",
+        "rootfs",
+        "export",
+        "debuggee",
+        "debugger",
+    ]
 
 
 def test_adopt_guard_rejects_bind():
@@ -334,11 +388,31 @@ def test_build_use_pipeline_includes_rootfs_before_launch(tmp_path):
         ext="pwndbg",
         gdb_mount_source="likedbg_ksrc",
         rootfs_recipe=rootfs_recipe(settings),
+        recorder=None,
     )
-    assert [s.name for s in pipe._stages] == ["rootfs", "export", "debuggee", "debugger"]  # type: ignore[attr-defined]
+    assert [s.name for s in pipe._stages] == [  # type: ignore[attr-defined]
+        "profile-verification",
+        "rootfs",
+        "export",
+        "debuggee",
+        "debugger",
+    ]
+
+
+def _make_cmd_use_project(tmp_path: Path) -> None:
+    """Create configs/default.toml so load_config succeeds in cmd_use tests."""
+    (tmp_path / "configs").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "configs" / "profiles").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "configs" / "default.toml").write_text(
+        '[source]\nkind="mmp"\nvalue="6.6.30"\n[general]\narch="arm64"\n'
+    )
+    (tmp_path / "configs" / "profiles" / "exploit-dev.toml").write_text(
+        'name="exploit-dev"\nkind="base"\ndescription="d"\n'
+    )
 
 
 def test_cmd_use_builds_default_rootfs_when_manifest_is_missing(tmp_path, monkeypatch):
+    _make_cmd_use_project(tmp_path)
     settings = Settings.model_validate(
         {"general": {"arch": "arm64"}, "debuggee": {"accel": "tcg", "network": "host"}}
     )
@@ -377,18 +451,39 @@ def test_cmd_use_builds_default_rootfs_when_manifest_is_missing(tmp_path, monkey
         ),
     )
     container = RootfsContainer()
-    monkeypatch.setattr(cli, "load_settings", lambda *a, **k: settings)
-    monkeypatch.setattr(cli.HostProfile, "detect", staticmethod(lambda settings, workspace: _host("bind")))
+    # Monkeypatch load_config so it returns a ConfigResolution with the right settings.
+    # We also patch HostProfile.detect, _ensure_images, add_run_logfile, and RunRecorder.start.
+    from likedbg.config import load_config as real_load_config
+
+    def fake_load_config(workspace, *, scenario=None, cli_overrides=None):
+        cr = real_load_config(workspace, scenario=scenario, cli_overrides={"general": {"arch": "arm64"}})
+        return cr
+
+    monkeypatch.setattr(cli, "load_config", fake_load_config)
+    monkeypatch.setattr(cli.HostProfile, "detect", staticmethod(lambda s, workspace: _host("bind")))
     monkeypatch.setattr(cli, "_ensure_images", lambda container, workspace, *, specs: None)
-    monkeypatch.setattr(cli.logsetup, "add_run_logfile", lambda workspace: None)
+    monkeypatch.setattr(cli.logsetup, "add_run_logfile", lambda workspace, **kw: None)
+    monkeypatch.setattr(
+        cli.RunRecorder,
+        "start",
+        staticmethod(
+            lambda *, workspace, requested_settings, run_resolution, host, build_label, rootfs_label, profiles: _FakeRecorder(
+                workspace
+            )
+        ),
+    )
 
     assert cli.cmd_use(container, _FakeSession(), tmp_path, custom_ini=None, label=label, rootfs_label=None) == 0
     assert cache.manifest_exists(tmp_path, "rootfs", rr.label)
     assert target.read_bytes() == b"img"
-    assert container.rootfs_runs and container.rootfs_runs[0]["privileged"] is True
+    # ProfileVerificationStage also calls run_detached (legacy fallback).
+    # The rootfs build call is the one with privileged=True.
+    privileged_runs = [r for r in container.rootfs_runs if r.get("privileged") is True]
+    assert privileged_runs, "expected at least one privileged container run (rootfs build)"
 
 
 def test_cmd_use_ensures_images_after_host_detection(tmp_path, monkeypatch):
+    _make_cmd_use_project(tmp_path)
     settings = Settings.model_validate({"general": {"arch": "arm64"}})
     rr = rootfs_recipe(settings)
     rimg = rootfs_target(tmp_path, rr.label)
@@ -426,24 +521,65 @@ def test_cmd_use_ensures_images_after_host_detection(tmp_path, monkeypatch):
         ),
     )
     specs_seen = []
-    monkeypatch.setattr(cli, "load_settings", lambda *a, **k: settings)
-    monkeypatch.setattr(cli.HostProfile, "detect", staticmethod(lambda settings, workspace: _host("volume")))
+    from likedbg.config import load_config as real_load_config
+
+    def fake_load_config(workspace, *, scenario=None, cli_overrides=None):
+        return real_load_config(workspace, scenario=scenario, cli_overrides={"general": {"arch": "arm64"}})
+
+    monkeypatch.setattr(cli, "load_config", fake_load_config)
+    monkeypatch.setattr(cli.HostProfile, "detect", staticmethod(lambda s, workspace: _host("volume")))
     monkeypatch.setattr(
         cli,
         "_ensure_images",
         lambda container, workspace, *, specs: specs_seen.append(tuple(s.tag for s in specs)),
     )
-    monkeypatch.setattr(cli.logsetup, "add_run_logfile", lambda workspace: None)
+    monkeypatch.setattr(cli.logsetup, "add_run_logfile", lambda workspace, **kw: None)
+    monkeypatch.setattr(
+        cli.RunRecorder,
+        "start",
+        staticmethod(
+            lambda *, workspace, requested_settings, run_resolution, host, build_label, rootfs_label, profiles: _FakeRecorder(
+                workspace
+            )
+        ),
+    )
 
     assert cli.cmd_use(_FakeContainer(), _FakeSession(), tmp_path, custom_ini=None, label=label, rootfs_label=None) == 0
     assert specs_seen == [tuple(s.tag for s in cli.images.required_for_use(_host("volume")))]
 
 
+class _FakeRecorder:
+    """Minimal RunRecorder stand-in for pipeline tests — mirrors the public RunRecorder API."""
+
+    def __init__(self, workspace: Path) -> None:
+        logs = workspace / "artifacts" / "runs" / "fake" / "logs"
+        logs.mkdir(parents=True, exist_ok=True)
+        self.likedbg_log = logs / "likedbg.log"
+        self.debuggee_pane_log = logs / "debuggee-pane.log"
+        self.debugger_pane_log = logs / "debugger-pane.log"
+
+    def add_warning(self, code: str, message: str) -> None:
+        pass
+
+    def record_profile_verification(self, verification: object) -> None:
+        pass
+
+    def record_kernel_paths(self, *, config, system_map, vmlinux, image) -> None:
+        pass
+
+    def set_status(self, status: str, *, message: str | None = None) -> None:
+        pass
+
+    def record_command(self, kind: str, *, shell: str, argv: list) -> None:
+        pass
+
+
 def test_pipeline_launches_process_panes_and_stores_session_options(tmp_path):
     settings = Settings.model_validate({"general": {"arch": "arm64"}})
-    br = build_recipe(settings, version="6.6.30", workspace=tmp_path, fragments=[])
+    br = build_recipe(settings, version="6.6.30", arch="arm64", workspace=tmp_path, fragments=[])
     rr = rootfs_recipe(settings)
     session = _FakeSession()
+    recorder = _FakeRecorder(tmp_path)
     pipe = build_pipeline(
         ContainerService(SimpleNamespace()),
         session,  # type: ignore[arg-type]
@@ -456,12 +592,14 @@ def test_pipeline_launches_process_panes_and_stores_session_options(tmp_path):
         ext="gef",
         build_recipe=br,
         rootfs_recipe=rr,
+        recorder=recorder,
     )
     ctx = PipelineContext(settings=settings, host=_host("volume"), build_label=br.label, rootfs_label=rr.label)
     ctx.kernel_image = tmp_path / "artifacts" / br.label / "Image"
     ctx.rootfs_image = tmp_path / "artifacts" / "rootfs.img"
     ctx.vmlinux = tmp_path / "artifacts" / br.label / "vmlinux"
 
+    # Run only the debuggee and debugger stages (indices -2 and -1)
     pipe._stages[-2].run(ctx)  # type: ignore[attr-defined]
     pipe._stages[-1].run(ctx)  # type: ignore[attr-defined]
 
@@ -477,6 +615,7 @@ def test_pipeline_launches_process_panes_and_stores_session_options(tmp_path):
         "@likedbg_debugger_cmd",
         "@likedbg_debuggee_pane",
         "@likedbg_debugger_pane",
+        "@likedbg_debuggee_pane_log",
     ]
     assert session.options[0:2] == [
         ("@likedbg_workspace", str(tmp_path)),
@@ -487,6 +626,40 @@ def test_pipeline_launches_process_panes_and_stores_session_options(tmp_path):
     assert options["@likedbg_debugger_cmd"] == session.pane_launches[1]["cmd"]
     assert options["@likedbg_debuggee_pane"] == "%2"
     assert options["@likedbg_debugger_pane"] == "%3"
+    # New: transcript capture options set when recorder is provided
+    assert options["@likedbg_debuggee_pane_log"] == str(recorder.debuggee_pane_log)
+    assert any(c["pane"] == "%2" for c in session.pipe_pane_calls), "pipe_pane should have been called for debuggee"
+    assert any(c["pane"] == "%3" for c in session.pipe_pane_calls), "pipe_pane should have been called for debugger"
+
+
+# ---------------------------------------------------------------------------
+# resolve_for_run tests
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_for_run_unknown_profile_raises_and_creates_no_run_dir(tmp_path, monkeypatch):
+    """Unknown profile must raise ConfigError BEFORE any run dir is created."""
+    _make_project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(ConfigError):
+        cli.resolve_for_run(tmp_path, profile_arg="asan", scenario=None, cli_overrides=None)
+    # The run directory must NOT have been created.
+    assert not (tmp_path / "artifacts" / "runs").exists()
+
+
+def test_resolve_for_run_exploit_dev_resolves(tmp_path, monkeypatch):
+    """Default exploit-dev profile resolves when a configs/profiles/exploit-dev.toml is present."""
+    _make_project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    cfg, host, rr = cli.resolve_for_run(tmp_path, profile_arg="exploit-dev", scenario=None, cli_overrides=None)
+    assert "exploit-dev" in rr.profiles.names
+    # No run dir should exist — resolve_for_run itself never creates one.
+    assert not (tmp_path / "artifacts" / "runs").exists()
+
+
+# ---------------------------------------------------------------------------
+# Restart tests
+# ---------------------------------------------------------------------------
 
 
 def _restart_options():

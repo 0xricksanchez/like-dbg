@@ -23,6 +23,8 @@ from likedbg.cache import Manifest
 from likedbg.cache import RootfsRecipe
 from likedbg.cache import build_recipe as make_build_recipe
 from likedbg.cache import rootfs_recipe as make_rootfs_recipe
+from likedbg.config import ConfigResolution
+from likedbg.config import load_config
 from likedbg.config import load_settings
 from likedbg.constants import BASE_IMAGE
 from likedbg.constants import DEBUGGEE_IMAGE
@@ -32,6 +34,9 @@ from likedbg.constants import KERNEL_VOLUME
 from likedbg.constants import ROOTFS_IMAGE
 from likedbg.constants import VOLUME_MOUNT
 from likedbg.container_service import ContainerService
+from likedbg.debug_profiles import RunResolution
+from likedbg.debug_profiles import parse_profile_names
+from likedbg.debug_profiles import resolve_run
 from likedbg.errors import CacheError
 from likedbg.errors import HostCapabilityError
 from likedbg.errors import LikeDbgError
@@ -40,6 +45,7 @@ from likedbg.host_profile import HostProfile
 from likedbg.launchers import gdb_pane_command
 from likedbg.pipeline import Pipeline
 from likedbg.pipeline import PipelineContext
+from likedbg.run_artifacts import RunRecorder
 from likedbg.session import Session
 from likedbg.stages.build import BuildStage
 from likedbg.stages.debuggee import DebuggeeStage
@@ -47,6 +53,7 @@ from likedbg.stages.debugger import DebuggerStage
 from likedbg.stages.download import DownloadStage
 from likedbg.stages.download import resolve_version
 from likedbg.stages.export import ArtifactExporter
+from likedbg.stages.profile_verification import ProfileVerificationStage
 from likedbg.stages.rootfs import RootfsStage
 from likedbg.stages.unpack import UnpackStage
 
@@ -70,6 +77,40 @@ def _fetch(url: str, dest: Path) -> None:
     urllib.request.urlretrieve(url, str(dest))  # noqa: S310
 
 
+def _scenario_path(workspace: Path, arg: str) -> Path | None:
+    """Resolve a -c argument to a scenario Path, or None if arg is empty."""
+    if not arg:
+        return None
+    p = Path(arg)
+    if "/" in arg or arg.endswith(".toml"):
+        return p
+    return workspace / "configs" / "scenarios" / f"{arg}.toml"
+
+
+def resolve_for_run(
+    workspace: Path,
+    *,
+    profile_arg: str,
+    scenario: Path | None,
+    cli_overrides: dict[str, dict[str, str]] | None,
+) -> tuple[ConfigResolution, HostProfile, RunResolution]:
+    """Testable prelude: load_config -> detect host -> resolve run profiles.
+
+    Errors here (unknown profile, bad config) happen BEFORE any run dir is created.
+    Callers must create the RunRecorder only after this returns successfully.
+    """
+    cfg = load_config(workspace, scenario=scenario, cli_overrides=cli_overrides)
+    host = HostProfile.detect(cfg.settings, workspace)
+    names = parse_profile_names(profile_arg) if profile_arg else cfg.settings.debugging.profiles
+    rr = resolve_run(profile_names=names, config=cfg, host=host, workspace=workspace)
+    for w in rr.profile_warnings:
+        logger.warning(w)
+    for n in (*rr.runtime_overrides, *rr.runtime_notes):
+        logger.info(n)
+    logger.info(f"resolved profiles: {', '.join(rr.profiles.names)}")
+    return cfg, host, rr
+
+
 def build_pipeline(
     container: ContainerService,
     session: Session,
@@ -84,6 +125,7 @@ def build_pipeline(
     ext: str,
     build_recipe: BuildRecipe,
     rootfs_recipe: RootfsRecipe,
+    recorder: RunRecorder | None = None,
 ) -> Pipeline:
     base_pane = session.current_pane_id()
     debuggee_pane: str | None = None
@@ -98,6 +140,12 @@ def build_pipeline(
         session.set_option("@likedbg_debuggee_cmd", cmd)
         debuggee_pane = session.run_in_new_pane(target=base_pane, direction="h", percent=66, cmd=cmd)
         session.set_option("@likedbg_debuggee_pane", debuggee_pane)
+        if recorder is not None:
+            session.set_option("@likedbg_debuggee_pane_log", str(recorder.debuggee_pane_log))
+            try:
+                session.pipe_pane(pane=debuggee_pane, output=recorder.debuggee_pane_log)
+            except LikeDbgError as exc:
+                recorder.add_warning("transcript-capture-failed", f"pipe-pane failed for Debuggee: {exc}")
 
     def run_gdb(args: list[str]) -> None:
         if debuggee_pane is None:
@@ -120,6 +168,11 @@ def build_pipeline(
             cmd=cmd,
         )
         session.set_option("@likedbg_debugger_pane", debugger_pane)
+        if recorder is not None:
+            try:
+                session.pipe_pane(pane=debugger_pane, output=recorder.debugger_pane_log)
+            except LikeDbgError as exc:
+                recorder.add_warning("transcript-capture-failed", f"pipe-pane failed for Debugger: {exc}")
 
     return Pipeline(
         [
@@ -133,6 +186,7 @@ def build_pipeline(
                 kernel_volume=kernel_volume,
                 chown_to=chown_to,
             ),
+            ProfileVerificationStage(container, workspace=workspace, kernel_volume=kernel_volume),
             RootfsStage(
                 container,
                 recipe=rootfs_recipe,
@@ -158,6 +212,7 @@ def build_use_pipeline(
     ext: str,
     gdb_mount_source: str,
     rootfs_recipe: RootfsRecipe,
+    recorder: RunRecorder | None = None,
 ) -> Pipeline:
     base_pane = session.current_pane_id()
     debuggee_pane: str | None = None
@@ -172,6 +227,12 @@ def build_use_pipeline(
         session.set_option("@likedbg_debuggee_cmd", cmd)
         debuggee_pane = session.run_in_new_pane(target=base_pane, direction="h", percent=66, cmd=cmd)
         session.set_option("@likedbg_debuggee_pane", debuggee_pane)
+        if recorder is not None:
+            session.set_option("@likedbg_debuggee_pane_log", str(recorder.debuggee_pane_log))
+            try:
+                session.pipe_pane(pane=debuggee_pane, output=recorder.debuggee_pane_log)
+            except LikeDbgError as exc:
+                recorder.add_warning("transcript-capture-failed", f"pipe-pane failed for Debuggee: {exc}")
 
     def run_gdb(args: list[str]) -> None:
         if debuggee_pane is None:
@@ -187,9 +248,15 @@ def build_use_pipeline(
             cmd=cmd,
         )
         session.set_option("@likedbg_debugger_pane", debugger_pane)
+        if recorder is not None:
+            try:
+                session.pipe_pane(pane=debugger_pane, output=recorder.debugger_pane_log)
+            except LikeDbgError as exc:
+                recorder.add_warning("transcript-capture-failed", f"pipe-pane failed for Debugger: {exc}")
 
     return Pipeline(
         [
+            ProfileVerificationStage(container, workspace=workspace, kernel_volume=kernel_volume),
             RootfsStage(
                 container,
                 recipe=rootfs_recipe,
@@ -215,24 +282,36 @@ def cmd_use(
     if not cache.manifest_exists(workspace, "build", label):
         raise CacheError(f"no cached build labelled {label!r}", remedy="run `start_kgdb --list`")
     bm = cache.load_manifest(workspace, "build", label)
-    # Build identity (arch) is authoritative; reload settings with the arch override so the
+    # Build identity (arch) is authoritative; reload config with the arch override so the
     # host profile / QEMU follow the cached build, keeping runtime+debugger prefs from config.
-    use_settings = load_settings(
-        workspace / "configs" / "system.ini",
-        workspace / "configs" / "user.ini",
-        custom_ini=custom_ini,
-        overrides={"general": {"arch": bm.arch}},
+    scenario = _scenario_path(workspace, str(custom_ini) if custom_ini is not None else "")
+    cfg, host, rr = resolve_for_run(
+        workspace,
+        profile_arg="",
+        scenario=scenario,
+        cli_overrides={"general": {"arch": bm.arch}},
     )
-    host = HostProfile.detect(use_settings, workspace)
+    use_settings = cfg.settings
     logsetup.add_run_logfile(workspace)
     _ensure_images(container, workspace, specs=images.required_for_use(host))
-    rr = make_rootfs_recipe(use_settings, workspace=workspace)
-    rlabel = rootfs_label or rr.label
-    if rootfs_label is not None and rootfs_label != rr.label and not cache.manifest_exists(workspace, "rootfs", rlabel):
+    rr_recipe = make_rootfs_recipe(use_settings, arch=host.target_arch, workspace=workspace)
+    rlabel = rootfs_label or rr_recipe.label
+    if rootfs_label is not None and rootfs_label != rr_recipe.label and not cache.manifest_exists(
+        workspace, "rootfs", rlabel
+    ):
         raise CacheError(
             f"no cached rootfs labelled {rlabel!r}",
             remedy="omit --rootfs to build the active rootfs, or run `start_kgdb --list`",
         )
+    recorder = RunRecorder.start(
+        workspace=workspace,
+        requested_settings=use_settings,
+        run_resolution=rr,
+        host=host,
+        build_label=label,
+        rootfs_label=rlabel,
+        profiles=rr.profiles,
+    )
     kernel_image_path = bm.paths["image_host"] if bm.storage_mode != "volume" else bm.paths["image_in_tree"]
     ctx = PipelineContext(
         settings=use_settings,
@@ -242,6 +321,10 @@ def cmd_use(
         kernel_image=Path(kernel_image_path),
         build_label=label,
         rootfs_label=rlabel,
+        run_resolution=rr,
+        effective_debuggee=rr.effective_debuggee,
+        extra_boot_args=rr.extra_boot_args,
+        recorder=recorder,
     )
     pipeline = build_use_pipeline(
         container,
@@ -253,7 +336,8 @@ def cmd_use(
         debuggee_image=DEBUGGEE_IMAGE,
         ext=use_settings.debugger.ext,
         gdb_mount_source=bm.paths["gdb_mount_source"],
-        rootfs_recipe=rr,
+        rootfs_recipe=rr_recipe,
+        recorder=recorder,
     )
     pipeline.run(ctx)
     return 0
@@ -397,6 +481,7 @@ def cmd_restart_debuggee(session: Session) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="start_kgdb")
     parser.add_argument("--config", "-c", default="")
+    parser.add_argument("--profile", default="")
     parser.add_argument("--verbose", "-v", action="store_true")
     parser.add_argument("--force-rebuild", action="store_true")
     parser.add_argument("--adopt", action="store_true")
@@ -432,15 +517,17 @@ def main(argv: list[str] | None = None) -> int:
             except Exception:  # noqa: BLE001 - fall back to host-visible sizes when Docker is unavailable.
                 list_container = None
             return cmd_list(workspace, container=list_container)
+        # Early paths that don't need the full TOML flow: --build-images, --clean*, --adopt-rootfs
+        # These still use load_settings for now (Task 18 migrates them).
         settings = load_settings(
             workspace / "configs" / "system.ini",
             workspace / "configs" / "user.ini",
             custom_ini=Path(args.config) if args.config else None,
         )
-        rr = make_rootfs_recipe(settings, workspace=workspace)
+        rr_settings = make_rootfs_recipe(settings, workspace=workspace)
         if args.adopt_rootfs is not None:
             source = Path(args.adopt_rootfs) if args.adopt_rootfs else None
-            label = adopt_legacy_rootfs(workspace=workspace, recipe=rr, source=source)
+            label = adopt_legacy_rootfs(workspace=workspace, recipe=rr_settings, source=source)
             logger.info(f"adopted legacy rootfs as {label}")
             return 0
         client = docker_env.make_client(docker_env.resolve_docker_host(env=os.environ))
@@ -464,26 +551,58 @@ def main(argv: list[str] | None = None) -> int:
                 label=args.use,
                 rootfs_label=args.rootfs or None,
             )
-        # --adopt and the default run both need the recipes (and the network/hash work):
-        version = resolve_version(settings.kernel_dl)
-        br = make_build_recipe(settings, version=version, workspace=workspace, fragments=list(_FRAGMENTS))
+        # Default run: full TOML flow with profile resolution.
+        scenario = _scenario_path(workspace, args.config)
+        cfg, host, run_res = resolve_for_run(
+            workspace,
+            profile_arg=args.profile,
+            scenario=scenario,
+            cli_overrides=None,
+        )
+        version = resolve_version(cfg.settings.source)
+        br = make_build_recipe(
+            cfg.settings,
+            version=version,
+            arch=host.target_arch,
+            workspace=workspace,
+            fragments=list(run_res.fragments) + list(cfg.settings.build.extra_fragments),
+            patch_dirs=cfg.settings.build.patch_dirs,
+        )
+        rr_recipe = make_rootfs_recipe(cfg.settings, arch=host.target_arch, workspace=workspace)
         if args.force_rebuild:
             cache.manifest_path(workspace, "build", br.label).unlink(missing_ok=True)
         if args.adopt:
-            _require_volume_for_adopt(HostProfile.detect(settings, workspace))
+            _require_volume_for_adopt(host)
             label = adopt_legacy_build(container, workspace=workspace, recipe=br)
             logger.info(f"adopted legacy build as {label}")
             return 0
         if not os.getenv("TMUX"):
             logger.error("Not running inside a TMUX session. Start tmux first.")
             return 2
-        host = HostProfile.detect(settings, workspace)
-        logsetup.add_run_logfile(workspace)
+        recorder = RunRecorder.start(
+            workspace=workspace,
+            requested_settings=cfg.settings,
+            run_resolution=run_res,
+            host=host,
+            build_label=br.label,
+            rootfs_label=rr_recipe.label,
+            profiles=run_res.profiles,
+        )
+        logsetup.add_run_logfile(workspace, path=recorder.likedbg_log)
         _ensure_images(container, workspace, specs=images.required_for(host))
         chown_to = (os.getuid(), os.getgid()) if host.os == "linux" and host.storage_mode == "bind" else None
         session = Session("LIKE-DBG")
         session.start("LIKE-DBG")
-        ctx = PipelineContext(settings=settings, host=host, build_label=br.label, rootfs_label=rr.label)
+        ctx = PipelineContext(
+            settings=cfg.settings,
+            host=host,
+            build_label=br.label,
+            rootfs_label=rr_recipe.label,
+            run_resolution=run_res,
+            effective_debuggee=run_res.effective_debuggee,
+            extra_boot_args=run_res.extra_boot_args,
+            recorder=recorder,
+        )
         pipeline = build_pipeline(
             container,
             session,
@@ -494,9 +613,10 @@ def main(argv: list[str] | None = None) -> int:
             dl_dir=workspace / "kernels",
             debugger_image=DEBUGGER_IMAGE,
             debuggee_image=DEBUGGEE_IMAGE,
-            ext=settings.debugger.ext,
+            ext=cfg.settings.debugger.ext,
             build_recipe=br,
-            rootfs_recipe=rr,
+            rootfs_recipe=rr_recipe,
+            recorder=recorder,
         )
         pipeline.run(ctx)
         return 0
