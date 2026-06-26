@@ -37,7 +37,9 @@ Post-B3 follow-ups landed on `dev`:
   `like_rootfs:latest` images are rejected before
   rebuilds. QEMU also passes `net.ifnames=0` so the guest NIC remains `eth0`.
 
-Next planned continuation: choose the next large Sub-project B-E track.
+Next planned continuation: **Sub-project B — Modern debugging UX**. The full B roadmap slice is now
+captured below; start with **B1+B2** using
+`docs/superpowers/specs/2026-06-25-modern-debugging-ux-b1-b2-design.md`.
 Don't re-derive history — read these:
 - Project state & decisions: the auto-loaded memory `project-like-dbg-revival.md`.
 - Glossary: `CONTEXT.md`. Decisions: `docs/adr/0001..0003`.
@@ -171,14 +173,46 @@ threading), not detection.
 - `--adopt-rootfs [SOURCE]` now copies a manually created legacy rootfs image into the keyed rootfs
   cache and writes the rootfs manifest.
 
-### D. Sub-projects B–E (large; see foundation spec §1 for the vision)
-Each gets its own brainstorm→spec→grill→plan→subagent-driven cycle.
-- **B — Modern debugging UX:** sanitizer profiles, symbolized panics, kernel-aware gdb/gef/
-  pwndbg helpers (lx-/structs), QEMU snapshot/restore.
+### D. Next roadmap slice — Sub-project B: Modern debugging UX
+Status: **brainstormed 2026-06-25; B1+B2 spec started.** This is the next active large track because it
+compounds the now-working cross-platform/cross-architecture daily driver and unlocks later fuzzing and AI
+guidance.
+
+Full B slice:
+- **B1 — Debug profiles + post-build verification:** named profiles such as `exploit-dev`,
+  `hardened`, `crash-debug`, `kasan`, `ubsan`, `lockdep`, and `kcov-lite`; each resolves to kconfig fragments,
+  boot args, expected `.config` assertions, warnings, and future GDB breakpoint groups. Verify the built
+  `.config` after fresh builds and cache hits so silently-dropped sanitizer/debug options are visible.
+- **B2 — Run artifacts + QEMU/GDB transcript capture:** create `artifacts/runs/<run-id>/` for every
+  interactive run, recording resolved settings, host profile, labels, profile resolution, QEMU/GDB
+  commands, kernel `.config`/`System.map` references, and persistent Debuggee/Debugger pane transcripts.
+- **B3 — Crash/oops detector + symbolized reports:** parse serial output for panics, oopses, KASAN/UBSAN,
+  GP faults, arm64 aborts, and call traces; produce `crash.json` + `crash.md` with symbols/source lines
+  where possible.
+- **B4 — LIKE-DBG GDB helper pack + breakpoint profiles:** first-class GDB Python commands layered on
+  `likedbg-reconnect` for kernel/session info, mitigation state, module symbol loading, common exploit
+  structures, and breakpoint groups (`crash`, `module`, `memory`, `creds`, `ioctl`).
+- **B5 — Reset/snapshot controls:** QMP/HMP-backed stop/continue/reset controls, rootfs snapshot/overlay
+  mode for repeatable exploit attempts, and later QEMU savevm/loadvm if it proves portable across
+  HVF/KVM/TCG.
+- **B6 — Guest exploit deploy/run loop:** helper commands to copy/build/run exploit payloads in the guest,
+  capture stdout/stderr, preserve crash artifacts, and keep the rootfs/source workflow ergonomic.
+
+Current focus:
+- **Spec:** `docs/superpowers/specs/2026-06-25-modern-debugging-ux-b1-b2-design.md`.
+- **ADR:** `docs/adr/0006-toml-configuration-and-debug-profiles.md`.
+- **Scope:** B1+B2 only. B3-B6 are intentionally recorded but out of scope until the profile/artifact
+  foundation exists.
+
+### E. Later large tracks — Sub-projects C–E
+Each still gets its own brainstorm→spec→grill→plan→subagent-driven cycle after the relevant B foundation
+is in place.
 - **C — CTF / exploitation ergonomics:** cpio unpack/repack (`ctf/misc/cpio.sh`), vuln
   playgrounds (the bundled Pawnyable LK01 configs are a seed), exploit-dev conveniences.
-- **D — Bug-finding / fuzzing:** real syzkaller integration, crash triage/dedup.
+- **D — Bug-finding / fuzzing:** real syzkaller integration, crash triage/dedup. Depends on B1/B3-style
+  sanitizer profiles and structured crash artifacts.
 - **E — AI assistant pane:** a Claude-backed tmux pane observing QEMU/gdb output, offering live guidance.
+  Best started after B2 creates structured run artifacts and B3 creates crash summaries.
 
 ## Workflow (use the same discipline that built Plans 4–6)
 - Features: `superpowers:brainstorming` → write spec (`docs/superpowers/specs/`) →

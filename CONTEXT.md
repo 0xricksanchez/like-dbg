@@ -37,10 +37,26 @@ _Avoid_: naming the concept after the `network` field; conflating it with Debugg
 The interactive GDB session (driven by GEF or pwndbg) attached to the debuggee's stub.
 _Avoid_: gdb session, client.
 
+**Debug profile**:
+A TOML-backed named debugging intent that resolves to build-time kernel configuration fragments, expected
+post-build `.config` checks, optional boot arguments, runtime defaults, and operator warnings. A Debug
+profile answers "what kind of kernel/debugging experience are we building for?" Examples include
+`exploit-dev`, `hardened`, `crash-debug`, and sanitizer profiles. Runtime Debuggee settings may only
+override behavior the built kernel actually supports; contradictions are errors, and explicit
+user/scenario/CLI config wins over profile-provided runtime defaults by provenance.
+_Avoid_: using it to mean a cached Kernel Build, a GDB extension choice, or a loose preset that
+silently overrides unrelated config.
+
 **CTF context**:
 A run where the kernel image and root filesystem are supplied ready-made (a challenge),
 rather than downloaded and built from source.
 _Avoid_: challenge mode, ctf mode.
+
+**Run artifact**:
+The durable record of one attempted interactive Debugging session under `artifacts/runs/<run-id>/`.
+It includes requested/effective settings, Debug profile resolution, command records, logs/transcripts,
+kernel config snapshots, and status. Failed pre-boot verification still creates a Run artifact.
+_Avoid_: using it for cache-management events such as `--adopt`, `--clean`, or image rebuilds.
 
 ### Build cache
 
