@@ -7,7 +7,7 @@ from pathlib import Path
 
 from loguru import logger
 
-from likedbg.config import KernelDlCfg
+from likedbg.config import SourceCfg
 from likedbg.errors import DownloadError
 from likedbg.pipeline import PipelineContext
 
@@ -17,17 +17,13 @@ _SNAPSHOT = "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/
 _CDN = "https://cdn.kernel.org/pub/linux/kernel/v{major}.x/linux-{mmp}.tar.xz"
 
 
-def resolve_version(cfg: KernelDlCfg) -> str:
-    if cfg.mmp:
-        return cfg.mmp
-    if cfg.tag:
-        return cfg.tag
-    if cfg.commit:
-        return cfg.commit
-    raise DownloadError(
-        "no kernel version specified",
-        remedy="set [kernel_dl] mmp, tag, or commit in your .ini",
-    )
+def resolve_version(source: SourceCfg) -> str:
+    if not source.value:
+        raise DownloadError(
+            "no kernel source specified",
+            remedy="set [source] value in configs/default.toml",
+        )
+    return source.value
 
 
 def archive_url(version: str) -> str:
@@ -49,7 +45,7 @@ class DownloadStage:
         self._dl_dir = dl_dir
 
     def _dest(self, ctx: PipelineContext) -> Path:
-        return self._dl_dir / _archive_name(resolve_version(ctx.settings.kernel_dl))
+        return self._dl_dir / _archive_name(resolve_version(ctx.settings.source))
 
     def should_skip(self, ctx: PipelineContext) -> bool:
         # Never skip: a cached archive still has to be recorded in the context for the
@@ -59,7 +55,7 @@ class DownloadStage:
 
     def run(self, ctx: PipelineContext) -> PipelineContext:
         self._dl_dir.mkdir(parents=True, exist_ok=True)
-        version = resolve_version(ctx.settings.kernel_dl)
+        version = resolve_version(ctx.settings.source)
         dest = self._dest(ctx)
         if dest.exists():
             logger.info(f"download cache hit: {dest.name}")

@@ -88,12 +88,6 @@ class DebuggingCfg(_Base):
     profiles: tuple[str, ...] = ("exploit-dev",)
 
 
-class KernelDlCfg(_Base):
-    """Temporary stub; remove in Task 3/Task 14 when loader replaces INI."""
-
-    pass
-
-
 class Settings(_Base):
     general: GeneralCfg = GeneralCfg()
     source: SourceCfg = SourceCfg()
