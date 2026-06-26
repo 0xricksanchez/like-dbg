@@ -56,7 +56,22 @@ _Avoid_: challenge mode, ctf mode.
 The durable record of one attempted interactive Debugging session under `artifacts/runs/<run-id>/`.
 It includes requested/effective settings, Debug profile resolution, command records, logs/transcripts,
 kernel config snapshots, and status. Failed pre-boot verification still creates a Run artifact.
+The run status set is: `created` → `profile-verification-failed` | `launching` → `launched` |
+`launch-failed`. Crash/completion states belong to later B3/B5 work.
 _Avoid_: using it for cache-management events such as `--adopt`, `--clean`, or image rebuilds.
+
+**Effective settings**:
+The runtime Debuggee toggles LIKE-DBG actually uses after the 6-layer precedence merge — built-in <
+project default < profile runtime defaults < local < scenario < CLI. Held as
+`RunResolution.effective_debuggee` (a full `DebuggeeCfg`); QEMU/GDB read it, never the frozen
+requested `Settings`. Surfaced as `settings.effective.json` in the Run artifact.
+_Avoid_: mutating `Settings`; calling profile defaults "overrides" (they are the lowest non-default layer).
+
+**Configuration provenance**:
+The winning layer recorded per `(section, key)` by the TOML loader, surfaced in
+`settings.effective.json` and `--explain-config`. Internal/debuggable state — users see only three
+layers (project defaults, local/scenario, CLI); all six layers are available for artifact inspection
+and automated tooling. _Avoid_: exposing all six layers in everyday UX.
 
 ### Build cache
 

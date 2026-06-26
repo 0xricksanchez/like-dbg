@@ -104,10 +104,66 @@ Inside `like-dbg` run `uv sync`
 
 ## Configuration
 
-Fine-tuning the kernel debugging experience is one of the goals of this project.
-Currently, all tunable options are exposed in the two configuration files: `configs/system.ini` and `configs/user.ini`.
-Some fields are recommended to not be altered as they're mainly for development reasons.
-However, all the ones to customize the environment to your needs should be self-explanatory as all of them are labeled with a brief comment.
+LIKE-DBG uses a TOML configuration stack. The files, in precedence order (highest last):
+
+| File | Description |
+|---|---|
+| `configs/default.toml` | Tracked project defaults. Edit for repo-wide changes. |
+| `configs/local.toml` | Gitignored personal overrides (create from `configs/local.example.toml`). |
+| `configs/scenarios/<name>.toml` | Named scenario configs, loaded with `-c <name>` or `-c <path>`. |
+
+CLI flags always win over all config files.
+
+**Everyday mental model:** three layers — project defaults, local/scenario, CLI. The full
+six-layer provenance model is internal and is recorded in `settings.effective.json` for
+artifact inspection.
+
+### Debug profiles
+
+Debug profiles control what kernel you build and the debugging experience you get:
+
+```sh
+# Default: exploit-dev (no KASLR, debug info, kallsyms, frame pointers)
+uv run ./start_kgdb
+
+# Explicit profile
+uv run ./start_kgdb --profile kasan
+
+# Multiple profiles (comma-separated; overrides debugging.profiles in TOML)
+uv run ./start_kgdb --profile hardened,lockdep
+
+# Inspect resolved config without building or booting
+uv run ./start_kgdb --explain-config
+uv run ./start_kgdb --explain-config json
+```
+
+Available profiles:
+
+| Profile | Kind | Purpose |
+|---|---|---|
+| `exploit-dev` | base | No KASLR, debug symbols, kallsyms — the daily-driver default |
+| `hardened` | base | Mitigations compiled in; toggle KASLR/SMEP/SMAP/KPTI at runtime |
+| `crash-debug` | add-on | Verbose BUG/oops/sysrq for readable stack traces |
+| `kasan` | add-on | KASAN memory-bug detection (implies `crash-debug`) |
+| `ubsan` | add-on | UBSAN undefined-behavior detection (implies `crash-debug`) |
+| `lockdep` | add-on | Lock-ordering and concurrency diagnostics |
+| `kcov-lite` | add-on | KCOV + debugfs for later coverage-guided work |
+
+`exploit-dev` and `hardened` are mutually exclusive (conflicting KASLR build-time decisions).
+Custom profiles can be added by placing a TOML file under `configs/profiles/`.
+
+**GDB extension:** `pwndbg` is the default (`[debugger] ext = "pwndbg"` in `default.toml`).
+To use GEF instead, add `[debugger] ext = "gef"` to `configs/local.toml`.
+
+### Inspecting config
+
+`--explain-config` resolves the full TOML stack and profiles without touching Docker, tmux, or
+run directories. Add `json` for machine-readable output:
+
+```sh
+uv run ./start_kgdb --explain-config
+uv run ./start_kgdb --profile kasan --explain-config json
+```
 
 ## Usage
 
@@ -168,8 +224,9 @@ This is intended so you can develop and exploit from either perspective easily.
 ### Extended Usage
 
 ```sh
-# If you want to provide a custom 'user.ini' for a specific debugging setup
-uv run ./start_kgdb -c <path_to_cfg> [other_args]
+# Load a named scenario config (configs/scenarios/lk01.toml) or an explicit path
+uv run ./start_kgdb -c lk01
+uv run ./start_kgdb -c /path/to/my.toml
 
 # Rebuild all LIKE-DBG container images
 uv run ./start_kgdb --build-images
@@ -196,6 +253,42 @@ uv run ./start_kgdb --force-rebuild
 # Restart the Debuggee pane from stored tmux session state
 uv run ./start_kgdb --restart-debuggee
 ```
+
+### Run artifacts
+
+Every interactive Debugging session creates a timestamped run directory:
+
+```text
+artifacts/runs/<YYYYMMDDTHHMMSSZ>-<build-label>/
+  run.json                  # schema-versioned index + status machine
+  settings.requested.json   # TOML + CLI config before profile resolution
+  settings.effective.json   # actual settings used (with per-key provenance)
+  host.json                 # host profile (OS, arch, accel, storage mode)
+  profiles.json             # full profile resolution graph + warnings
+  commands/                 # qemu.sh, gdb.sh, *.argv.json
+  logs/
+    likedbg.log             # LIKE-DBG process log for this run
+    debuggee-pane.log       # QEMU pane transcript
+    debugger-pane.log       # GDB/pwndbg pane transcript
+  kernel/
+    config                  # copy of the built .config
+    System.map.pointer      # path pointer
+    vmlinux.pointer
+    image.pointer
+  notes.md
+```
+
+`artifacts/runs/latest` symlinks to the most recent run (even failed ones).
+`artifacts/logs/latest.log` symlinks to that run's `logs/likedbg.log`.
+
+**Run status set:** `created` → `profile-verification-failed` | `launching` → `launched` |
+`launch-failed`. Profile verification must pass before the Debuggee is launched.
+
+**Pane transcripts** are operator-pane logs captured via `tmux pipe-pane`. They are not
+byte-perfect serial capture: a small amount of output may be missed between pane creation and
+`pipe-pane` activation, and there is a gap in each log at every `C-b B` Debuggee restart (the pane
+is re-piped in append mode, but the instant of restart is not captured). If you need byte-perfect
+serial logs, use QEMU `-serial` options directly; this is planned for a later slice.
 
 ### Examples
 

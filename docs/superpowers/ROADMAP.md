@@ -9,7 +9,7 @@ can continue the rework with one prompt. `dev` represents the FULL rewrite and s
 > unstarted item, brainstorm→spec→plan→subagent-driven-development (or systematic-debugging
 > for bugs), and keep dev local."*
 
-## Status (2026-06-25)
+## Status (2026-06-26)
 
 M1 Sub-project A (Foundation) is **complete** — §A, §B1, §B2, **and §B3 all merged to `dev`**.
 §B (Foundation completion) is fully done. Landed 2026-06-24: **§B3 — un-gate the
@@ -37,9 +37,9 @@ Post-B3 follow-ups landed on `dev`:
   `like_rootfs:latest` images are rejected before
   rebuilds. QEMU also passes `net.ifnames=0` so the guest NIC remains `eth0`.
 
-Next planned continuation: **Sub-project B — Modern debugging UX**. The full B roadmap slice is now
-captured below; start with **B1+B2** using
-`docs/superpowers/specs/2026-06-25-modern-debugging-ux-b1-b2-design.md`.
+Next planned continuation: **Sub-project B — Modern debugging UX**. B1+B2 are implemented (2026-06-26);
+the next slice is **B3** (crash/oops detector). Full B roadmap below.
+See `docs/superpowers/specs/2026-06-25-modern-debugging-ux-b1-b2-design.md` for the B1+B2 spec.
 Don't re-derive history — read these:
 - Project state & decisions: the auto-loaded memory `project-like-dbg-revival.md`.
 - Glossary: `CONTEXT.md`. Decisions: `docs/adr/0001..0003`.
@@ -173,36 +173,43 @@ threading), not detection.
 - `--adopt-rootfs [SOURCE]` now copies a manually created legacy rootfs image into the keyed rootfs
   cache and writes the rootfs manifest.
 
-### D. Next roadmap slice — Sub-project B: Modern debugging UX
-Status: **brainstormed 2026-06-25; B1+B2 spec started.** This is the next active large track because it
-compounds the now-working cross-platform/cross-architecture daily driver and unlocks later fuzzing and AI
-guidance.
+### D. Sub-project B: Modern debugging UX
+**B1+B2 implemented (2026-06-26).** Unit suite green. Controller-driven live gates are Task 20
+(not yet run). B3-B6 remain to be started.
+
+- **Plan:** `docs/superpowers/plans/2026-06-26-modern-debugging-ux-b1-b2-plan.md`
+- **Spec + grill decisions (§10):** `docs/superpowers/specs/2026-06-25-modern-debugging-ux-b1-b2-design.md`
+- **ADR:** `docs/adr/0006-toml-configuration-and-debug-profiles.md`
+
+Key grill decisions recorded in spec §10 and ADR Resolution (2026-06-26 grill):
+- Whole-Settings provenance: `load_config -> ConfigResolution(settings, provenance)`.
+- `native` resolves in `HostProfile.detect` → `host.target_arch`; symbolic `native` never reaches recipes.
+- Profile runtime defaults at layer 4; effective result in `RunResolution.effective_debuggee`.
+- `pwndbg` is the de facto default (`default.toml`); `gef` via `local.toml` override.
+- Two-phase load (select profiles, then finalize with provenance).
+- `-c` is name-or-path (`-c lk01` → `configs/scenarios/lk01.toml`).
+- `custom_modules` deferred to B6; B1 keeps only the validated schema slot.
 
 Full B slice:
-- **B1 — Debug profiles + post-build verification:** named profiles such as `exploit-dev`,
-  `hardened`, `crash-debug`, `kasan`, `ubsan`, `lockdep`, and `kcov-lite`; each resolves to kconfig fragments,
-  boot args, expected `.config` assertions, warnings, and future GDB breakpoint groups. Verify the built
-  `.config` after fresh builds and cache hits so silently-dropped sanitizer/debug options are visible.
-- **B2 — Run artifacts + QEMU/GDB transcript capture:** create `artifacts/runs/<run-id>/` for every
-  interactive run, recording resolved settings, host profile, labels, profile resolution, QEMU/GDB
-  commands, kernel `.config`/`System.map` references, and persistent Debuggee/Debugger pane transcripts.
-- **B3 — Crash/oops detector + symbolized reports:** parse serial output for panics, oopses, KASAN/UBSAN,
-  GP faults, arm64 aborts, and call traces; produce `crash.json` + `crash.md` with symbols/source lines
-  where possible.
+- **B1 — Debug profiles + post-build verification — ✅ IMPLEMENTED (2026-06-26):** named profiles
+  (`exploit-dev`, `hardened`, `crash-debug`, `kasan`, `ubsan`, `lockdep`, `kcov-lite`); each resolves
+  to kconfig fragments, boot args, expected `.config` assertions, warnings, and runtime defaults.
+  Verifies the built `.config` after fresh builds and cache hits. Legacy INI config replaced by TOML
+  stack with provenance.
+- **B2 — Run artifacts + QEMU/GDB transcript capture — ✅ IMPLEMENTED (2026-06-26):** creates
+  `artifacts/runs/<run-id>/` for every interactive run, recording resolved settings, host profile,
+  labels, profile resolution graph, QEMU/GDB commands, kernel `.config`/`System.map` references, and
+  Debuggee/Debugger pane transcripts via `tmux pipe-pane`. Transcripts are operator-pane logs, not
+  byte-perfect serial capture (small gap at each `C-b B` restart is expected).
+- **B3 — Crash/oops detector + symbolized reports:** parse serial output for panics, oopses,
+  KASAN/UBSAN, GP faults, arm64 aborts, and call traces; produce `crash.json` + `crash.md`.
 - **B4 — LIKE-DBG GDB helper pack + breakpoint profiles:** first-class GDB Python commands layered on
   `likedbg-reconnect` for kernel/session info, mitigation state, module symbol loading, common exploit
-  structures, and breakpoint groups (`crash`, `module`, `memory`, `creds`, `ioctl`).
-- **B5 — Reset/snapshot controls:** QMP/HMP-backed stop/continue/reset controls, rootfs snapshot/overlay
-  mode for repeatable exploit attempts, and later QEMU savevm/loadvm if it proves portable across
-  HVF/KVM/TCG.
-- **B6 — Guest exploit deploy/run loop:** helper commands to copy/build/run exploit payloads in the guest,
-  capture stdout/stderr, preserve crash artifacts, and keep the rootfs/source workflow ergonomic.
-
-Current focus:
-- **Spec:** `docs/superpowers/specs/2026-06-25-modern-debugging-ux-b1-b2-design.md`.
-- **ADR:** `docs/adr/0006-toml-configuration-and-debug-profiles.md`.
-- **Scope:** B1+B2 only. B3-B6 are intentionally recorded but out of scope until the profile/artifact
-  foundation exists.
+  structures, and breakpoint groups.
+- **B5 — Reset/snapshot controls:** QMP/HMP-backed stop/continue/reset controls, rootfs
+  snapshot/overlay mode for repeatable exploit attempts.
+- **B6 — Guest exploit deploy/run loop:** helper commands to copy/build/run exploit payloads in the
+  guest, capture stdout/stderr, preserve crash artifacts, and wire out-of-tree `custom_modules`.
 
 ### E. Later large tracks — Sub-projects C–E
 Each still gets its own brainstorm→spec→grill→plan→subagent-driven cycle after the relevant B foundation
