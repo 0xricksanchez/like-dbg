@@ -78,6 +78,7 @@ class Probes:
 class HostProfile:
     os: str
     host_arch: str
+    target_arch: Arch
     accel: Accel
     debuggee_mode: DebuggeeMode
     storage_mode: StorageMode
@@ -91,16 +92,17 @@ class HostProfile:
             probes = Probes()
         os_name = probes.system()
         host_arch = probes.machine()
-        guest_arch = settings.general.arch
-        same_arch = guest_arch == host_arch
+        requested = settings.general.arch
+        target_arch: Arch = host_arch if requested == "native" else requested  # type: ignore[assignment]
+        same_arch = target_arch == host_arch
 
         capable_native_hvf = (
-            os_name == "darwin" and same_arch and probes.hvf_supported() and probes.native_qemu_present(guest_arch)
+            os_name == "darwin" and same_arch and probes.hvf_supported() and probes.native_qemu_present(target_arch)
         )
         capable_kvm = os_name == "linux" and same_arch and probes.kvm_accessible()
 
-        requested = settings.debuggee.accel
-        accel, mode = cls._resolve_accel(requested, capable_native_hvf, capable_kvm, os_name)
+        requested_accel = settings.debuggee.accel
+        accel, mode = cls._resolve_accel(requested_accel, capable_native_hvf, capable_kvm, os_name)
 
         storage = cls._resolve_storage(settings, os_name, workspace, probes)
         network_mode = cls._resolve_network(settings.debuggee.network, os_name)
@@ -110,6 +112,7 @@ class HostProfile:
         return cls(
             os=os_name,
             host_arch=host_arch,
+            target_arch=target_arch,
             accel=accel,
             debuggee_mode=mode,
             storage_mode=storage,
