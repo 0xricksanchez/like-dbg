@@ -1,0 +1,10 @@
+# Copy to configs/local.toml (gitignored) for personal overrides.
+[general]
+# arch = "x86_64"   # pin a cross-arch target; default "native" follows the host
+
+[source]
+# kind = "tag"
+# value = "v6.9"
+
+[debugger]
+# ext = "gef"        # pwndbg is the default; opt into gef here

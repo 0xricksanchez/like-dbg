@@ -1,0 +1,35 @@
+[general]
+arch = "native"
+mac_storage = "auto"
+
+[source]
+kind = "mmp"
+value = "6.6.30"
+
+[build]
+compiler = "clang"
+toolchain = "auto"
+rust = false
+
+[rootfs]
+distribution = "bookworm"
+hostname = "LIKE-DBG"
+
+[debuggee]
+memory_mib = 1024
+smp = 1
+accel = "auto"
+network = "auto"
+gdb = true
+gdb_port = 1234
+kaslr = false
+smep = true
+smap = true
+kpti = true
+panic = "halt"
+
+[debugger]
+ext = "pwndbg"
+
+[debugging]
+profiles = ["exploit-dev"]

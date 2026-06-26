@@ -19,6 +19,7 @@ io/filesystem*
 examples/c_kmod/compile_commands.json
 patches/*
 configs/kernel_configs/*.conf*
+configs/local.toml
 Dockerfile*
 android*
 ctf/bzImage

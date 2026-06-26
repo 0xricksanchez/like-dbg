@@ -751,7 +751,7 @@ def test_restart_debuggee_lock_prevents_double_tap():
 def test_main_restart_bypasses_config_and_docker(monkeypatch):
     restarted = []
     monkeypatch.setenv("TMUX", "/tmp/tmux")
-    monkeypatch.setattr(cli, "load_settings", lambda *a, **k: pytest.fail("load_settings should not run"))
+    monkeypatch.setattr(cli, "load_config", lambda *a, **k: pytest.fail("load_config should not run"))
     monkeypatch.setattr(cli.docker_env, "make_client", lambda host: pytest.fail("docker should not run"))
     monkeypatch.setattr(cli, "cmd_restart_debuggee", lambda session: restarted.append(session) or 0)
     assert cli.main(["--restart-debuggee"]) == 0
@@ -779,13 +779,13 @@ def test_main_restart_failure_displays_tmux_message(monkeypatch):
 
 def test_main_restart_requires_tmux(monkeypatch):
     monkeypatch.delenv("TMUX", raising=False)
-    monkeypatch.setattr(cli, "load_settings", lambda *a, **k: pytest.fail("load_settings should not run"))
+    monkeypatch.setattr(cli, "load_config", lambda *a, **k: pytest.fail("load_config should not run"))
     assert cli.main(["--restart-debuggee"]) == 2
 
 
 def test_main_build_images_is_docker_only_and_invokes_build_images(monkeypatch):
     built = []
-    monkeypatch.setattr(cli, "load_settings", lambda *a, **k: Settings())
+    monkeypatch.setattr(cli, "load_config", lambda *a, **k: ConfigResolution(settings=Settings(), provenance={}, _ordered_layers=()))
     monkeypatch.setattr(cli.docker_env, "resolve_docker_host", lambda env: "unix:///x")
     monkeypatch.setattr(cli.docker_env, "make_client", lambda host: SimpleNamespace())
     monkeypatch.setattr(cli.images, "build_images", lambda container, workspace, *a, **k: built.append(True))
@@ -807,7 +807,6 @@ def test_ensure_images_helper_warns_each_stale_tag(monkeypatch):
 
 def test_main_configures_stderr_always_but_logfile_only_for_runs(monkeypatch):
     calls = {"stderr": 0, "logfile": 0}
-    monkeypatch.setattr(cli, "load_settings", lambda *a, **k: Settings())
     monkeypatch.setattr(cli.docker_env, "resolve_docker_host", lambda env: "unix:///x")
     monkeypatch.setattr(cli.docker_env, "make_client", lambda host: SimpleNamespace())
     monkeypatch.setattr(cli.logsetup, "configure_stderr", lambda **k: calls.__setitem__("stderr", calls["stderr"] + 1))

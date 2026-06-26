@@ -1,0 +1,12 @@
+name = "kcov-lite"
+kind = "addon"
+description = "Prepare kernels for later coverage-guided bug finding (not a fuzzing workflow itself)."
+fragments = ["configs/fragments/profiles/kcov-lite.config"]
+
+[[warning]]
+message = "kcov-lite enables coverage prerequisites but is not a fuzzer by itself."
+
+[[expect]]
+symbol = "CONFIG_KCOV"
+value = "y"
+severity = "soft"

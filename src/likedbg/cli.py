@@ -26,7 +26,6 @@ from likedbg.cache import build_recipe as make_build_recipe
 from likedbg.cache import rootfs_recipe as make_rootfs_recipe
 from likedbg.config import ConfigResolution
 from likedbg.config import load_config
-from likedbg.config import load_settings
 from likedbg.constants import BASE_IMAGE
 from likedbg.constants import DEBUGGEE_IMAGE
 from likedbg.constants import DEBUGGER_IMAGE
@@ -604,13 +603,8 @@ def main(argv: list[str] | None = None) -> int:
                 list_container = None
             return cmd_list(workspace, container=list_container)
         # Early paths that don't need the full TOML flow: --build-images, --clean*, --adopt-rootfs
-        # These still use load_settings for now (Task 18 migrates them).
-        settings = load_settings(
-            workspace / "configs" / "system.ini",
-            workspace / "configs" / "user.ini",
-            custom_ini=Path(args.config) if args.config else None,
-        )
-        rr_settings = make_rootfs_recipe(settings, workspace=workspace)
+        cfg = load_config(workspace, scenario=_scenario_path(workspace, args.config))
+        rr_settings = make_rootfs_recipe(cfg.settings, workspace=workspace)
         if args.adopt_rootfs is not None:
             source = Path(args.adopt_rootfs) if args.adopt_rootfs else None
             label = adopt_legacy_rootfs(workspace=workspace, recipe=rr_settings, source=source)

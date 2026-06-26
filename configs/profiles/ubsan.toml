@@ -1,0 +1,10 @@
+name = "ubsan"
+kind = "addon"
+description = "Lower-cost undefined-behavior detection."
+implies = ["crash-debug"]
+fragments = ["configs/fragments/profiles/ubsan.config"]
+
+[[expect]]
+symbol = "CONFIG_UBSAN"
+value = "y"
+severity = "hard"

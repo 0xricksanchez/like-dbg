@@ -1,0 +1,20 @@
+name = "hardened"
+kind = "base"
+description = "Exploit workbench with mitigations compiled in (KASLR/SMEP/SMAP/KPTI showcasable)."
+fragments = [
+  "configs/fragments/generic.config",
+  "configs/fragments/debug.config",
+  "configs/fragments/profiles/hardened.config",
+]
+
+[runtime_defaults.debuggee]
+kaslr = true
+smep = true
+smap = true
+kpti = true
+
+[[expect]]
+symbol = "CONFIG_RANDOMIZE_BASE"
+value = "y"
+severity = "hard"
+arch = ["x86_64", "arm64"]

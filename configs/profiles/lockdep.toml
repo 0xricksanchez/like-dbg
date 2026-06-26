@@ -1,0 +1,12 @@
+name = "lockdep"
+kind = "addon"
+description = "Locking and concurrency diagnostics."
+fragments = ["configs/fragments/profiles/lockdep.config"]
+
+[[warning]]
+message = "lockdep can be noisy and slows the kernel."
+
+[[expect]]
+symbol = "CONFIG_PROVE_LOCKING"
+value = "y"
+severity = "soft"

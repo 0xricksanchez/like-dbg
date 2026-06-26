@@ -1,0 +1,20 @@
+name = "kasan"
+kind = "addon"
+description = "Memory bug detection for UAF/OOB research."
+implies = ["crash-debug"]
+fragments = ["configs/fragments/profiles/kasan.config"]
+
+[[warning]]
+message = "KASAN under TCG is slow and memory-heavy."
+accel = ["tcg"]
+
+[[warning]]
+message = "KASAN + lockdep is slow and noisy."
+profiles = ["lockdep"]
+
+[[expect]]
+symbol = "CONFIG_KASAN"
+value = "y"
+severity = "hard"
+arch = ["x86_64", "arm64"]
+kernel_min = "5.10"

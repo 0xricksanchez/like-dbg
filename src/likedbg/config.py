@@ -1,21 +1,15 @@
-"""Typed configuration models plus the INI and TOML config loaders.
+"""Typed configuration models plus the TOML config loader.
 
-Two loaders currently coexist (the INI loader is removed in a later task):
-- ``load_settings``: legacy two-tier INI loader. Precedence (lowest → highest):
-  system.ini ◁ user.ini ◁ custom.ini ◁ overrides (CLI). Blank INI values are
-  treated as "unset" so model defaults apply.
-- ``load_config``: the 6-layer TOML loader producing whole-Settings provenance
-  (built-in ◁ default ◁ profile ◁ local ◁ scenario ◁ cli).
+``load_config``: the 6-layer TOML loader producing whole-Settings provenance
+(built-in ◁ default ◁ profile ◁ local ◁ scenario ◁ cli).
 """
 
 from __future__ import annotations
 
-import configparser
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
-from typing import cast
 
 from pydantic import BaseModel
 from pydantic import ConfigDict
@@ -98,61 +92,8 @@ class Settings(_Base):
     debugging: DebuggingCfg = DebuggingCfg()
 
 
-def _layer(into: dict[str, dict[str, str]], cfg: configparser.ConfigParser) -> None:
-    """Merge non-blank keys from a parsed INI onto the accumulator (later wins)."""
-    for section in cfg.sections():
-        for key, val in cfg[section].items():
-            if val.strip() == "":
-                continue  # blank == unset; keep the lower layer / default
-            into.setdefault(section, {})[key] = val
-
-
-def _read(path: Path) -> configparser.ConfigParser:
-    cfg = configparser.ConfigParser()
-    if not path.exists():
-        raise ConfigError(f"config file not found: {path}", remedy=f"create {path}")
-    cfg.read(path)
-    return cfg
-
-
-def load_settings(
-    system_ini: Path,
-    user_ini: Path,
-    *,
-    custom_ini: Path | None = None,
-    overrides: dict[str, dict[str, str]] | None = None,
-) -> Settings:
-    merged: dict[str, dict[str, str]] = {}
-    _layer(merged, _read(system_ini))
-    _layer(merged, _read(user_ini))
-    if custom_ini is not None:
-        _layer(merged, _read(custom_ini))
-    if overrides:
-        for section, kv in overrides.items():
-            merged.setdefault(section, {}).update(kv)
-
-    def _build(section: str, model: type[_Base]) -> _Base:
-        try:
-            return model(**merged.get(section, {}))
-        except ValidationError as exc:
-            raise ConfigError(
-                f"invalid [{section}] configuration: {exc.errors()[0]['msg']}",
-                remedy=f"check the [{section}] section of your .ini",
-            ) from exc
-
-    return Settings(
-        general=cast(GeneralCfg, _build("general", GeneralCfg)),
-        source=cast(SourceCfg, _build("source", SourceCfg)),
-        build=cast(BuildCfg, _build("build", BuildCfg)),
-        rootfs=cast(RootfsCfg, _build("rootfs", RootfsCfg)),
-        debuggee=cast(DebuggeeCfg, _build("debuggee", DebuggeeCfg)),
-        debugger=cast(DebuggerCfg, _build("debugger", DebuggerCfg)),
-        debugging=cast(DebuggingCfg, _build("debugging", DebuggingCfg)),
-    )
-
-
 # ---------------------------------------------------------------------------
-# TOML 6-layer loader (replaces INI loader in Task 16/18)
+# TOML 6-layer loader
 # ---------------------------------------------------------------------------
 
 LAYER_BUILTIN = "built-in"
