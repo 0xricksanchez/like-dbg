@@ -34,7 +34,14 @@ def _point_latest(link: Path, target: Path) -> None:
         pass  # symlinks unavailable (e.g. Windows) — non-fatal
 
 
-def add_run_logfile(workspace: Path) -> Path:
+def add_run_logfile(workspace: Path, *, path: Path | None = None) -> Path:
+    if path is not None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        logger.add(path, level="DEBUG", format=_FILE_FMT)
+        logs = workspace / "artifacts" / "logs"
+        logs.mkdir(parents=True, exist_ok=True)
+        _point_latest(logs / "latest.log", path)
+        return path
     logs = workspace / "artifacts" / "logs"
     logs.mkdir(parents=True, exist_ok=True)
     _prune_old_logs(logs, keep=20)
