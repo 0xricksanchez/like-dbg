@@ -6,13 +6,20 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from loguru import logger
+
 from likedbg.cache import Manifest
+from likedbg.cache import load_manifest
 from likedbg.cache import tree_mount_source
 from likedbg.constants import BASE_IMAGE
 from likedbg.constants import KERNEL_VOLUME
 from likedbg.constants import VOLUME_MOUNT
 from likedbg.container_service import ContainerService
+from likedbg.debug_profiles import RunResolution
+from likedbg.debug_profiles import verify_config
+from likedbg.errors import BuildError
 from likedbg.errors import CacheError
+from likedbg.pipeline import PipelineContext
 
 
 def read_built_config(manifest: Manifest, *, container: ContainerService | None, workspace: Path) -> tuple[str, str]:
@@ -63,3 +70,57 @@ def read_built_config(manifest: Manifest, *, container: ContainerService | None,
     export.parent.mkdir(parents=True, exist_ok=True)
     export.write_text(text)
     return text, release
+
+
+class ProfileVerificationStage:
+    """Verify the built kernel .config against debug-profile expectations."""
+
+    name = "profile-verification"
+
+    def __init__(self, container: ContainerService | None, *, workspace: Path, kernel_volume: str) -> None:
+        self._c = container
+        self._workspace = workspace
+        self._volume = kernel_volume
+
+    def should_skip(self, ctx: PipelineContext) -> bool:
+        return ctx.run_resolution is None
+
+    def run(self, ctx: PipelineContext) -> PipelineContext:
+        rr = ctx.run_resolution
+        assert isinstance(rr, RunResolution)
+
+        manifest = load_manifest(self._workspace, "build", ctx.build_label or "")
+        config_text, release = read_built_config(manifest, container=self._c, workspace=self._workspace)
+
+        ctx.kernel_release = release
+        ctx.config_host = Path(manifest.paths["config_host"]) if manifest.paths.get("config_host") else None
+
+        verification = verify_config(config_text, rr.profiles, target_arch=rr.target_arch, kernel_release=release)
+
+        recorder = ctx.recorder
+        if recorder is not None:
+            recorder.record_profile_verification(verification)  # type: ignore[attr-defined]
+            recorder.record_kernel_paths(  # type: ignore[attr-defined]
+                config=manifest.paths.get("config_host", ""),
+                system_map=manifest.paths.get("system_map_host", ""),
+                vmlinux=manifest.paths.get("gdb_vmlinux", ""),
+                image=manifest.paths.get("image_host", ""),
+            )
+
+        if verification.missing_hard:
+            if recorder is not None:
+                recorder.set_status(  # type: ignore[attr-defined]
+                    "profile-verification-failed",
+                    message="; ".join(f"{e.symbol}={e.value}" for e in verification.missing_hard),
+                )
+            first = verification.missing_hard[0]
+            raise BuildError(
+                f"debug profile verification failed: {rr.profiles.names} requested"
+                f" {first.symbol}={first.value}, but the final .config does not satisfy it",
+                remedy="inspect artifacts/runs/latest/profiles.json or remove the offending profile",
+            )
+
+        for msg in verification.warnings:
+            logger.warning(msg)
+
+        return ctx
