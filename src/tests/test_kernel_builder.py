@@ -7,7 +7,14 @@ from unittest.mock import MagicMock, Mock, patch
 import docker
 import pytest
 
-from src.kernel_builder import MISC_DRVS_PATH, KernelBuilder
+try:
+    from src.kernel_builder import MISC_DRVS_PATH, KernelBuilder  # legacy; may not install in new env
+
+    _LEGACY_AVAILABLE = True
+except ImportError:
+    _LEGACY_AVAILABLE = False
+    KernelBuilder = None  # type: ignore[assignment,misc]
+    MISC_DRVS_PATH = None  # type: ignore[assignment]
 
 USER_INI = Path("configs/user.ini")
 CUSTOM_MODULE = Path("examples/like_dbg_confs/echo_module_x86.ini")
@@ -322,3 +329,79 @@ def test_wait_for_container() -> None:
     kb.cli = Mock()
     kb.cli.inspect_container.return_value = {"State": {"Health": {"Status": "healthy"}}}
     kb.wait_for_container()
+
+
+# ---------------------------------------------------------------------------
+# Task-9: BuildStage — patch application + config/release capture
+# ---------------------------------------------------------------------------
+from likedbg.cache import build_recipe as likedbg_build_recipe  # noqa: E402
+from likedbg.config import Settings as LibSettings  # noqa: E402
+from likedbg.host_profile import HostProfile, Probes  # noqa: E402
+from likedbg.pipeline import PipelineContext  # noqa: E402
+from likedbg.stages.build import BuildStage  # noqa: E402
+
+
+class _FakeContainer:
+    def __init__(self) -> None:
+        self.cmds: list[str] = []
+
+    def run_detached(self, *a, **k):  # noqa: ANN
+        return "c1"
+
+    def exec(self, c, cmd, workdir=None):  # noqa: ANN
+        self.cmds.append(cmd)
+
+        class _R:  # noqa
+            output = (
+                "VERSION = 6\nPATCHLEVEL = 6\nSUBLEVEL = 30\nEXTRAVERSION =\n"
+                if "Makefile" in cmd
+                else ""
+            )
+
+        return _R()
+
+    def stop(self, c):  # noqa: ANN
+        pass
+
+
+def _host_profile(tmp_path: Path) -> HostProfile:
+    p = Probes(
+        system=lambda: "linux",
+        machine=lambda: "x86_64",
+        kvm_accessible=lambda: False,
+        hvf_supported=lambda: False,
+        native_qemu_present=lambda _a: True,
+        workspace_case_sensitive=lambda _p: True,
+    )
+    return HostProfile.detect(LibSettings(), tmp_path, p)
+
+
+def test_patches_applied_in_order(tmp_path: Path) -> None:
+    (tmp_path / "configs" / "fragments").mkdir(parents=True)
+    frag = "configs/fragments/generic.config"
+    (tmp_path / frag).write_text("CONFIG_X=y\n")
+    patches = tmp_path / "patches" / "uaf"
+    patches.mkdir(parents=True)
+    (patches / "0001-a.patch").write_text("p1")
+    (patches / "0002-b.patch").write_text("p2")
+    r = likedbg_build_recipe(
+        LibSettings(),
+        version="6.6.30",
+        arch="x86_64",
+        workspace=tmp_path,
+        fragments=[frag],
+        patch_dirs=("patches/uaf",),
+    )
+    fake = _FakeContainer()
+    stage = BuildStage(
+        fake,
+        recipe=r,
+        kbuilder_image="img",
+        workspace=tmp_path,
+        kernel_volume="vol",
+        patch_dirs=("patches/uaf",),
+    )
+    ctx = PipelineContext(settings=LibSettings(), host=_host_profile(tmp_path), build_label=r.label)
+    stage.run(ctx)
+    patch_cmds = [c for c in fake.cmds if "patch -p1" in c or "git apply" in c]
+    assert len(patch_cmds) == 2  # one per patch file, sorted

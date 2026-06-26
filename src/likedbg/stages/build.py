@@ -10,6 +10,7 @@ from likedbg import cache
 from likedbg.cache import BuildRecipe
 from likedbg.constants import VOLUME_MOUNT
 from likedbg.container_service import ContainerService
+from likedbg.debug_profiles import parse_kernel_release
 from likedbg.errors import BuildError
 from likedbg.pipeline import PipelineContext
 
@@ -33,6 +34,7 @@ class BuildStage:
         workspace: Path,
         kernel_volume: str,
         chown_to: tuple[int, int] | None = None,
+        patch_dirs: tuple[str, ...] = (),
     ) -> None:
         self._c = container
         self._recipe = recipe
@@ -40,6 +42,7 @@ class BuildStage:
         self._workspace = workspace
         self._volume = kernel_volume
         self._chown_to = chown_to
+        self._patch_dirs = patch_dirs
 
     def should_skip(self, ctx: PipelineContext) -> bool:
         return False
@@ -74,6 +77,12 @@ class BuildStage:
         container = self._c.run_detached(self._image, volumes=volumes, detach=True, tty=True)
         try:
             self._c.exec(container, make_command(env, "mrproper"), workdir=root)
+            # Apply patches against the unpacked source tree (TOML list order; files sorted).
+            for rel in self._patch_dirs:
+                pdir = self._workspace / rel
+                for pf in sorted(p for p in pdir.rglob("*") if p.is_file() and p.suffix in {".patch", ".diff"}):
+                    container_patch = f"{_MOUNT}/{pf.relative_to(self._workspace).as_posix()}"
+                    self._c.exec(container, f"patch -p1 -i {container_patch}", workdir=root)
             self._c.exec(container, make_command(env, "defconfig"), workdir=root)
             if self._recipe.fragments:
                 frags = " ".join(f"{_MOUNT}/{f}" for f in self._recipe.fragments)
@@ -86,6 +95,13 @@ class BuildStage:
             if self._chown_to is not None and ctx.host.storage_mode != "volume":
                 uid, gid = self._chown_to
                 self._c.exec(container, f"chown -R {uid}:{gid} {VOLUME_MOUNT}/{label}", workdir=root)
+            release_text = self._c.exec(container, f"sed -n '1,6p' {root}/Makefile", workdir=root).output
+            kernel_release = parse_kernel_release(release_text)
+            export_dir = self._workspace / "artifacts" / label
+            export_dir.mkdir(parents=True, exist_ok=True)
+            config_host = export_dir / "config"
+            config_text = self._c.exec(container, f"cat {root}/.config", workdir=root).output
+            config_host.write_text(config_text)
         finally:
             self._c.stop(container)
         ctx.vmlinux = Path(loc.vmlinux_in_tree)
@@ -98,6 +114,7 @@ class BuildStage:
                 key=self._recipe.key,
                 version=self._recipe.version,
                 arch=self._recipe.arch,
+                kernel_release=kernel_release,
                 storage_mode=ctx.host.storage_mode,
                 inputs=self._recipe.cache_inputs(),
                 paths={
@@ -108,6 +125,7 @@ class BuildStage:
                     "gdb_mount_source": loc.gdb_mount_source,
                     "gdb_mount_type": loc.gdb_mount_type,
                     "gdb_vmlinux": loc.gdb_vmlinux,
+                    "config_host": str(config_host),
                 },
             ),
         )
