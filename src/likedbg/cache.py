@@ -18,12 +18,14 @@ from dataclasses import dataclass
 from dataclasses import field
 from pathlib import Path
 
+from likedbg.config import Arch
 from likedbg.config import Settings
 from likedbg.constants import BASE_IMAGE
 from likedbg.constants import KERNEL_VOLUME
 from likedbg.constants import VOLUME_MOUNT
 from likedbg.container_service import ContainerService
 from likedbg.errors import CacheError
+from likedbg.input_hash import hash_tree
 from likedbg.toolchain import resolve_toolchain
 
 _SLUG_RE = re.compile(r"[^a-z0-9._-]+")
@@ -54,6 +56,7 @@ class BuildRecipe:
     make_vars: tuple[tuple[str, str], ...]
     frag_hashes: tuple[tuple[str, str], ...]
     fragments: tuple[str, ...]
+    patch_hashes: tuple[tuple[str, str], ...] = ()
     kernel_tag: str = ""
 
     def env(self) -> dict[str, str]:
@@ -67,6 +70,7 @@ class BuildRecipe:
             "kernel_tag": self.kernel_tag,
         }
         inputs.update({f"frag:{name}": h for name, h in self.frag_hashes})
+        inputs.update({f"patch:{name}": h for name, h in self.patch_hashes})
         return inputs
 
     @property
@@ -101,25 +105,35 @@ class RootfsRecipe:
         return f"rootfs-{slug(self.arch)}-{slug(self.distribution)}-{short_hash(self.key)}"
 
 
-def build_recipe(settings: Settings, *, version: str, workspace: Path, fragments: list[str]) -> BuildRecipe:
-    tc = resolve_toolchain(settings.kernel_builder.compiler, settings.general.arch)
+def build_recipe(
+    settings: Settings,
+    *,
+    version: str,
+    arch: Arch,
+    workspace: Path,
+    fragments: list[str],
+    patch_dirs: tuple[str, ...] = (),
+) -> BuildRecipe:
+    tc = resolve_toolchain(settings.build.compiler, arch)
     frag_hashes = sorted((rel, hashlib.sha256((workspace / rel).read_bytes()).hexdigest()) for rel in fragments)
+    patch_hashes = tuple((rel, hash_tree(workspace / rel).aggregate) for rel in patch_dirs)
     return BuildRecipe(
         version=version,
-        arch=settings.general.arch,
-        compiler=settings.kernel_builder.compiler,
+        arch=arch,
+        compiler=settings.build.compiler,
         make_vars=tuple(sorted(tc.make_vars.items())),
         frag_hashes=tuple(frag_hashes),
         fragments=tuple(fragments),
-        kernel_tag=settings.general.kernel_tag,
+        patch_hashes=patch_hashes,
+        kernel_tag=settings.build.label_suffix,
     )
 
 
-def rootfs_recipe(settings: Settings, *, workspace: Path | None = None) -> RootfsRecipe:
+def rootfs_recipe(settings: Settings, *, arch: Arch | None = None, workspace: Path | None = None) -> RootfsRecipe:
     script = workspace / _ROOTFS_SCRIPT if workspace is not None else None
     script_sha = hashlib.sha256(script.read_bytes()).hexdigest() if script is not None and script.exists() else ""
     return RootfsRecipe(
-        arch=settings.general.arch,
+        arch=arch or settings.general.arch,
         distribution=settings.rootfs.distribution,
         hostname=settings.rootfs.hostname,
         script_sha=script_sha,
@@ -133,7 +147,8 @@ class Manifest:
     key: str
     version: str
     arch: str
-    storage_mode: str
+    kernel_release: str = ""
+    storage_mode: str = ""
     inputs: dict[str, str] = field(default_factory=dict)
     paths: dict[str, str] = field(default_factory=dict)
     created_at: str = ""
