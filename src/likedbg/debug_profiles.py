@@ -16,6 +16,7 @@ from pydantic import ConfigDict
 from pydantic import Field
 from pydantic import ValidationError
 
+from likedbg.config import _FRAGMENTS_PREFIX
 from likedbg.config import LAYER_CLI
 from likedbg.config import LAYER_LOCAL
 from likedbg.config import LAYER_PROFILE
@@ -23,6 +24,7 @@ from likedbg.config import LAYER_SCENARIO
 from likedbg.config import ConfigResolution
 from likedbg.config import DebuggeeCfg
 from likedbg.config import Settings
+from likedbg.config import _reject_unsafe_path
 from likedbg.errors import ConfigError
 from likedbg.host_profile import HostProfile
 
@@ -108,6 +110,13 @@ def load_profiles(workspace: Path) -> dict[str, ProfileDef]:
                 f"invalid profile {path.name}: {exc.errors()[0]['msg']}",
                 remedy=f"fix {path}",
             ) from exc
+        for frag in pdef.fragments:
+            _reject_unsafe_path(frag)
+            if not frag.startswith(_FRAGMENTS_PREFIX):
+                raise ConfigError(
+                    f"profile {path.stem!r}: fragment {frag!r} must be under '{_FRAGMENTS_PREFIX}'",
+                    remedy=f"place fragment files under {_FRAGMENTS_PREFIX}",
+                )
         if pdef.name != path.stem:
             raise ConfigError(
                 f"profile filename/name mismatch: {path.name} declares name={pdef.name!r}",

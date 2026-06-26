@@ -14,8 +14,27 @@ from typing import Literal
 from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import ValidationError
+from pydantic import field_validator
 
 from likedbg.errors import ConfigError
+
+_FRAGMENTS_PREFIX = "configs/fragments/"
+
+
+def _reject_unsafe_path(p: str) -> None:
+    """Raise ConfigError if p is absolute or contains '..' traversal."""
+    pp = Path(p)
+    if pp.is_absolute():
+        raise ConfigError(
+            f"unsafe path {p!r}: absolute paths are not allowed",
+            remedy="use a workspace-relative path (e.g. 'patches/my-fix')",
+        )
+    if ".." in pp.parts:
+        raise ConfigError(
+            f"unsafe path {p!r}: '..' traversal is not allowed",
+            remedy="use a forward-only relative path",
+        )
+
 
 Arch = Literal["x86_64", "arm64"]
 RequestedArch = Literal["native", "x86_64", "arm64"]
@@ -53,6 +72,26 @@ class BuildCfg(_Base):
     patch_dirs: tuple[str, ...] = ()
     custom_modules: tuple[str, ...] = ()  # B1: validated schema slot only; built in B6.
     extra_fragments: tuple[str, ...] = ()
+
+    @field_validator("patch_dirs", "custom_modules", mode="before")
+    @classmethod
+    def _validate_workspace_relative(cls, v: object) -> object:
+        for p in (v if isinstance(v, (list, tuple)) else ()):
+            _reject_unsafe_path(str(p))
+        return v
+
+    @field_validator("extra_fragments", mode="before")
+    @classmethod
+    def _validate_fragments(cls, v: object) -> object:
+        for p in (v if isinstance(v, (list, tuple)) else ()):
+            s = str(p)
+            _reject_unsafe_path(s)
+            if not s.startswith(_FRAGMENTS_PREFIX):
+                raise ConfigError(
+                    f"extra_fragments path {s!r} must be under '{_FRAGMENTS_PREFIX}'",
+                    remedy=f"place fragment files under {_FRAGMENTS_PREFIX}",
+                )
+        return v
 
 
 class RootfsCfg(_Base):

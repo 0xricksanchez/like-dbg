@@ -873,3 +873,166 @@ def test_explain_config_json_schema_version(tmp_path: Path, monkeypatch) -> None
     monkeypatch.chdir(tmp_path)
     data = json.loads(cli.explain_config(tmp_path, profile_arg="exploit-dev", scenario=None, fmt="json"))
     assert data["schema_version"] == 1
+
+
+# ---------------------------------------------------------------------------
+# FIX 1: patch_dirs wiring through build_pipeline
+# ---------------------------------------------------------------------------
+
+
+def test_build_pipeline_threads_patch_dirs_to_build_stage(tmp_path):
+    """BuildStage inside the built pipeline must receive the patch_dirs passed to build_pipeline."""
+    settings = Settings.model_validate({"general": {"arch": "arm64"}})
+    br = build_recipe(settings, version="6.6.30", arch="arm64", workspace=tmp_path, fragments=[])
+    rr = rootfs_recipe(settings)
+    session = _FakeSession()
+    patch_dirs = ("patches/uaf", "patches/heap")
+    pipe = build_pipeline(
+        ContainerService(SimpleNamespace()),
+        session,  # type: ignore[arg-type]
+        host=_host("volume"),
+        workspace=tmp_path,
+        kernel_volume="likedbg_ksrc",
+        dl_dir=tmp_path / "kernels",
+        debugger_image="like_debugger:latest",
+        debuggee_image="like_debuggee:latest",
+        ext="gef",
+        build_recipe=br,
+        rootfs_recipe=rr,
+        patch_dirs=patch_dirs,
+        recorder=None,
+    )
+    build_stage = next(s for s in pipe._stages if s.name == "build")  # type: ignore[attr-defined]
+    assert build_stage._patch_dirs == patch_dirs  # type: ignore[attr-defined]
+
+
+def test_build_pipeline_defaults_patch_dirs_to_empty(tmp_path):
+    """build_pipeline without patch_dirs defaults to ()."""
+    settings = Settings.model_validate({"general": {"arch": "arm64"}})
+    br = build_recipe(settings, version="6.6.30", arch="arm64", workspace=tmp_path, fragments=[])
+    rr = rootfs_recipe(settings)
+    session = _FakeSession()
+    pipe = build_pipeline(
+        ContainerService(SimpleNamespace()),
+        session,  # type: ignore[arg-type]
+        host=_host("volume"),
+        workspace=tmp_path,
+        kernel_volume="likedbg_ksrc",
+        dl_dir=tmp_path / "kernels",
+        debugger_image="like_debugger:latest",
+        debuggee_image="like_debuggee:latest",
+        ext="gef",
+        build_recipe=br,
+        rootfs_recipe=rr,
+        recorder=None,
+    )
+    build_stage = next(s for s in pipe._stages if s.name == "build")  # type: ignore[attr-defined]
+    assert build_stage._patch_dirs == ()  # type: ignore[attr-defined]
+
+
+# ---------------------------------------------------------------------------
+# FIX 3: --use --profile threading through cmd_use
+# ---------------------------------------------------------------------------
+
+
+def _make_cmd_use_with_profile_project(tmp_path: Path) -> None:
+    """Minimal project with two profiles: exploit-dev (base) and hardened (base)."""
+    cfgs = tmp_path / "configs"
+    (cfgs / "profiles").mkdir(parents=True, exist_ok=True)
+    (cfgs / "fragments").mkdir(parents=True, exist_ok=True)
+    (cfgs / "default.toml").write_text('[source]\nkind="mmp"\nvalue="6.6.30"\n[general]\narch="arm64"\n')
+    (cfgs / "profiles" / "exploit-dev.toml").write_text(
+        'name="exploit-dev"\nkind="base"\ndescription="d"\n'
+    )
+    (cfgs / "profiles" / "hardened.toml").write_text(
+        'name="hardened"\nkind="base"\ndescription="hardened"\n'
+    )
+
+
+def test_cmd_use_threads_profile_arg_into_resolve_for_run(tmp_path, monkeypatch):
+    """cmd_use with profile_arg="hardened" must resolve hardened, not the default exploit-dev."""
+    _make_cmd_use_with_profile_project(tmp_path)
+    resolved_profiles = []
+
+    original_resolve = cli.resolve_for_run
+
+    def capturing_resolve(workspace, *, profile_arg, scenario, cli_overrides):
+        result = original_resolve(workspace, profile_arg=profile_arg, scenario=scenario, cli_overrides=cli_overrides)
+        resolved_profiles.append(list(result[2].profiles.names))
+        return result
+
+    label = "linux-6.6.30-volume"
+    write_manifest(
+        tmp_path,
+        Manifest(
+            kind="build",
+            label=label,
+            key="k",
+            version="6.6.30",
+            arch="arm64",
+            storage_mode="volume",
+            paths={
+                "kernel_root": f"/ksrc/{label}",
+                "gdb_vmlinux": f"/ksrc/{label}/vmlinux",
+                "image_host": str(tmp_path / "artifacts" / label / "Image"),
+                "image_in_tree": f"/ksrc/{label}/arch/arm64/boot/Image",
+                "gdb_mount_source": "likedbg_ksrc",
+            },
+        ),
+    )
+    # Pre-build rootfs so cmd_use doesn't try to build it
+    settings = Settings.model_validate({"general": {"arch": "arm64"}})
+    rr = rootfs_recipe(settings)
+    rimg = tmp_path / "artifacts" / "rootfs" / f"{rr.label}.img"
+    rimg.parent.mkdir(parents=True, exist_ok=True)
+    rimg.write_bytes(b"img")
+    write_manifest(
+        tmp_path,
+        Manifest(
+            kind="rootfs",
+            label=rr.label,
+            key=rr.key,
+            version="",
+            arch="arm64",
+            storage_mode="volume",
+            paths={"image_host": str(rimg)},
+        ),
+    )
+
+    from likedbg.config import load_config as real_load_config
+
+    def fake_load_config(workspace, *, scenario=None, cli_overrides=None):
+        return real_load_config(workspace, scenario=scenario, cli_overrides=cli_overrides or {"general": {"arch": "arm64"}})
+
+    monkeypatch.setattr(cli, "resolve_for_run", capturing_resolve)
+    monkeypatch.setattr(cli, "load_config", fake_load_config)
+    monkeypatch.setattr(cli.HostProfile, "detect", staticmethod(lambda s, workspace: _host("volume")))
+    monkeypatch.setattr(cli, "_ensure_images", lambda container, workspace, *, specs: None)
+    monkeypatch.setattr(cli.logsetup, "add_run_logfile", lambda workspace, **kw: None)
+    monkeypatch.setattr(
+        cli.RunRecorder,
+        "start",
+        staticmethod(
+            lambda *, workspace, requested_settings, run_resolution, host, build_label, rootfs_label, profiles: _FakeRecorder(
+                workspace
+            )
+        ),
+    )
+
+    result = cli.cmd_use(
+        _FakeContainer(),
+        _FakeSession(),
+        tmp_path,
+        custom_ini=None,
+        label=label,
+        rootfs_label=None,
+        profile_arg="hardened",
+    )
+    assert result == 0
+    # The resolve call (which capturing_resolve intercepted) must have used "hardened"
+    assert any("hardened" in names for names in resolved_profiles), (
+        f"Expected 'hardened' in resolved profiles, got: {resolved_profiles}"
+    )
+    assert not any("exploit-dev" in names for names in resolved_profiles), (
+        f"exploit-dev must not appear when profile_arg='hardened'; got: {resolved_profiles}"
+    )

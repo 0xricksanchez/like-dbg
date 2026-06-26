@@ -2,6 +2,7 @@ import pytest
 from pydantic import ValidationError
 
 from likedbg.config import BuildCfg, DebuggerCfg, DebuggingCfg, GeneralCfg, Settings, SourceCfg
+from likedbg.errors import ConfigError
 
 
 def test_defaults_match_grill_decisions() -> None:
@@ -27,3 +28,62 @@ def test_unknown_key_is_rejected() -> None:
 def test_source_kind_constrained() -> None:
     with pytest.raises(ValidationError):
         SourceCfg(kind="branch", value="x")  # type: ignore[arg-type]
+
+
+# ---------------------------------------------------------------------------
+# FIX 2: path-traversal validation for BuildCfg
+# ---------------------------------------------------------------------------
+
+
+def test_build_cfg_rejects_absolute_patch_dir() -> None:
+    """Absolute path in patch_dirs must raise ConfigError."""
+    with pytest.raises(ConfigError, match="absolute"):
+        BuildCfg(patch_dirs=["/etc/passwd"])
+
+
+def test_build_cfg_rejects_dotdot_patch_dir() -> None:
+    """'..' traversal in patch_dirs must raise ConfigError."""
+    with pytest.raises(ConfigError, match=r"\.\.|traversal"):
+        BuildCfg(patch_dirs=["../evil"])
+
+
+def test_build_cfg_rejects_absolute_custom_module() -> None:
+    """Absolute path in custom_modules must raise ConfigError."""
+    with pytest.raises(ConfigError, match="absolute"):
+        BuildCfg(custom_modules=["/tmp/module"])
+
+
+def test_build_cfg_rejects_dotdot_custom_module() -> None:
+    """'..' traversal in custom_modules must raise ConfigError."""
+    with pytest.raises(ConfigError, match=r"\.\.|traversal"):
+        BuildCfg(custom_modules=["modules/../../../evil"])
+
+
+def test_build_cfg_rejects_absolute_extra_fragment() -> None:
+    """Absolute path in extra_fragments must raise ConfigError."""
+    with pytest.raises(ConfigError, match="absolute"):
+        BuildCfg(extra_fragments=["/configs/fragments/x.config"])
+
+
+def test_build_cfg_rejects_dotdot_extra_fragment() -> None:
+    """'..' traversal in extra_fragments must raise ConfigError."""
+    with pytest.raises(ConfigError, match=r"\.\.|traversal"):
+        BuildCfg(extra_fragments=["configs/fragments/../../evil.config"])
+
+
+def test_build_cfg_rejects_extra_fragment_outside_fragments_dir() -> None:
+    """extra_fragments outside 'configs/fragments/' must raise ConfigError."""
+    with pytest.raises(ConfigError, match="configs/fragments/"):
+        BuildCfg(extra_fragments=["configs/my-local.config"])
+
+
+def test_build_cfg_accepts_valid_paths() -> None:
+    """Valid relative paths must be accepted without error."""
+    b = BuildCfg(
+        patch_dirs=["patches/uaf", "patches/heap"],
+        custom_modules=["modules/my-exploit-mod"],
+        extra_fragments=["configs/fragments/local/hardened.config"],
+    )
+    assert b.patch_dirs == ("patches/uaf", "patches/heap")
+    assert b.custom_modules == ("modules/my-exploit-mod",)
+    assert b.extra_fragments == ("configs/fragments/local/hardened.config",)

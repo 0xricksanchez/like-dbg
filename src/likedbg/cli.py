@@ -113,7 +113,10 @@ def resolve_for_run(
 
 
 def _provenance_nested(prov: dict[tuple[str, str], str]) -> dict[str, dict[str, str]]:
-    """Convert flat provenance dict with (section, key) tuples to nested {section: {key: layer}}."""
+    """Convert flat provenance dict with (section, key) tuples to nested {section: {key: layer}}.
+
+    # NOTE: mirror of run_artifacts._provenance_json — import cycle prevents hoisting.
+    """
     out: dict[str, dict[str, str]] = {}
     for (section, key), layer in prov.items():
         out.setdefault(section, {})[key] = layer
@@ -199,6 +202,7 @@ def build_pipeline(
     ext: str,
     build_recipe: BuildRecipe,
     rootfs_recipe: RootfsRecipe,
+    patch_dirs: tuple[str, ...] = (),
     recorder: RunRecorder | None = None,
 ) -> Pipeline:
     base_pane = session.current_pane_id()
@@ -259,6 +263,7 @@ def build_pipeline(
                 workspace=workspace,
                 kernel_volume=kernel_volume,
                 chown_to=chown_to,
+                patch_dirs=patch_dirs,
             ),
             ProfileVerificationStage(container, workspace=workspace, kernel_volume=kernel_volume),
             RootfsStage(
@@ -352,6 +357,7 @@ def cmd_use(
     custom_ini: Path | None,
     label: str,
     rootfs_label: str | None,
+    profile_arg: str = "",
 ) -> int:
     if not cache.manifest_exists(workspace, "build", label):
         raise CacheError(f"no cached build labelled {label!r}", remedy="run `start_kgdb --list`")
@@ -361,7 +367,7 @@ def cmd_use(
     scenario = _scenario_path(workspace, str(custom_ini) if custom_ini is not None else "")
     cfg, host, rr = resolve_for_run(
         workspace,
-        profile_arg="",
+        profile_arg=profile_arg,
         scenario=scenario,
         cli_overrides={"general": {"arch": bm.arch}},
     )
@@ -630,6 +636,7 @@ def main(argv: list[str] | None = None) -> int:
                 custom_ini=Path(args.config) if args.config else None,
                 label=args.use,
                 rootfs_label=args.rootfs or None,
+                profile_arg=args.profile,
             )
         # Default run: full TOML flow with profile resolution.
         scenario = _scenario_path(workspace, args.config)
@@ -696,6 +703,7 @@ def main(argv: list[str] | None = None) -> int:
             ext=cfg.settings.debugger.ext,
             build_recipe=br,
             rootfs_recipe=rr_recipe,
+            patch_dirs=cfg.settings.build.patch_dirs,
             recorder=recorder,
         )
         pipeline.run(ctx)
