@@ -27,3 +27,6 @@ ctf/vmlinux
 ctf/initramfs
 ctf/pawn*
 artifacts/
+
+# SDD controller scratch (briefs, reports, review packages, ledger)
+.superpowers/
