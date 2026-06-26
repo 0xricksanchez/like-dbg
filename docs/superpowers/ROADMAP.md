@@ -11,6 +11,12 @@ can continue the rework with one prompt. `dev` represents the FULL rewrite and s
 
 ## Status (2026-06-26)
 
+**Latest: Sub-project B slices B1+B2 (Modern debugging UX) are DONE + LIVE-GATE PASSED + merged to `dev`** —
+TOML debug profiles + post-build `.config` verification, and per-run `artifacts/runs/<run-id>/` + tmux
+pane-transcript capture. Built via brainstorm→spec→grill→plan→subagent-driven-development (19 tasks + a test
+consolidation), opus final whole-branch review, and controller-driven live gates on the M5. See §D and
+`docs/superpowers/plans/2026-06-26-modern-debugging-ux-b1-b2-plan.md`. Next slice: **B3** (crash/oops detector).
+
 M1 Sub-project A (Foundation) is **complete** — §A, §B1, §B2, **and §B3 all merged to `dev`**.
 §B (Foundation completion) is fully done. Landed 2026-06-24: **§B3 — un-gate the
 bind/Linux runtime — DONE + LIVE-GATE PASSED on a real arm64 Ubuntu 26.04 VM for BOTH arches**
@@ -37,8 +43,8 @@ Post-B3 follow-ups landed on `dev`:
   `like_rootfs:latest` images are rejected before
   rebuilds. QEMU also passes `net.ifnames=0` so the guest NIC remains `eth0`.
 
-Next planned continuation: **Sub-project B — Modern debugging UX**. B1+B2 are implemented (2026-06-26);
-the next slice is **B3** (crash/oops detector). Full B roadmap below.
+Next planned continuation: **Sub-project B — Modern debugging UX**. B1+B2 are DONE + live-gated + merged to
+`dev` (2026-06-26); the next slice is **B3** (crash/oops detector). Full B roadmap below.
 See `docs/superpowers/specs/2026-06-25-modern-debugging-ux-b1-b2-design.md` for the B1+B2 spec.
 Don't re-derive history — read these:
 - Project state & decisions: the auto-loaded memory `project-like-dbg-revival.md`.
@@ -174,8 +180,14 @@ threading), not detection.
   cache and writes the rootfs manifest.
 
 ### D. Sub-project B: Modern debugging UX
-**B1+B2 implemented (2026-06-26).** Unit suite green. Controller-driven live gates are Task 20
-(not yet run). B3-B6 remain to be started.
+**B1+B2 DONE + LIVE-GATE PASSED + merged to `dev` (2026-06-26).** Full suite green (mypy/ruff clean). Live gate
+on the M5 (arm64/macOS/HVF, volume mode): default run booted, host-side profile verification, run-dir + pane
+transcripts captured, `created→launching→launched`. Plus a from-scratch **NO-CACHE smoke**: wiped Build Cache →
+kernel build 10m43s → fresh `.config` host-side verify clean (0 warnings) → rootfs build → boot → gdb at
+`start_kernel` with full symbols → `continue` → `LIKE-DBG login:` (debuggee transcript 31.7 KB). **The gate caught
++ fixed a CRLF bug**: tty-backed container `.config` reads return `\r\n`, which broke the anchored `^SYMBOL=y$`
+match in `verify_config` — a hard `=y` expectation (e.g. `--profile kasan` → `CONFIG_KASAN=y`) would have falsely
+raised `BuildError` and aborted boot (commit fixed + CRLF regression test). B3-B6 remain to be started.
 
 - **Plan:** `docs/superpowers/plans/2026-06-26-modern-debugging-ux-b1-b2-plan.md`
 - **Spec + grill decisions (§10):** `docs/superpowers/specs/2026-06-25-modern-debugging-ux-b1-b2-design.md`
