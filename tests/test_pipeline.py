@@ -11,6 +11,7 @@ def _ctx():
     host = HostProfile(
         os="linux",
         host_arch="x86_64",
+        target_arch="x86_64",
         accel="tcg",
         debuggee_mode="in-container",
         storage_mode="bind",

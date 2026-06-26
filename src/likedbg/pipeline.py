@@ -4,14 +4,20 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
+from dataclasses import field
 from pathlib import Path
+from typing import TYPE_CHECKING
 from typing import Protocol
 from typing import runtime_checkable
 
 from loguru import logger
 
+from likedbg.config import DebuggeeCfg
 from likedbg.config import Settings
 from likedbg.host_profile import HostProfile
+
+if TYPE_CHECKING:
+    from likedbg.debug_profiles import RunResolution
 
 
 @dataclass
@@ -26,6 +32,13 @@ class PipelineContext:
     kernel_image: Path | None = None
     build_label: str | None = None
     rootfs_label: str | None = None
+    # B1/B2 debug-profile fields (all optional, defaulted)
+    run_resolution: RunResolution | None = None
+    effective_debuggee: DebuggeeCfg | None = None
+    extra_boot_args: tuple[str, ...] = field(default_factory=tuple)
+    recorder: object | None = None  # TODO: type as RunRecorder once run_artifacts (Task 12) exists
+    kernel_release: str | None = None
+    config_host: Path | None = None
 
 
 @runtime_checkable
