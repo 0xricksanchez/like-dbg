@@ -12,6 +12,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 from pydantic import ConfigDict
+from pydantic import Field
 from pydantic import ValidationError
 
 from likedbg.errors import ConfigError
@@ -52,7 +53,7 @@ class ProfileWarning(_PBase):
 
 
 class _RuntimeDefaults(_PBase):
-    debuggee: dict[str, object] = {}
+    debuggee: dict[str, object] = Field(default_factory=dict)
 
 
 class ProfileDef(_PBase):

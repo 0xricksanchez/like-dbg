@@ -36,6 +36,7 @@ def test_unknown_field_rejected(tmp_path: Path) -> None:
 
 def test_parse_profile_names() -> None:
     assert parse_profile_names("kasan,lockdep") == ("kasan", "lockdep")
+    assert parse_profile_names("kasan,kasan,lockdep") == ("kasan", "lockdep")
     assert parse_profile_names(["exploit-dev"]) == ("exploit-dev",)
     with pytest.raises(ConfigError):
         parse_profile_names("")
