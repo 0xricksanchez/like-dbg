@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -816,3 +817,60 @@ def test_main_configures_stderr_always_but_logfile_only_for_runs(monkeypatch):
     assert cli.main(["--list"]) == 0
     assert calls["stderr"] == 1  # configure_stderr runs for every invocation
     assert calls["logfile"] == 0  # --list writes no run log file
+
+
+# ---------------------------------------------------------------------------
+# explain_config tests
+# ---------------------------------------------------------------------------
+
+
+def _make_explain_project(tmp_path: Path) -> None:
+    """Minimal project layout for explain_config tests."""
+    cfgs = tmp_path / "configs"
+    (cfgs / "fragments").mkdir(parents=True)
+    (cfgs / "profiles").mkdir(parents=True)
+    (cfgs / "default.toml").write_text('[source]\nkind="mmp"\nvalue="6.6.30"\n')
+    (cfgs / "fragments" / "generic.config").write_text("")
+    (cfgs / "profiles" / "exploit-dev.toml").write_text(
+        'name="exploit-dev"\n'
+        'kind="base"\n'
+        'description="d"\n'
+        'fragments=["configs/fragments/generic.config"]\n'
+    )
+
+
+def test_explain_config_json_no_run_dir(tmp_path: Path, monkeypatch) -> None:
+    _make_explain_project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    out = cli.explain_config(tmp_path, profile_arg="exploit-dev", scenario=None, fmt="json")
+    data = json.loads(out)
+    assert data["profiles"]["resolved"] == ["exploit-dev"]
+    assert data["target_arch"] in ("x86_64", "arm64")
+    assert not (tmp_path / "artifacts" / "runs").exists()
+
+
+def test_explain_config_marks_expectations_pending(tmp_path: Path, monkeypatch) -> None:
+    _make_explain_project(tmp_path)
+    (tmp_path / "configs" / "profiles" / "exploit-dev.toml").write_text(
+        'name="exploit-dev"\nkind="base"\ndescription="d"\n'
+        'fragments=["configs/fragments/generic.config"]\n'
+        '[[expect]]\nsymbol="CONFIG_GDB_SCRIPTS"\nvalue="y"\nseverity="soft"\n'
+    )
+    monkeypatch.chdir(tmp_path)
+    data = json.loads(cli.explain_config(tmp_path, profile_arg="exploit-dev", scenario=None, fmt="json"))
+    assert data["expected_config"][0]["status"] == "pending-build"
+
+
+def test_explain_config_text_returns_string(tmp_path: Path, monkeypatch) -> None:
+    _make_explain_project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    out = cli.explain_config(tmp_path, profile_arg="exploit-dev", scenario=None, fmt="text")
+    assert isinstance(out, str)
+    assert "exploit-dev" in out
+
+
+def test_explain_config_json_schema_version(tmp_path: Path, monkeypatch) -> None:
+    _make_explain_project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    data = json.loads(cli.explain_config(tmp_path, profile_arg="exploit-dev", scenario=None, fmt="json"))
+    assert data["schema_version"] == 1

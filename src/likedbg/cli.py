@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shlex
 import urllib.request
@@ -109,6 +110,80 @@ def resolve_for_run(
         logger.info(n)
     logger.info(f"resolved profiles: {', '.join(rr.profiles.names)}")
     return cfg, host, rr
+
+
+
+def _provenance_nested(prov: dict[tuple[str, str], str]) -> dict[str, dict[str, str]]:
+    """Convert flat provenance dict with (section, key) tuples to nested {section: {key: layer}}."""
+    out: dict[str, dict[str, str]] = {}
+    for (section, key), layer in prov.items():
+        out.setdefault(section, {})[key] = layer
+    return out
+
+
+def explain_config(
+    workspace: Path,
+    *,
+    profile_arg: str,
+    scenario: Path | None,
+    fmt: str,
+) -> str:
+    """Dry-run inspection: resolve profiles and render config summary without touching Docker/tmux/run-dirs."""
+    _cfg, _host, rr = resolve_for_run(
+        workspace, profile_arg=profile_arg, scenario=scenario, cli_overrides=None
+    )
+    eff = rr.effective_debuggee
+    payload: dict[str, object] = {
+        "target_arch": rr.target_arch,
+        "profiles": {
+            "requested": list(rr.profiles.names),
+            "base": rr.profiles.base,
+            "resolved": list(rr.profiles.names),
+            "implied_by": {k: list(v) for k, v in rr.implied_by.items()},
+        },
+        "fragments": list(rr.fragments),
+        "effective_debuggee": eff.model_dump(),
+        "provenance": _provenance_nested(rr.provenance),
+        "runtime_notes": list(rr.runtime_notes) + list(rr.runtime_overrides),
+        "warnings": list(rr.profile_warnings),
+        "extra_boot_args": list(rr.extra_boot_args),
+        "expected_config": [
+            {
+                "symbol": e.symbol,
+                "value": e.value,
+                "severity": e.severity,
+                "arch": list(e.arch) if e.arch is not None else None,
+                "kernel_min": e.kernel_min,
+                "kernel_max": e.kernel_max,
+                "status": "pending-build",
+            }
+            for e in rr.profiles.expected_config
+        ],
+    }
+    if fmt == "json":
+        return json.dumps({"schema_version": 1, **payload}, indent=2, sort_keys=True)
+    profiles_info = payload["profiles"]
+    assert isinstance(profiles_info, dict)
+    resolved = profiles_info["resolved"]
+    assert isinstance(resolved, list)
+    base = profiles_info["base"]
+    fragments = payload["fragments"]
+    assert isinstance(fragments, list)
+    warnings = payload["warnings"]
+    assert isinstance(warnings, list)
+    expected = payload["expected_config"]
+    assert isinstance(expected, list)
+    lines = [
+        f"target arch: {payload['target_arch']}",
+        f"profiles:    {', '.join(str(p) for p in resolved)} (base {base})",
+        "fragments:",
+        *[f"  {f}" for f in fragments],
+        "warnings:",
+        *(([f"  {w}" for w in warnings]) if warnings else ["  (none)"]),
+        "expected config (pending build):",
+        *[f"  {e['symbol']}={e['value']} [{e['severity']}]" for e in expected],
+    ]
+    return "\n".join(lines)
 
 
 def build_pipeline(
@@ -493,10 +568,21 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--rootfs", default="")
     parser.add_argument("--build-images", action="store_true")
     parser.add_argument("--restart-debuggee", action="store_true")
+    parser.add_argument(
+        "--explain-config", nargs="?", const="text", default=None, choices=["text", "json"]
+    )
     args = parser.parse_args(argv)
     logsetup.configure_stderr(verbose=args.verbose)
     try:
         workspace = Path.cwd()
+        if args.explain_config is not None:
+            print(explain_config(
+                workspace,
+                profile_arg=args.profile,
+                scenario=_scenario_path(workspace, args.config),
+                fmt=args.explain_config,
+            ))
+            return 0
         if args.restart_debuggee:
             if not os.getenv("TMUX"):
                 logger.error("Not running inside a TMUX session. Start tmux first.")
