@@ -100,7 +100,8 @@ class BuildStage:
             export_dir = self._workspace / "artifacts" / label
             export_dir.mkdir(parents=True, exist_ok=True)
             config_host = export_dir / "config"
-            config_text = self._c.exec(container, f"cat {root}/.config", workdir=root).output
+            # Strip CRLF from the tty-backed container read so the stored snapshot is clean LF.
+            config_text = self._c.exec(container, f"cat {root}/.config", workdir=root).output.replace("\r\n", "\n")
             config_host.write_text(config_text)
         finally:
             self._c.stop(container)

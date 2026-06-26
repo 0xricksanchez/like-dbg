@@ -27,6 +27,22 @@ def test_hard_fail() -> None:
     assert [e.symbol for e in v.missing_hard] == ["CONFIG_KASAN"]
 
 
+def test_crlf_config_is_normalized() -> None:
+    # Container reads of .config run over a pseudo-terminal (tty=True) and come back with \r\n;
+    # the anchored ^SYMBOL=value$ match must not be broken by the trailing \r (regression: the
+    # live gate saw false "unmet" soft warnings for CONFIG_DEBUG_INFO/CONFIG_GDB_SCRIPTS, and a
+    # hard =y expectation would have falsely raised BuildError).
+    cfg = "CONFIG_KASAN=y\r\nCONFIG_DEBUG_INFO=y\r\n# CONFIG_RANDOMIZE_BASE is not set\r\n"
+    res = _resolved(
+        Expect(symbol="CONFIG_KASAN", value="y", severity="hard"),
+        Expect(symbol="CONFIG_DEBUG_INFO", value="y", severity="soft"),
+        Expect(symbol="CONFIG_RANDOMIZE_BASE", value="n", severity="hard"),
+    )
+    v = verify_config(cfg, res, target_arch="x86_64", kernel_release="6.6.30")
+    assert not v.missing_hard and not v.missing_soft
+    assert {e.symbol for e in v.satisfied} == {"CONFIG_KASAN", "CONFIG_DEBUG_INFO", "CONFIG_RANDOMIZE_BASE"}
+
+
 def test_soft_warns_not_fails() -> None:
     res = _resolved(Expect(symbol="CONFIG_FRAME_POINTER", value="y", severity="soft"))
     v = verify_config("", res, target_arch="x86_64", kernel_release="6.6.30")

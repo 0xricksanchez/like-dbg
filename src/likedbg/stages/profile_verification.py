@@ -56,7 +56,8 @@ def read_built_config(manifest: Manifest, *, container: ContainerService | None,
             tty=True,
         )
     try:
-        text = container.exec(c, f"cat {root}/.config").output
+        # Strip CRLF from the tty-backed container read (clean LF for both the return value and backfill).
+        text = container.exec(c, f"cat {root}/.config").output.replace("\r\n", "\n")
         if manifest.kernel_release:
             release = manifest.kernel_release
         else:

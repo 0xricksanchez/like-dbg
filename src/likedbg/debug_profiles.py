@@ -186,6 +186,10 @@ def _expect_applies(e: Expect, *, target_arch: str, kernel_release: str | None) 
 def verify_config(
     config_text: str, resolved: ResolvedDebugProfiles, *, target_arch: str, kernel_release: str | None
 ) -> ProfileVerification:
+    # Normalise CRLF -> LF: container reads of .config run over a pseudo-terminal (tty=True)
+    # and come back with \r\n, which would break the anchored ``^SYMBOL=value$`` matches below
+    # (a false "unmet" for every =y/=m expectation, including hard ones).
+    config_text = config_text.replace("\r\n", "\n")
     satisfied: list[Expect] = []
     missing_hard: list[Expect] = []
     missing_soft: list[Expect] = []
