@@ -16,7 +16,15 @@ from pydantic import ConfigDict
 from pydantic import Field
 from pydantic import ValidationError
 
+from likedbg.config import LAYER_CLI
+from likedbg.config import LAYER_LOCAL
+from likedbg.config import LAYER_PROFILE
+from likedbg.config import LAYER_SCENARIO
+from likedbg.config import ConfigResolution
+from likedbg.config import DebuggeeCfg
+from likedbg.config import Settings
 from likedbg.errors import ConfigError
+from likedbg.host_profile import HostProfile
 
 _NAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 
@@ -188,4 +196,159 @@ def verify_config(
         missing_hard=tuple(missing_hard),
         missing_soft=tuple(missing_soft),
         warnings=tuple(warnings),
+    )
+
+
+_EXPLICIT_LAYERS: frozenset[str] = frozenset({LAYER_LOCAL, LAYER_SCENARIO, LAYER_CLI})
+# Runtime toggle → build symbol it requires to be enable-able.
+_TOGGLE_REQUIRES: dict[str, str] = {"kaslr": "CONFIG_RANDOMIZE_BASE"}
+
+
+@dataclass(frozen=True)
+class RunResolution:
+    requested_settings: Settings
+    provenance: dict[tuple[str, str], str]
+    target_arch: str
+    profiles: ResolvedDebugProfiles
+    fragments: tuple[str, ...]
+    effective_debuggee: DebuggeeCfg
+    runtime_defaults: dict[str, str]
+    runtime_overrides: tuple[str, ...]
+    extra_boot_args: tuple[str, ...]
+    profile_warnings: tuple[str, ...]
+    runtime_notes: tuple[str, ...]
+    implied_by: dict[str, tuple[str, ...]]
+
+
+def _expand(
+    profile_names: tuple[str, ...], registry: dict[str, ProfileDef]
+) -> tuple[list[str], str, dict[str, list[str]]]:
+    """Return (ordered resolved names, base, implied_by) — base first, implied add-ons, explicit add-ons."""
+    for n in profile_names:
+        if n not in registry:
+            choices = ", ".join(sorted(registry))
+            raise ConfigError(f"unknown debug profile {n!r}", remedy=f"choose one of {choices}")
+    requested_bases = [n for n in profile_names if registry[n].kind == "base"]
+    if len(requested_bases) > 1:
+        raise ConfigError(
+            f"multiple base profiles requested: {', '.join(requested_bases)}",
+            remedy="choose exactly one base profile (e.g. exploit-dev OR hardened)",
+        )
+    base = requested_bases[0] if requested_bases else "exploit-dev"
+    if base not in registry:
+        raise ConfigError(f"base profile {base!r} not found", remedy="add configs/profiles/exploit-dev.toml")
+    explicit_addons = [n for n in profile_names if registry[n].kind == "addon"]
+    implied_by: dict[str, list[str]] = {}
+    implied: list[str] = []
+    for n in explicit_addons:
+        for imp in registry[n].implies:
+            if registry[imp].kind != "addon":
+                continue
+            implied_by.setdefault(imp, []).append(n)
+            if imp not in implied and imp not in explicit_addons:
+                implied.append(imp)
+    ordered = [base, *implied, *[a for a in explicit_addons if a not in implied]]
+    # de-dupe preserving order
+    seen: dict[str, None] = {}
+    for n in ordered:
+        seen.setdefault(n, None)
+    return list(seen), base, implied_by
+
+
+def _selectors_match(
+    *,
+    arch: tuple[str, ...] | None = None,
+    accel: tuple[str, ...] | None = None,
+    host_os: tuple[str, ...] | None = None,
+    profiles: tuple[str, ...] | None = None,
+    active: set[str],
+    host: HostProfile,
+) -> bool:
+    if arch is not None and host.target_arch not in arch:
+        return False
+    if accel is not None and host.accel not in accel:
+        return False
+    if host_os is not None and host.os not in host_os:
+        return False
+    if profiles is not None and not set(profiles).issubset(active):
+        return False
+    return True
+
+
+def resolve_run(
+    *, profile_names: tuple[str, ...], config: ConfigResolution, host: HostProfile, workspace: Path
+) -> RunResolution:
+    registry = load_profiles(workspace)
+    ordered, base, implied_by_lists = _expand(profile_names, registry)
+    active = set(ordered)
+    defs = [registry[n] for n in ordered]
+
+    fragments = tuple(f for d in defs for f in d.fragments)
+    expectations = tuple(e for d in defs for e in d.expect)
+
+    # Profile runtime defaults (layer 4) — later profiles win on conflict.
+    runtime_defaults: dict[str, str] = {}
+    for d in defs:
+        for k, v in d.runtime_defaults.debuggee.items():
+            runtime_defaults[k] = "true" if v is True else "false" if v is False else str(v)
+
+    effective_debuggee, eff_prov = config.effective_debuggee(runtime_defaults)
+
+    warnings: list[str] = [
+        w.message
+        for d in defs
+        for w in d.warning
+        if _selectors_match(arch=w.arch, accel=w.accel, host_os=w.host_os, profiles=w.profiles,
+                            active=active, host=host)
+    ]
+
+    boot_args: list[str] = []
+    runtime_notes: list[str] = []
+    for d in defs:
+        for ba in d.boot_arg:
+            if ba.kernel_min is not None or ba.kernel_max is not None:
+                runtime_notes.append(
+                    "deferred version-gated boot arg "
+                    f"{ba.value!r} (B1 does not evaluate kernel_min/max)"
+                )
+                continue
+            if _selectors_match(arch=ba.arch, profiles=ba.profiles, active=active, host=host):
+                boot_args.append(ba.value)
+
+    # Compatibility: resolution-time contradictions (Q12).
+    overrides: list[str] = []
+    for toggle, symbol in _TOGGLE_REQUIRES.items():
+        wants_on = bool(getattr(effective_debuggee, toggle))
+        forbidden_hard = any(
+            e.symbol == symbol and e.value == "n" and e.severity == "hard"
+            and _expect_applies(e, target_arch=host.target_arch, kernel_release=None)
+            for e in expectations
+        )
+        prov = eff_prov.get(("debuggee", toggle))
+        explicit = prov in _EXPLICIT_LAYERS
+        if wants_on and forbidden_hard:
+            if explicit:
+                raise ConfigError(
+                    f"[debuggee] {toggle}=on is impossible: active profiles build {symbol} disabled",
+                    remedy="remove the explicit toggle, or switch to a base profile that builds it in (e.g. hardened)",
+                )
+        if not wants_on and prov == LAYER_PROFILE:
+            overrides.append(f"runtime override: {toggle} off → adds nokaslr (profile default was on)")
+
+    resolved = ResolvedDebugProfiles(
+        names=tuple(ordered), base=base, expected_config=expectations, future_breakpoint_groups=()
+    )
+    return RunResolution(
+        requested_settings=config.settings,
+        provenance=eff_prov,
+        target_arch=host.target_arch,
+        profiles=resolved,
+        fragments=fragments,
+        effective_debuggee=effective_debuggee,
+        runtime_defaults=runtime_defaults,
+        runtime_overrides=tuple(overrides),
+        extra_boot_args=tuple(boot_args),
+        profile_warnings=tuple(warnings),
+        runtime_notes=tuple(runtime_notes),
+        implied_by={k: tuple(v) for k, v in implied_by_lists.items()},
     )
