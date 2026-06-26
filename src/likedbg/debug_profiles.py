@@ -7,6 +7,7 @@ from __future__ import annotations
 import re
 import tomllib
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
@@ -108,3 +109,83 @@ def load_profiles(workspace: Path) -> dict[str, ProfileDef]:
             raise ConfigError(f"duplicate profile name {pdef.name!r}", remedy=f"remove the duplicate under {pdir}")
         registry[pdef.name] = pdef
     return registry
+
+
+@dataclass(frozen=True)
+class ResolvedDebugProfiles:
+    names: tuple[str, ...]
+    base: str
+    expected_config: tuple[Expect, ...]
+    future_breakpoint_groups: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class ProfileVerification:
+    satisfied: tuple[Expect, ...]
+    missing_hard: tuple[Expect, ...]
+    missing_soft: tuple[Expect, ...]
+    warnings: tuple[str, ...]
+
+
+def version_tuple(release: str) -> tuple[int, ...]:
+    nums: list[int] = []
+    for part in release.split("."):
+        m = re.match(r"\d+", part)
+        if not m:
+            break
+        nums.append(int(m.group()))
+    return tuple(nums)
+
+
+def parse_kernel_release(makefile_text: str) -> str:
+    fields = {"VERSION": "", "PATCHLEVEL": "", "SUBLEVEL": "", "EXTRAVERSION": ""}
+    for line in makefile_text.splitlines():
+        for key in fields:
+            m = re.match(rf"^{key}\s*=\s*(.*)$", line.strip())
+            if m:
+                fields[key] = m.group(1).strip()
+    base = ".".join(v for v in (fields["VERSION"], fields["PATCHLEVEL"], fields["SUBLEVEL"]) if v)
+    return base + fields["EXTRAVERSION"]
+
+
+def _config_has(config_text: str, symbol: str, value: str) -> bool:
+    if value == "n":
+        return f"# {symbol} is not set" in config_text or not re.search(rf"^{re.escape(symbol)}=", config_text, re.M)
+    return bool(re.search(rf"^{re.escape(symbol)}={value}$", config_text, re.M))
+
+
+def _expect_applies(e: Expect, *, target_arch: str, kernel_release: str | None) -> bool:
+    if e.arch is not None and target_arch not in e.arch:
+        return False
+    if kernel_release is not None:
+        kv = version_tuple(kernel_release)
+        if e.kernel_min is not None and kv < version_tuple(e.kernel_min):
+            return False
+        if e.kernel_max is not None and kv > version_tuple(e.kernel_max):
+            return False
+    return True
+
+
+def verify_config(
+    config_text: str, resolved: ResolvedDebugProfiles, *, target_arch: str, kernel_release: str | None
+) -> ProfileVerification:
+    satisfied: list[Expect] = []
+    missing_hard: list[Expect] = []
+    missing_soft: list[Expect] = []
+    warnings: list[str] = []
+    for e in resolved.expected_config:
+        if not _expect_applies(e, target_arch=target_arch, kernel_release=kernel_release):
+            continue
+        if _config_has(config_text, e.symbol, e.value):
+            satisfied.append(e)
+        elif e.severity == "hard":
+            missing_hard.append(e)
+        else:
+            missing_soft.append(e)
+            warnings.append(f"soft expectation unmet: {e.symbol} expected {e.value}")
+    return ProfileVerification(
+        satisfied=tuple(satisfied),
+        missing_hard=tuple(missing_hard),
+        missing_soft=tuple(missing_soft),
+        warnings=tuple(warnings),
+    )
