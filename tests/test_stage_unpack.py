@@ -36,6 +36,7 @@ def _ctx(storage_mode, tmp_path, *, label: str = _LABEL):
     host = HostProfile(
         os="darwin",
         host_arch="arm64",
+        target_arch="arm64",
         accel="hvf",
         debuggee_mode="native-host",
         storage_mode=storage_mode,
@@ -72,6 +73,7 @@ def test_archive_outside_workspace_raises_unpack_error(tmp_path):
     host = HostProfile(
         os="darwin",
         host_arch="arm64",
+        target_arch="arm64",
         accel="hvf",
         debuggee_mode="native-host",
         storage_mode="bind",

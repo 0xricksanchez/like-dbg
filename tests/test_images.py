@@ -55,6 +55,7 @@ def _host(mode):
     return HostProfile(
         os="darwin",
         host_arch="arm64",
+        target_arch="arm64",
         accel="tcg",
         debuggee_mode=mode,
         storage_mode="volume",

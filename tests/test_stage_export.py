@@ -44,6 +44,7 @@ def _ctx(storage: str, tmp_path: Path) -> PipelineContext:
     host = HostProfile(
         os="darwin",
         host_arch="arm64",
+        target_arch="arm64",
         accel="hvf",
         debuggee_mode="native-host",
         storage_mode=storage,

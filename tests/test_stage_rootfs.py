@@ -44,6 +44,7 @@ def _ctx(tmp_path):
     host = HostProfile(
         os="darwin",
         host_arch="arm64",
+        target_arch="arm64",
         accel="hvf",
         debuggee_mode="native-host",
         storage_mode="volume",

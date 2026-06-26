@@ -120,3 +120,37 @@ def test_network_host_on_mac_raises():
     s = Settings.model_validate({"general": {"arch": "arm64"}, "debuggee": {"network": "host"}})
     with pytest.raises(HostCapabilityError):
         HostProfile.detect(s, Path("/ws"), p)
+
+
+# ---------------------------------------------------------------------------
+# Relocated from src/tests/test_host_profile.py (Task 9 — arch resolution)
+# ---------------------------------------------------------------------------
+
+
+def _simple_probes(*, system: str, machine: str) -> Probes:
+    return Probes(
+        system=lambda: system,
+        machine=lambda: machine,
+        kvm_accessible=lambda: False,
+        hvf_supported=lambda: True,
+        native_qemu_present=lambda _a: True,
+        workspace_case_sensitive=lambda _p: True,
+    )
+
+
+def test_native_resolves_to_host_arch(tmp_path) -> None:
+    from likedbg.config import GeneralCfg
+
+    s = Settings(general=GeneralCfg(arch="native"))
+    hp = HostProfile.detect(s, tmp_path, _simple_probes(system="darwin", machine="arm64"))
+    assert hp.target_arch == "arm64"
+    assert hp.accel == "hvf" and hp.debuggee_mode == "native-host"
+
+
+def test_explicit_cross_arch_kept(tmp_path) -> None:
+    from likedbg.config import GeneralCfg
+
+    s = Settings(general=GeneralCfg(arch="x86_64"))
+    hp = HostProfile.detect(s, tmp_path, _simple_probes(system="darwin", machine="arm64"))
+    assert hp.target_arch == "x86_64"
+    assert hp.debuggee_mode == "in-container"

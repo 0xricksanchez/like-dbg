@@ -58,10 +58,11 @@ class FakeC(ContainerService):
 
 
 def _ctx(tmp_path: Path, arch: str = "arm64", compiler: str = "clang", storage: str = "volume") -> PipelineContext:
-    s = Settings.model_validate({"general": {"arch": arch}, "kernel_builder": {"compiler": compiler}})
+    s = Settings.model_validate({"general": {"arch": arch}, "build": {"compiler": compiler}})
     host = HostProfile(
         os="linux",
         host_arch="arm64",
+        target_arch="arm64",
         accel="kvm",
         debuggee_mode="in-container",
         storage_mode=storage,
@@ -294,3 +295,41 @@ def test_build_compiles_with_recipe_make_vars_then_writes_manifest(tmp_path):
     assert "ARCH=arm64" in allcmds and "LLVM=1" in allcmds  # from the recipe, not settings
     assert "make" in allcmds and "all" in allcmds
     assert manifest_exists(tmp_path, "build", label) is True
+
+
+# ---------------------------------------------------------------------------
+# Relocated from src/tests/test_kernel_builder.py (Task 9 — patch ordering)
+# ---------------------------------------------------------------------------
+from likedbg.cache import build_recipe as _build_recipe  # noqa: E402
+
+
+def test_patches_applied_in_order(tmp_path) -> None:
+    (tmp_path / "configs" / "fragments").mkdir(parents=True)
+    frag = "configs/fragments/generic.config"
+    (tmp_path / frag).write_text("CONFIG_X=y\n")
+    patches = tmp_path / "patches" / "uaf"
+    patches.mkdir(parents=True)
+    (patches / "0001-a.patch").write_text("p1")
+    (patches / "0002-b.patch").write_text("p2")
+    r = _build_recipe(
+        Settings.model_validate({}),
+        version="6.6.30",
+        arch="x86_64",
+        workspace=tmp_path,
+        fragments=[frag],
+        patch_dirs=("patches/uaf",),
+    )
+    c = _BuildFakeC()
+    ctx = _ctx(tmp_path, arch="arm64")
+    ctx.build_label = r.label
+    ctx.kernel_root = None
+    BuildStage(
+        c,
+        recipe=r,
+        kbuilder_image="like_kbuilder_x86_64:latest",
+        workspace=tmp_path,
+        kernel_volume="likedbg_ksrc",
+        patch_dirs=("patches/uaf",),
+    ).run(ctx)
+    patch_cmds = [cmd for cmd in c.execs if "patch -p1" in cmd or "git apply" in cmd]
+    assert len(patch_cmds) == 2  # one per patch file, sorted
