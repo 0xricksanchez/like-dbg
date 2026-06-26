@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from likedbg.config import LAYER_DEFAULT, LAYER_LOCAL, LAYER_PROFILE, load_config
+from likedbg.config import LAYER_CLI, LAYER_DEFAULT, LAYER_LOCAL, LAYER_PROFILE, LAYER_SCENARIO, load_config
 from likedbg.errors import ConfigError
 
 
@@ -59,3 +59,5 @@ def test_cli_override_and_scenario(tmp_path: Path) -> None:
     )
     assert cr.settings.general.arch == "x86_64"
     assert cr.settings.debugger.ext == "gef"
+    assert cr.provenance[("general", "arch")] == LAYER_SCENARIO
+    assert cr.provenance[("debugger", "ext")] == LAYER_CLI

@@ -1,7 +1,11 @@
-"""Typed configuration parsed from the two-tier INI files.
+"""Typed configuration models plus the INI and TOML config loaders.
 
-Precedence (lowest → highest): system.ini ◁ user.ini ◁ custom.ini ◁ overrides (CLI).
-Blank INI values are treated as "unset" so model defaults apply.
+Two loaders currently coexist (the INI loader is removed in a later task):
+- ``load_settings``: legacy two-tier INI loader. Precedence (lowest → highest):
+  system.ini ◁ user.ini ◁ custom.ini ◁ overrides (CLI). Blank INI values are
+  treated as "unset" so model defaults apply.
+- ``load_config``: the 6-layer TOML loader producing whole-Settings provenance
+  (built-in ◁ default ◁ profile ◁ local ◁ scenario ◁ cli).
 """
 
 from __future__ import annotations
@@ -218,13 +222,13 @@ class ConfigResolution:
 
     def effective_debuggee(self, profile_defaults: dict[str, str]) -> tuple[DebuggeeCfg, dict[tuple[str, str], str]]:
         """Re-merge [debuggee] with profile defaults spliced in at layer 4 (above default, below local)."""
+        # load_config always inserts LAYER_DEFAULT first, so the profile layer is
+        # guaranteed to splice in right above it (no fallback path needed).
         rebuilt: list[tuple[str, _Layer]] = []
         for name, layer in self._ordered_layers:
             rebuilt.append((name, layer))
             if name == LAYER_DEFAULT and profile_defaults:
                 rebuilt.append((LAYER_PROFILE, {"debuggee": dict(profile_defaults)}))
-        if profile_defaults and not any(n == LAYER_DEFAULT for n, _ in self._ordered_layers):
-            rebuilt.insert(0, (LAYER_PROFILE, {"debuggee": dict(profile_defaults)}))
         merged, prov = _merge(rebuilt)
         return _build_settings(merged).debuggee, prov
 
