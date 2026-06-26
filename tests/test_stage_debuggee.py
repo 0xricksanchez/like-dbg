@@ -7,16 +7,17 @@ from likedbg.stages.debuggee import DebuggeeStage
 
 
 def _ctx(mode):
+    arch = "arm64" if mode == "native-host" else "x86_64"
     host = HostProfile(
         os="darwin",
         host_arch="arm64",
+        target_arch=arch,
         accel="hvf" if mode == "native-host" else "tcg",
         debuggee_mode=mode,
         storage_mode="volume",
         gdbstub_addr="host.docker.internal",
         ssh_addr="host.docker.internal",
     )
-    arch = "arm64" if mode == "native-host" else "x86_64"
     ctx = PipelineContext(settings=Settings.model_validate({"general": {"arch": arch}}), host=host)
     ctx.kernel_image = Path("/ws/artifacts/x/Image")
     return ctx
@@ -46,6 +47,7 @@ def _linux_ctx(*, accel="tcg"):
     host = HostProfile(
         os="linux",
         host_arch="arm64",
+        target_arch="arm64",
         accel=accel,
         debuggee_mode="in-container",
         storage_mode="bind",
@@ -75,3 +77,54 @@ def test_linux_kvm_passes_device():
         _linux_ctx(accel="kvm")
     )
     assert "--device /dev/kvm" in launched["cmd"]
+
+
+class _Rec:
+    def __init__(self):
+        self.statuses = []
+        self.cmds = []
+
+    def set_status(self, s, *, message=None):
+        self.statuses.append(s)
+
+    def record_command(self, kind, *, shell, argv):
+        self.cmds.append((kind, argv))
+
+    def add_warning(self, *a, **k):
+        pass
+
+
+def test_debuggee_records_command_and_status():
+    launched = {}
+    stage = DebuggeeStage(launch=lambda cmd: launched.setdefault("cmd", cmd), debuggee_image="like_debuggee:latest")
+    rec = _Rec()
+    ctx = _ctx("native-host")
+    ctx.recorder = rec
+    stage.run(ctx)
+    assert len(rec.cmds) == 1
+    assert rec.cmds[0][0] == "qemu"
+    assert "launching" in rec.statuses
+
+
+def test_debuggee_records_launch_failed_on_exception():
+    def _raise(cmd):
+        raise RuntimeError("boom")
+
+    rec = _Rec()
+    stage = DebuggeeStage(launch=_raise, debuggee_image="like_debuggee:latest")
+    ctx = _ctx("native-host")
+    ctx.recorder = rec
+    try:
+        stage.run(ctx)
+    except RuntimeError:
+        pass
+    assert "launch-failed" in rec.statuses
+
+
+def test_debuggee_no_recorder_still_launches():
+    launched = {}
+    stage = DebuggeeStage(launch=lambda cmd: launched.setdefault("cmd", cmd), debuggee_image="like_debuggee:latest")
+    ctx = _ctx("native-host")
+    # recorder is None by default
+    stage.run(ctx)
+    assert "cmd" in launched

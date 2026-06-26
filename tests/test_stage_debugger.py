@@ -10,6 +10,7 @@ def _ctx():
     host = HostProfile(
         os="darwin",
         host_arch="arm64",
+        target_arch="arm64",
         accel="hvf",
         debuggee_mode="native-host",
         storage_mode="volume",
@@ -36,6 +37,7 @@ def test_debugger_threads_custom_gdb_port():
     host = HostProfile(
         os="linux",
         host_arch="arm64",
+        target_arch="arm64",
         accel="tcg",
         debuggee_mode="in-container",
         storage_mode="bind",
@@ -47,3 +49,46 @@ def test_debugger_threads_custom_gdb_port():
     ctx.vmlinux = Path("/ksrc/x/vmlinux")
     DebuggerStage(ext="gef", run_gdb=lambda args: captured.setdefault("args", args), breakpoint=None).run(ctx)
     assert "gef-remote localhost 4444" in " ".join(captured["args"])
+
+
+class _Rec:
+    def __init__(self):
+        self.statuses = []
+        self.cmds = []
+
+    def set_status(self, s, *, message=None):
+        self.statuses.append(s)
+
+    def record_command(self, kind, *, shell, argv):
+        self.cmds.append((kind, argv))
+
+    def add_warning(self, *a, **k):
+        pass
+
+
+def test_debugger_records_command_and_launched_status():
+    ran = {}
+    rec = _Rec()
+    stage = DebuggerStage(ext="gef", run_gdb=lambda args: ran.setdefault("args", args), breakpoint=None)
+    ctx = _ctx()
+    ctx.recorder = rec
+    stage.run(ctx)
+    assert len(rec.cmds) == 1
+    assert rec.cmds[0][0] == "gdb"
+    assert "launched" in rec.statuses
+
+
+def test_debugger_records_launch_failed_on_exception():
+    def _raise(args):
+        raise RuntimeError("boom")
+
+    rec = _Rec()
+    stage = DebuggerStage(ext="gef", run_gdb=_raise, breakpoint=None)
+    ctx = _ctx()
+    ctx.recorder = rec
+    try:
+        stage.run(ctx)
+    except RuntimeError:
+        pass
+    assert "launch-failed" in rec.statuses
+    assert "launched" not in rec.statuses

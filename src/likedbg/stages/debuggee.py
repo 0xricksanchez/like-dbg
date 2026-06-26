@@ -25,7 +25,15 @@ class DebuggeeStage:
     def run(self, ctx: PipelineContext) -> PipelineContext:
         if ctx.kernel_image is None:
             raise BuildError("no kernel image in context", remedy="run the Build/Export stages first")
-        argv = build_qemu_argv(ctx.settings, ctx.host, kernel_image=ctx.kernel_image, rootfs=ctx.rootfs_image)
+        eff = ctx.effective_debuggee or ctx.settings.debuggee
+        argv = build_qemu_argv(
+            eff,
+            ctx.host,
+            target_arch=ctx.host.target_arch,
+            kernel_image=ctx.kernel_image,
+            rootfs=ctx.rootfs_image,
+            extra_boot_args=ctx.extra_boot_args,
+        )
         if ctx.host.debuggee_mode == "in-container":
             # kernel Image read-only (QEMU only reads -kernel); rootfs disk read-write (QEMU's -drive).
             rw_mounts = [ctx.rootfs_image] if ctx.rootfs_image is not None else []
@@ -34,11 +42,19 @@ class DebuggeeStage:
                 image=self._debuggee_image,
                 ro_mounts=[ctx.kernel_image],
                 rw_mounts=rw_mounts,
-                gdbstub_port=ctx.settings.debuggee.gdb_port,
+                gdbstub_port=eff.gdb_port,
                 network_mode=ctx.host.network_mode,
                 kvm=ctx.host.accel == "kvm",
             )
         else:
             cmd = qemu_pane_command(argv)
-        self._launch(cmd)
+        if ctx.recorder is not None:
+            ctx.recorder.set_status("launching")  # type: ignore[attr-defined]
+            ctx.recorder.record_command("qemu", shell=cmd, argv=argv)  # type: ignore[attr-defined]
+        try:
+            self._launch(cmd)
+        except Exception:
+            if ctx.recorder is not None:
+                ctx.recorder.set_status("launch-failed", message="debuggee launch failed")  # type: ignore[attr-defined]
+            raise
         return ctx

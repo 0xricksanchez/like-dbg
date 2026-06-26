@@ -10,6 +10,7 @@ def _host(addr="host.docker.internal"):
     return HostProfile(
         os="darwin",
         host_arch="arm64",
+        target_arch="arm64",
         accel="hvf",
         debuggee_mode="native-host",
         storage_mode="volume",
