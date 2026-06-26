@@ -19,6 +19,7 @@ from likedbg.debug_profiles import ProfileVerification
 from likedbg.debug_profiles import ResolvedDebugProfiles
 from likedbg.debug_profiles import RunResolution
 from likedbg.host_profile import HostProfile
+from likedbg.input_hash import hash_file
 
 RunStatus = Literal["created", "profile-verification-failed", "launching", "launched", "launch-failed"]
 SCHEMA_VERSION = 1
@@ -39,7 +40,10 @@ def _point(link: Path, target: Path) -> None:
             link.unlink()
         link.symlink_to(target.name if link.parent == target.parent else target)
     except OSError:
-        link.write_text(str(target))
+        try:
+            link.write_text(str(target))
+        except OSError:
+            pass
 
 
 def _provenance_json(prov: dict[tuple[str, str], str]) -> dict[str, dict[str, str]]:
@@ -59,8 +63,6 @@ def _write_profiles_json(
         if src.is_file():
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(src, dest)
-            from likedbg.input_hash import hash_file
-
             sha = hash_file(src)
         return {"source": rel, "snapshot": f"{subdir}/{rel}", "sha256": sha}
 

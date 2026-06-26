@@ -29,8 +29,15 @@ def test_start_creates_layout_and_latest(tmp_path: Path) -> None:
     assert rec.run_dir.is_dir()
     run = json.loads((rec.run_dir / "run.json").read_text())
     assert run["status"] == "created" and run["schema_version"] == 1
+    assert [h["status"] for h in run["status_history"]] == ["created"]
     assert (rec.run_dir / "settings.requested.json").is_file()
     assert (rec.run_dir / "profiles.json").is_file()
+    effective = json.loads((rec.run_dir / "settings.effective.json").read_text())
+    assert "debuggee" in effective
+    assert isinstance(effective["_provenance"], dict)
+    assert effective["_provenance"] == {"debuggee": {"kaslr": "default"}}
+    host = json.loads((rec.run_dir / "host.json").read_text())
+    assert "target_arch" in host
     latest = tmp_path / "artifacts" / "runs" / "latest"
     assert latest.exists()  # symlink or text fallback
 
