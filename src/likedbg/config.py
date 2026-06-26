@@ -18,9 +18,10 @@ from pydantic import ValidationError
 from likedbg.errors import ConfigError
 
 Arch = Literal["x86_64", "arm64"]
+RequestedArch = Literal["native", "x86_64", "arm64"]
 Accel = Literal["auto", "kvm", "hvf", "tcg"]
 MacStorage = Literal["auto", "bind", "volume"]
-BuildMode = Literal["generic", "syzkaller", "custom", "config"]
+SourceKind = Literal["mmp", "tag", "commit"]
 Compiler = Literal["clang", "gcc"]
 Ext = Literal["gef", "pwndbg"]
 Network = Literal["auto", "host", "published"]
@@ -34,26 +35,24 @@ class _Base(BaseModel):
 
 
 class GeneralCfg(_Base):
-    arch: Arch = "x86_64"
-    kernel_tag: str = ""
+    arch: RequestedArch = "native"
     workspace_dir: str | None = None
     mac_storage: MacStorage = "auto"
 
 
-class KernelDlCfg(_Base):
-    mmp: str | None = None
-    tag: str | None = None
-    commit: str | None = None
+class SourceCfg(_Base):
+    kind: SourceKind = "mmp"
+    value: str = ""
 
 
-class KernelBuilderCfg(_Base):
+class BuildCfg(_Base):
     compiler: Compiler = "clang"
     toolchain: str = "auto"
-    mode: BuildMode = "generic"
     rust: bool = False
-    extra_args: str | None = None
-    patch_dir: str | None = None
-    custom_modules: str | None = None
+    label_suffix: str = ""
+    patch_dirs: tuple[str, ...] = ()
+    custom_modules: tuple[str, ...] = ()  # B1: validated schema slot only; built in B6.
+    extra_fragments: tuple[str, ...] = ()
 
 
 class RootfsCfg(_Base):
@@ -62,31 +61,41 @@ class RootfsCfg(_Base):
 
 
 class DebuggeeCfg(_Base):
-    memory: int = 1024
+    memory_mib: int = 1024
     smp: int = 1
-    kvm: bool = False
+    accel: Accel = "auto"
+    network: Network = "auto"
     gdb: bool = True
+    gdb_port: int = 1234
     kaslr: bool = False
     smep: bool = True
     smap: bool = True
     kpti: bool = True
     panic: str = "halt"
-    accel: Accel = "auto"
-    gdb_port: int = 1234
-    network: Network = "auto"
 
 
 class DebuggerCfg(_Base):
-    ext: Ext = "gef"
+    ext: Ext = "pwndbg"
+
+
+class DebuggingCfg(_Base):
+    profiles: tuple[str, ...] = ("exploit-dev",)
+
+
+class KernelDlCfg(_Base):
+    """Temporary stub; remove in Task 3/Task 14 when loader replaces INI."""
+
+    pass
 
 
 class Settings(_Base):
     general: GeneralCfg = GeneralCfg()
-    kernel_dl: KernelDlCfg = KernelDlCfg()
-    kernel_builder: KernelBuilderCfg = KernelBuilderCfg()
+    source: SourceCfg = SourceCfg()
+    build: BuildCfg = BuildCfg()
     rootfs: RootfsCfg = RootfsCfg()
     debuggee: DebuggeeCfg = DebuggeeCfg()
     debugger: DebuggerCfg = DebuggerCfg()
+    debugging: DebuggingCfg = DebuggingCfg()
 
 
 def _layer(into: dict[str, dict[str, str]], cfg: configparser.ConfigParser) -> None:
@@ -133,9 +142,10 @@ def load_settings(
 
     return Settings(
         general=cast(GeneralCfg, _build("general", GeneralCfg)),
-        kernel_dl=cast(KernelDlCfg, _build("kernel_dl", KernelDlCfg)),
-        kernel_builder=cast(KernelBuilderCfg, _build("kernel_builder", KernelBuilderCfg)),
+        source=cast(SourceCfg, _build("source", SourceCfg)),
+        build=cast(BuildCfg, _build("build", BuildCfg)),
         rootfs=cast(RootfsCfg, _build("rootfs", RootfsCfg)),
         debuggee=cast(DebuggeeCfg, _build("debuggee", DebuggeeCfg)),
         debugger=cast(DebuggerCfg, _build("debugger", DebuggerCfg)),
+        debugging=cast(DebuggingCfg, _build("debugging", DebuggingCfg)),
     )
