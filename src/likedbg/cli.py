@@ -292,7 +292,6 @@ def cmd_use(
         cli_overrides={"general": {"arch": bm.arch}},
     )
     use_settings = cfg.settings
-    logsetup.add_run_logfile(workspace)
     _ensure_images(container, workspace, specs=images.required_for_use(host))
     rr_recipe = make_rootfs_recipe(use_settings, arch=host.target_arch, workspace=workspace)
     rlabel = rootfs_label or rr_recipe.label
@@ -312,6 +311,7 @@ def cmd_use(
         rootfs_label=rlabel,
         profiles=rr.profiles,
     )
+    logsetup.add_run_logfile(workspace, path=recorder.likedbg_log)
     kernel_image_path = bm.paths["image_host"] if bm.storage_mode != "volume" else bm.paths["image_in_tree"]
     ctx = PipelineContext(
         settings=use_settings,

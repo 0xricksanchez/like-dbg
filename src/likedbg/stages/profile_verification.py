@@ -102,7 +102,7 @@ class ProfileVerificationStage:
             recorder.record_profile_verification(verification)  # type: ignore[attr-defined]
             recorder.record_kernel_paths(  # type: ignore[attr-defined]
                 config=manifest.paths.get("config_host", ""),
-                system_map=manifest.paths.get("system_map_host", ""),
+                system_map=f"{manifest.paths['kernel_root']}/System.map",
                 vmlinux=manifest.paths.get("gdb_vmlinux", ""),
                 image=manifest.paths.get("image_host", ""),
             )

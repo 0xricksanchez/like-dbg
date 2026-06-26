@@ -476,10 +476,11 @@ def test_cmd_use_builds_default_rootfs_when_manifest_is_missing(tmp_path, monkey
     assert cli.cmd_use(container, _FakeSession(), tmp_path, custom_ini=None, label=label, rootfs_label=None) == 0
     assert cache.manifest_exists(tmp_path, "rootfs", rr.label)
     assert target.read_bytes() == b"img"
-    # ProfileVerificationStage also calls run_detached (legacy fallback).
-    # The rootfs build call is the one with privileged=True.
-    privileged_runs = [r for r in container.rootfs_runs if r.get("privileged") is True]
-    assert privileged_runs, "expected at least one privileged container run (rootfs build)"
+    # ProfileVerificationStage also calls run_detached (legacy fallback, BASE_IMAGE).
+    # Assert privileged=True on the SPECIFIC rootfs-build run (image == ROOTFS_IMAGE).
+    rootfs_build_runs = [r for r in container.rootfs_runs if r["image"] == cli.ROOTFS_IMAGE]
+    assert len(rootfs_build_runs) == 1, "expected exactly one rootfs-build container run"
+    assert rootfs_build_runs[0]["privileged"] is True
 
 
 def test_cmd_use_ensures_images_after_host_detection(tmp_path, monkeypatch):
