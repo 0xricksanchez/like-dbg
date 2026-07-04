@@ -5,8 +5,9 @@ them (CONFIG_KALLSYMS); raw-hex frames are kept raw. No System.map (ADR-0007).
 A single fault prints an onset line (``BUG: kernel NULL pointer...`` /
 ``Unable to handle kernel...``) followed a few lines later by an ``Oops: ... [#1]``
 continuation line. Both belong to the same CrashEvent: a new event is only started
-when no event is currently open (an open event is closed by a blank line, which
-dmesg/console captures use to separate unrelated fault blocks).
+when no event is currently open, so the continuation line does not spawn a second
+event. Blank/timestamp-only lines are skipped without closing the open event, so
+gaps mid-dump never drop the fault PC or the remaining trace.
 """
 
 from __future__ import annotations
@@ -24,7 +25,11 @@ _X86_RIP = re.compile(r"^RIP:\s*[0-9a-fA-F]+:([A-Za-z_][\w.]*)\+0x([0-9a-fA-F]+)
 _X86_REG = re.compile(r"^(R[A-Z0-9]{2}|RIP|RSP|EFLAGS):")
 _ARM_PC = re.compile(r"^pc :\s*([A-Za-z_][\w.]*)\+0x([0-9a-fA-F]+)/0x[0-9a-fA-F]+")
 _ARM_REG = re.compile(r"^(pc|lr|sp|x\d+) :")
-_ADDR = re.compile(r"address:?\s*([0-9a-fA-Fx]+)")
+_ADDR = re.compile(r"address:?\s*(0x[0-9a-fA-F]+|[0-9a-fA-F]+)")
+# A non-symbolic trace frame still carries a hex address: bare/"0x" or an
+# old-style "[<ffffffff...>]" entry. Requires a run of hex so markers like
+# "<TASK>" (handled separately) never register as a frame.
+_RAW_FRAME_HEX = re.compile(r"0x[0-9a-fA-F]+|[0-9a-fA-F]{6,}")
 
 # Fault-onset markers -> (kind, fatal). Order matters: first match on a line wins.
 _ONSET: list[tuple[re.Pattern[str], str, bool]] = [
@@ -45,11 +50,20 @@ def _strip(line: str) -> str:
     return _TS.sub("", line).rstrip()
 
 
+def _is_raw_frame(body: str) -> bool:
+    """A non-symbolic trace line that is still clearly a frame (keeps raw hex)."""
+    if not body or body.startswith("<"):  # skip "<TASK>" / "</TASK>" markers
+        return False
+    return "+0x" in body or bool(_RAW_FRAME_HEX.search(body))
+
+
 def _frame(line: str) -> Frame | None:
     body = _strip(line).strip()
     m = _FRAME.match(body)
     if m:
         return Frame(raw=body, symbol=m.group(1), offset=int(m.group(2), 16), module=m.group(3))
+    if _is_raw_frame(body):
+        return Frame(raw=body, symbol=None, offset=None)
     return None
 
 
@@ -94,9 +108,8 @@ def parse_console(text: str, arch: str) -> list[CrashEvent]:
     for raw_line in lines:
         body = _strip(raw_line)
         if not body:
-            # Blank line terminates the currently open fault block, if any.
-            cur = None
-            in_trace = False
+            # Blank / timestamp-only line: skip it, but keep the open event and
+            # trace state so a mid-dump gap never drops the fault PC or trace.
             continue
         # Only start a new event when no fault is currently open: a continuation
         # line of an already-open fault (e.g. the "Oops: ... [#1]" line that
