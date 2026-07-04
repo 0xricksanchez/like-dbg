@@ -56,9 +56,22 @@ _Avoid_: challenge mode, ctf mode.
 The durable record of one attempted interactive Debugging session under `artifacts/runs/<run-id>/`.
 It includes requested/effective settings, Debug profile resolution, command records, logs/transcripts,
 kernel config snapshots, and status. Failed pre-boot verification still creates a Run artifact.
-The run status set is: `created` → `profile-verification-failed` | `launching` → `launched` |
-`launch-failed`. Crash/completion states belong to later B3/B5 work.
+The run status set is: `created` → `profile-verification-failed` | `launching` → `launched`
+[→ `crashed`] | `launch-failed`. `crashed` is set post-hoc by Crash intelligence when it detects a
+fatal fault (B3); run-completion/exit states belong to later B5 work.
 _Avoid_: using it for cache-management events such as `--adopt`, `--clean`, or image rebuilds.
+
+**Console log**:
+The byte-exact capture of the Debuggee's serial console for one run (`console.raw`), teed straight
+from QEMU into the Run artifact. Distinct from the operator-pane transcript: the Console log is pure
+guest serial output — the source of truth for crash parsing and a clean boot record.
+_Avoid_: serial dump; pane transcript (that is the tmux operator-pane capture, a separate thing).
+
+**Crash report**:
+The durable, symbolized record of a Debuggee fault within a Run artifact (`crash.json` + `crash.md`),
+built from the Console log and enriched by the Debugger's live state when it halted at the fault. One
+report may hold several crash events; the first fatal one is primary.
+_Avoid_: crash dump, oops log, core dump.
 
 **Effective settings**:
 The runtime Debuggee toggles LIKE-DBG actually uses after the 6-layer precedence merge — built-in <
