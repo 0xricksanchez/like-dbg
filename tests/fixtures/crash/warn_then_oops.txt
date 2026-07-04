@@ -1,0 +1,14 @@
+[   30.000000] ------------[ cut here ]------------
+[   30.000002] WARNING: CPU: 0 PID: 1 at kernel/foo.c:1 some_func+0x1/0x2
+[   30.000010] Call Trace:
+[   30.000011]  some_func+0x1/0x2
+[   30.000013]  other_func+0x10/0x20
+[   30.000020] ---[ end trace 0000000000000000 ]---
+[   30.100000] BUG: kernel NULL pointer dereference, address: 0000000000000000
+[   30.100002] #PF: supervisor read access in kernel mode
+[   30.100004] Oops: 0000 [#1] PREEMPT SMP NOPTI
+[   30.100006] RIP: 0010:vuln_read+0x1a/0x40
+[   30.100008] Call Trace:
+[   30.100009]  <TASK>
+[   30.100010]  vuln_ioctl+0x33/0x60
+[   30.100012]  do_syscall_64+0x5c/0x90

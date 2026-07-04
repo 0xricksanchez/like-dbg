@@ -51,9 +51,13 @@ def analyze_run(run_dir: Path) -> CrashReport | None:
     gdb_path = run_dir / "crash" / "crash.gdb.json"
     if gdb_path.is_file():
         try:
-            events = merge_gdb_live(events, json.loads(gdb_path.read_text()))
+            loaded = json.loads(gdb_path.read_text())
         except json.JSONDecodeError:
-            pass
+            loaded = None
+        # Only merge a JSON object; a valid-but-scalar file (e.g. `42`, `"x"`)
+        # would make merge_gdb_live's membership test raise TypeError.
+        if isinstance(loaded, dict):
+            events = merge_gdb_live(events, loaded)
 
     primary = _primary_index(events)
     report = CrashReport(

@@ -8,6 +8,13 @@ continuation line. Both belong to the same CrashEvent: a new event is only start
 when no event is currently open, so the continuation line does not spawn a second
 event. Blank/timestamp-only lines are skipped without closing the open event, so
 gaps mid-dump never drop the fault PC or the remaining trace.
+
+An event is closed by an explicit end-marker (``---[ end trace``, ``---[ end Kernel
+panic``, a KASAN ``====`` closing banner, or a ``Rebooting in `` line). Closing the
+event lets a genuinely NEW fault open a fresh one — e.g. a benign ``WARNING`` block
+that precedes the real ``BUG:`` fault is kept as its own non-fatal event instead of
+swallowing the fatal crash. Only these explicit markers close an event; blank lines
+never do.
 """
 
 from __future__ import annotations
@@ -50,6 +57,20 @@ _KASAN_ACCESS = re.compile(r"(Read|Write) of size (\d+) at addr ([0-9a-fA-F]+)")
 # "Kernel Offset:" (disabled/KASLR) and "---[ end Kernel panic" are standard
 # COMPLETION boilerplate on a finished x86 panic/oops, not truncation.
 _REBOOT = re.compile(r"Rebooting in ")
+# Event end-markers: closing an event lets the next fault-onset open a fresh one.
+_END_MARKERS = ("---[ end trace", "---[ end Kernel panic")
+
+
+def _is_terminator(body: str) -> bool:
+    """True on an event end-marker: an ``---[ end ...`` banner, a KASAN ``====``
+    closing banner (all-``=``), or a ``Rebooting in `` line. The opening KASAN/UBSAN
+    ``====`` banner is also all-``=``, but it is seen while no event is open, so its
+    reset is a harmless no-op."""
+    if body.startswith(_END_MARKERS):
+        return True
+    if set(body) == {"="}:
+        return True
+    return bool(_REBOOT.search(body))
 
 
 def normalize(text: str) -> str:
@@ -166,6 +187,12 @@ def parse_console(text: str, arch: str) -> list[CrashEvent]:
                 fr = _frame(body)
                 if fr is not None:
                     cur.trace.append(fr)
+        # Close the event on an end-marker so the next fault-onset opens a fresh
+        # one. Any reboot-driven incomplete flag was already set above, before this
+        # reset. Blank lines never terminate (that was a prior bug).
+        if _is_terminator(body):
+            cur = None
+            in_trace = False
     for ev in events:
         # A KASAN report always ends with a "====" banner line; its absence means
         # the capture was cut off before the report finished printing.

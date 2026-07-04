@@ -8,6 +8,8 @@ import pytest
 from likedbg.crash.analyze import analyze_run
 from likedbg.errors import CrashError
 
+FIX = Path(__file__).parent / "fixtures" / "crash"
+
 
 def _mkrun(tmp_path: Path, console: str, *, gdb: dict | None = None, arch: str = "x86_64") -> Path:
     run = tmp_path / "runs" / "r1"
@@ -58,9 +60,34 @@ def test_analyze_warn_only_records_event_without_flipping_status(tmp_path):
     assert rj["crash"]["fatal"] is False
 
 
+def test_analyze_warn_then_oops_flips_status_and_picks_oops(tmp_path):
+    # A benign WARNING precedes the real fatal oops. The oops (not the warn) must
+    # be primary: status flips to crashed and primary_class is the fatal oops.
+    console = (FIX / "warn_then_oops.txt").read_bytes().decode()
+    run = _mkrun(tmp_path, console)
+    rep = analyze_run(run)
+    assert rep is not None and len(rep.events) == 2
+    rj = json.loads((run / "run.json").read_text())
+    assert rj["status"] == "crashed"
+    assert rj["crash"]["primary_class"] == "oops"
+    assert rj["crash"]["fatal"] is True
+
+
 def test_analyze_tolerates_malformed_gdb_json(tmp_path):
     run = _mkrun(tmp_path, PANIC)
     (run / "crash" / "crash.gdb.json").write_text("{not valid json")
+    rep = analyze_run(run)
+    assert rep is not None
+    assert rep.primary is not None
+    assert rep.events[rep.primary].gdb_live is None
+    assert (run / "crash.json").is_file()
+
+
+def test_analyze_tolerates_scalar_gdb_json(tmp_path):
+    # crash.gdb.json is valid JSON but a scalar, not an object: the merge must be
+    # skipped (not raise) and the report stays console-only.
+    run = _mkrun(tmp_path, PANIC)
+    (run / "crash" / "crash.gdb.json").write_text(json.dumps(42))
     rep = analyze_run(run)
     assert rep is not None
     assert rep.primary is not None

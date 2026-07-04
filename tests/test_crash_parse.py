@@ -153,3 +153,15 @@ def test_kernel_offset_complete_not_incomplete() -> None:
     ev = parse_console(_read("kernel_offset_complete.txt"), "x86_64")[0]
     assert ev.kind == "oops" and ev.fatal is True
     assert ev.incomplete is False
+
+
+def test_warn_then_oops_are_two_events() -> None:
+    # A benign WARNING block that ends in "---[ end trace ]---", THEN a real fatal
+    # oops. The end-marker must close the warn event so the BUG: onset opens a
+    # SECOND event; the fatal oops (not the warn) must be primary.
+    events = parse_console(_read("warn_then_oops.txt"), "x86_64")
+    assert len(events) == 2
+    assert events[0].kind == "warn" and events[0].fatal is False
+    assert events[1].kind == "oops" and events[1].fatal is True
+    assert events[1].fault_pc is not None and events[1].fault_pc.symbol == "vuln_read"
+    assert [f.symbol for f in events[1].trace] == ["vuln_ioctl", "do_syscall_64"]
