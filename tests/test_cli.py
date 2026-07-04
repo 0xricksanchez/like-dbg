@@ -219,6 +219,29 @@ def test_build_pipeline_includes_all_stage_names(tmp_path):
     ]
 
 
+def test_debuggee_stage_has_workspace(tmp_path):
+    settings = Settings.model_validate({"general": {"arch": "arm64"}})
+    br = build_recipe(settings, version="6.6.30", arch="arm64", workspace=tmp_path, fragments=[])
+    rr = rootfs_recipe(settings)
+    session = _FakeSession()
+    pipe = build_pipeline(
+        ContainerService(SimpleNamespace()),
+        session,  # type: ignore[arg-type]
+        host=_host("volume"),
+        workspace=tmp_path,
+        kernel_volume="likedbg_ksrc",
+        dl_dir=tmp_path / "kernels",
+        debugger_image="like_debugger:latest",
+        debuggee_image="like_debuggee:latest",
+        ext="gef",
+        build_recipe=br,
+        rootfs_recipe=rr,
+        recorder=None,
+    )
+    dbge = next(s for s in pipe._stages if s.name == "debuggee")  # type: ignore[attr-defined]
+    assert dbge._workspace == tmp_path  # type: ignore[attr-defined]
+
+
 def test_adopt_guard_rejects_bind():
     with pytest.raises(HostCapabilityError):
         _require_volume_for_adopt(_host("bind"))
