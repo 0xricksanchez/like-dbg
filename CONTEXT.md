@@ -73,6 +73,18 @@ built from the Console log and enriched by the Debugger's live state when it hal
 report may hold several crash events; the first fatal one is primary.
 _Avoid_: crash dump, oops log, core dump.
 
+**Guest share**:
+The 9p-backed live directory shared between the host and the running Debuggee — a persistent host
+`exploit/` dir mounted read-write at `/mnt/exploit`. Edits and the exploit's output are visible on both
+sides as they are written, so artifacts survive a kernel panic.
+_Avoid_: shared folder, 9p mount, virtfs.
+
+**Exploit run**:
+One `start_kgdb --run` against the live Debuggee: the exploit is delivered (in place via the Guest share,
+else copied over SSH), executed over SSH, its stdout/stderr and artifacts captured into the Run artifact,
+and a Crash report produced if it faults the kernel.
+_Avoid_: exploit session, payload run.
+
 **Effective settings**:
 The runtime Debuggee toggles LIKE-DBG actually uses after the 6-layer precedence merge — built-in <
 project default < profile runtime defaults < local < scenario < CLI. Held as
