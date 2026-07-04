@@ -112,3 +112,34 @@ def test_post_trace_tail_not_captured_as_frames() -> None:
     assert not any("end trace" in r for r in raws)
     assert not any("Modules linked in" in r for r in raws)
     assert not any(r.startswith(("RIP:", "RSP:")) for r in raws)
+
+
+def test_kasan_access_details() -> None:
+    ev = parse_console(_read("kasan_uaf.txt"), "x86_64")[0]
+    assert ev.kind == "kasan" and ev.fatal is True
+    assert ev.kasan is not None
+    assert ev.kasan.access == "read" and ev.kasan.size == 8
+    assert ev.kasan.bad_addr == "ffff88800a1b2c00"
+    assert "use-after-free" in ev.title
+    # The fixture includes realistic "Allocated by task…"/"Freed by task…"
+    # sub-sections. Those headers sit at column 0, so they end the main call
+    # trace (indentation-gating) and are never re-entered since neither header
+    # matches "Call Trace:"; ev.trace therefore holds only the main frames.
+    assert [f.symbol for f in ev.trace] == ["kfree_test", "vuln_ioctl"]
+    assert ev.incomplete is False
+
+
+def test_ubsan_detected() -> None:
+    ev = parse_console(_read("ubsan.txt"), "x86_64")[0]
+    assert ev.kind == "ubsan" and ev.fatal is True
+    assert "array-index-out-of-bounds" in ev.title
+
+
+def test_warn_is_nonfatal() -> None:
+    ev = parse_console(_read("warn.txt"), "x86_64")[0]
+    assert ev.kind == "warn" and ev.fatal is False
+
+
+def test_truncated_flagged_incomplete() -> None:
+    ev = parse_console(_read("truncated.txt"), "x86_64")[0]
+    assert ev.incomplete is True

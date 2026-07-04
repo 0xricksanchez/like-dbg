@@ -16,6 +16,7 @@ import re
 
 from likedbg.crash.model import CrashEvent
 from likedbg.crash.model import Frame
+from likedbg.crash.model import KasanInfo
 
 # Strip the leading "[   12.345678] " dmesg timestamp so patterns match the message.
 _TS = re.compile(r"^\[\s*\d+\.\d+\]\s?")
@@ -38,7 +39,15 @@ _ONSET: list[tuple[re.Pattern[str], str, bool]] = [
     (re.compile(r"^BUG: kernel NULL pointer dereference"), "oops", True),
     (re.compile(r"^Unable to handle kernel"), "oops", True),
     (re.compile(r"^Oops:\s"), "oops", True),
+    (re.compile(r"^UBSAN:\s*(?P<msg>.*)"), "ubsan", True),
+    (re.compile(r"^WARNING: CPU:.*at .*\s(?P<msg>\S+\+0x[0-9a-fA-F]+/0x[0-9a-fA-F]+)"), "warn", False),
 ]
+
+# KASAN "Read/Write of size N at addr <hex>" access-detail line.
+_KASAN_ACCESS = re.compile(r"(Read|Write) of size (\d+) at addr ([0-9a-fA-F]+)")
+# Markers that show the capture ended mid-fault (reboot/panic-end banners), so
+# whatever trace/registers were captured so far may be incomplete.
+_REBOOT = re.compile(r"Rebooting in |Kernel Offset: |---\[ end Kernel panic")
 
 
 def normalize(text: str) -> str:
@@ -126,6 +135,12 @@ def parse_console(text: str, arch: str) -> list[CrashEvent]:
         if cur is None:
             continue
         cur.message_lines.append(body)
+        if cur.kind == "kasan":
+            km = _KASAN_ACCESS.search(body)
+            if km:
+                cur.kasan = KasanInfo(access=km.group(1).lower(), size=int(km.group(2)), bad_addr=km.group(3))
+        if _REBOOT.search(body):
+            cur.incomplete = True
         # Trace start markers.
         if body.startswith(("Call Trace:", "Call trace:")):
             in_trace = True
@@ -147,4 +162,9 @@ def parse_console(text: str, arch: str) -> list[CrashEvent]:
                 fr = _frame(body)
                 if fr is not None:
                     cur.trace.append(fr)
+    for ev in events:
+        # A KASAN report always ends with a "====" banner line; its absence means
+        # the capture was cut off before the report finished printing.
+        if ev.kind == "kasan" and not any(set(line) == {"="} for line in ev.message_lines[1:]):
+            ev.incomplete = True
     return events
