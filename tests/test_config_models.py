@@ -2,6 +2,8 @@ import pytest
 from pydantic import ValidationError
 
 from likedbg.config import BuildCfg
+from likedbg.config import DebuggeeCfg
+from likedbg.config import DebuggerCfg
 from likedbg.config import DebuggingCfg
 from likedbg.config import GeneralCfg
 from likedbg.config import Settings
@@ -91,3 +93,20 @@ def test_build_cfg_accepts_valid_paths() -> None:
     assert b.patch_dirs == ("patches/uaf", "patches/heap")
     assert b.custom_modules == ("modules/my-exploit-mod",)
     assert b.extra_fragments == ("configs/fragments/local/hardened.config",)
+
+
+# ---------------------------------------------------------------------------
+# Crash config defaults (Task 7)
+# ---------------------------------------------------------------------------
+
+
+def test_crash_config_defaults() -> None:
+    assert DebuggeeCfg().capture_console is True
+    dg = DebuggerCfg()
+    assert dg.break_on_crash is True
+    assert dg.crash_breakpoints == ("panic", "die", "oops_enter", "kasan_report", "ubsan_epilogue")
+
+
+def test_crash_breakpoints_overridable() -> None:
+    dg = DebuggerCfg(crash_breakpoints=["panic", "die"])
+    assert dg.crash_breakpoints == ("panic", "die")

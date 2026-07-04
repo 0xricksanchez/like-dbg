@@ -27,9 +27,12 @@ smep = true
 smap = true
 kpti = true
 panic = "halt"
+capture_console = true
 
 [debugger]
 ext = "pwndbg"
+break_on_crash = true
+crash_breakpoints = ["panic", "die", "oops_enter", "kasan_report", "ubsan_epilogue"]
 
 [debugging]
 profiles = ["exploit-dev"]
