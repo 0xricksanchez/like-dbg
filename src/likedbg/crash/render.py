@@ -6,13 +6,14 @@ from typing import Any
 
 from likedbg.crash.model import CrashEvent
 from likedbg.crash.model import CrashReport
+from likedbg.crash.model import Frame
 
 
 def render_json(report: CrashReport) -> dict[str, Any]:
     return report.to_dict()
 
 
-def _frame_line(f: Any) -> str:
+def _frame_line(f: Frame) -> str:
     loc = f" ({f.file}:{f.line})" if f.file else ""
     mod = f" [{f.module}]" if f.module else ""
     return f"`{f.raw}`{mod}{loc}"
