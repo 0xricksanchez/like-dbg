@@ -45,9 +45,11 @@ _ONSET: list[tuple[re.Pattern[str], str, bool]] = [
 
 # KASAN "Read/Write of size N at addr <hex>" access-detail line.
 _KASAN_ACCESS = re.compile(r"(Read|Write) of size (\d+) at addr ([0-9a-fA-F]+)")
-# Markers that show the capture ended mid-fault (reboot/panic-end banners), so
-# whatever trace/registers were captured so far may be incomplete.
-_REBOOT = re.compile(r"Rebooting in |Kernel Offset: |---\[ end Kernel panic")
+# A reboot banner means the capture ended mid-fault, so whatever trace/registers
+# were captured so far may be incomplete. Only "Rebooting in " qualifies:
+# "Kernel Offset:" (disabled/KASLR) and "---[ end Kernel panic" are standard
+# COMPLETION boilerplate on a finished x86 panic/oops, not truncation.
+_REBOOT = re.compile(r"Rebooting in ")
 
 
 def normalize(text: str) -> str:
@@ -135,7 +137,9 @@ def parse_console(text: str, arch: str) -> list[CrashEvent]:
         if cur is None:
             continue
         cur.message_lines.append(body)
-        if cur.kind == "kasan":
+        if cur.kind == "kasan" and cur.kasan is None:
+            # First match wins: a later "Read/Write of size N at addr .." line
+            # (e.g. inside an alloc/free stack) must not clobber the real access.
             km = _KASAN_ACCESS.search(body)
             if km:
                 cur.kasan = KasanInfo(access=km.group(1).lower(), size=int(km.group(2)), bad_addr=km.group(3))

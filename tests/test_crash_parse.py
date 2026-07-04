@@ -143,3 +143,13 @@ def test_warn_is_nonfatal() -> None:
 def test_truncated_flagged_incomplete() -> None:
     ev = parse_console(_read("truncated.txt"), "x86_64")[0]
     assert ev.incomplete is True
+
+
+def test_kernel_offset_complete_not_incomplete() -> None:
+    # A COMPLETE x86 oops: "Kernel Offset: disabled" is standard panic-tail
+    # boilerplate (prints under nokaslr, our default), NOT a truncation marker.
+    # Combined with a proper "---[ end trace ]---" closing marker, this event
+    # finished cleanly and must not be flagged incomplete.
+    ev = parse_console(_read("kernel_offset_complete.txt"), "x86_64")[0]
+    assert ev.kind == "oops" and ev.fatal is True
+    assert ev.incomplete is False
