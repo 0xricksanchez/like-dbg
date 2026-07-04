@@ -121,3 +121,13 @@ def test_recorder_accepts_crashed_status(tmp_path: Path) -> None:
     rec.set_status("crashed", message="oops")
     rj = json.loads((rec.run_dir / "run.json").read_text())
     assert rj["status"] == "crashed"
+
+
+def test_run_json_has_guest_block(tmp_path: Path) -> None:
+    rec = _start_recorder(tmp_path)
+    rj = json.loads((rec.run_dir / "run.json").read_text())
+    g = rj["guest"]
+    assert g["ssh_host"] == "127.0.0.1"
+    assert g["ssh_port"] == 2222
+    assert g["share_mount"] == "/mnt/exploit"
+    assert rec.run_dir.joinpath("exploit").is_dir()
