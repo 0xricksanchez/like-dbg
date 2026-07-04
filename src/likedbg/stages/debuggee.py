@@ -4,6 +4,7 @@ container (x86_64-on-Mac TCG / Linux KVM), chosen by host.debuggee_mode."""
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 
 from likedbg.errors import BuildError
 from likedbg.launchers import qemu_container_command
@@ -15,9 +16,10 @@ from likedbg.qemu import build_qemu_argv
 class DebuggeeStage:
     name = "debuggee"
 
-    def __init__(self, *, launch: Callable[[str], None], debuggee_image: str) -> None:
+    def __init__(self, *, launch: Callable[[str], None], debuggee_image: str, workspace: Path) -> None:
         self._launch = launch
         self._debuggee_image = debuggee_image
+        self._workspace = workspace
 
     def should_skip(self, ctx: PipelineContext) -> bool:
         return False
@@ -29,6 +31,10 @@ class DebuggeeStage:
         console_log = None
         if eff.capture_console and ctx.recorder is not None:
             console_log = ctx.recorder.console_raw  # type: ignore[attr-defined]
+        share_host_dir = None
+        if eff.share:
+            share_host_dir = self._workspace / eff.share_dir
+            share_host_dir.mkdir(parents=True, exist_ok=True)
         argv = build_qemu_argv(
             eff,
             ctx.host,
@@ -37,11 +43,14 @@ class DebuggeeStage:
             rootfs=ctx.rootfs_image,
             extra_boot_args=ctx.extra_boot_args,
             console_log=console_log,
+            share_host_dir=share_host_dir,
         )
         if ctx.host.debuggee_mode == "in-container":
             # kernel Image read-only (QEMU only reads -kernel); rootfs disk read-write (QEMU's -drive).
             rw_mounts = [ctx.rootfs_image] if ctx.rootfs_image is not None else []
-            extra_rw = (console_log.parent,) if console_log is not None else ()
+            extra_rw = tuple(
+                p for p in (console_log.parent if console_log is not None else None, share_host_dir) if p is not None
+            )
             cmd = qemu_container_command(
                 argv,
                 image=self._debuggee_image,
@@ -50,6 +59,7 @@ class DebuggeeStage:
                 gdbstub_port=eff.gdb_port,
                 network_mode=ctx.host.network_mode,
                 kvm=ctx.host.accel == "kvm",
+                ssh_port=eff.ssh_port if eff.guest_net else None,
                 extra_rw_dirs=extra_rw,
             )
         else:

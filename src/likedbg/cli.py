@@ -277,7 +277,7 @@ def build_pipeline(
                 workspace=workspace,
             ),
             ArtifactExporter(container, kernel_volume=kernel_volume, workspace=workspace),
-            DebuggeeStage(launch=launch_debuggee, debuggee_image=debuggee_image),
+            DebuggeeStage(launch=launch_debuggee, debuggee_image=debuggee_image, workspace=workspace),
             DebuggerStage(
                 ext=ext,
                 run_gdb=run_gdb,
@@ -359,7 +359,7 @@ def build_use_pipeline(
                 workspace=workspace,
             ),
             ArtifactExporter(container, kernel_volume=kernel_volume, workspace=workspace),
-            DebuggeeStage(launch=launch_debuggee, debuggee_image=debuggee_image),
+            DebuggeeStage(launch=launch_debuggee, debuggee_image=debuggee_image, workspace=workspace),
             DebuggerStage(
                 ext=ext,
                 run_gdb=run_gdb,
