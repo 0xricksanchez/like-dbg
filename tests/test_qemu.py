@@ -144,3 +144,26 @@ def test_effective_debuggee_kaslr_false_yields_nokaslr():
     append = argv[argv.index("-append") + 1]
     assert "nokaslr" in append and "slub_debug=FZP" in append
     assert "2048" in argv
+
+
+def test_console_log_uses_chardev_logfile_not_nographic():
+    argv = build_qemu_argv(
+        _debuggee(),
+        _host(),
+        target_arch="arm64",
+        kernel_image=Path("/w/Image"),
+        rootfs=None,
+        console_log=Path("/run/logs/console.raw"),
+    )
+    s = _argstr(argv)
+    assert "-chardev" in argv
+    assert "stdio,id=cons,logfile=/run/logs/console.raw,signal=off" in s
+    assert "-serial chardev:cons" in s
+    assert "-display none" in s
+    assert "-nographic" not in argv
+
+
+def test_no_console_log_keeps_nographic():
+    argv = build_qemu_argv(_debuggee(), _host(), target_arch="arm64", kernel_image=Path("/w/Image"), rootfs=None)
+    assert "-nographic" in argv
+    assert "-chardev" not in argv
