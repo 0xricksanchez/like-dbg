@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from likedbg.crash.merge import merge_gdb_live
+from likedbg.crash.merge import synthesize_from_gdb_live
 from likedbg.crash.model import CrashEvent
 from likedbg.crash.model import CrashReport
 from likedbg.crash.parse import parse_console
@@ -46,18 +47,28 @@ def analyze_run(run_dir: Path) -> CrashReport | None:
     build_label = str(run_json.get("build_label", ""))
 
     events = parse_console(console.read_text(), arch)
-    if not events:
-        return None
     gdb_path = run_dir / "crash" / "crash.gdb.json"
     if gdb_path.is_file():
         try:
             loaded = json.loads(gdb_path.read_text())
         except json.JSONDecodeError:
             loaded = None
-        # Only merge a JSON object; a valid-but-scalar file (e.g. `42`, `"x"`)
+        # Only use a JSON object; a valid-but-scalar file (e.g. `42`, `"x"`)
         # would make merge_gdb_live's membership test raise TypeError.
         if isinstance(loaded, dict):
-            events = merge_gdb_live(events, loaded)
+            if any(e.fatal for e in events):
+                # Console already has a fatal onset: attach the snapshot to it.
+                events = merge_gdb_live(events, loaded)
+            else:
+                # gdb halted at the fault before the console onset printed (e.g.
+                # panic() entry): the snapshot IS the crash -> synthesize primary.
+                syn = synthesize_from_gdb_live(loaded)
+                if syn is not None:
+                    events.append(syn)
+
+    # No console events AND no usable gdb-live snapshot: nothing to report.
+    if not events:
+        return None
 
     primary = _primary_index(events)
     report = CrashReport(

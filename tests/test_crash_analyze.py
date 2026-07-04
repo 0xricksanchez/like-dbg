@@ -95,6 +95,30 @@ def test_analyze_tolerates_scalar_gdb_json(tmp_path):
     assert (run / "crash.json").is_file()
 
 
+def test_analyze_synthesizes_primary_from_gdb_live_when_console_has_no_onset(tmp_path):
+    # gdb halted at panic() entry before the kernel printed its onset banner:
+    # console has no fatal event, but crash.gdb.json holds the real crash.
+    boot = "[ 0.1] Booting Linux\n[ 0.2] systemd started\n"
+    gdb = {
+        "stopped_at": "panic",
+        "registers": {"x0": "0x1"},
+        "backtrace": ["#0  panic (fmt=...) at kernel/panic.c:285", "#1 sysrq_handle_crash ..."],
+    }
+    run = _mkrun(tmp_path, boot, gdb=gdb)
+    rep = analyze_run(run)
+    assert rep is not None
+    assert len(rep.events) == 1
+    ev = rep.events[0]
+    assert ev.kind == "panic" and ev.fatal is True
+    assert ev.gdb_live is not None and ev.gdb_live.stopped_at == "panic"
+    assert (run / "crash.json").is_file()
+    assert (run / "crash.md").is_file()
+    rj = json.loads((run / "run.json").read_text())
+    assert rj["status"] == "crashed"
+    assert rj["crash"]["primary_class"] == "panic"
+    assert rj["crash"]["fatal"] is True
+
+
 def test_analyze_missing_run_dir_raises(tmp_path):
     with pytest.raises(CrashError):
         analyze_run(tmp_path / "nope")
