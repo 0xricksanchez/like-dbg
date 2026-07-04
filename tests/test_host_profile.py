@@ -1,3 +1,4 @@
+import dataclasses
 from pathlib import Path
 
 import pytest
@@ -6,6 +7,10 @@ from likedbg.config import Settings
 from likedbg.errors import HostCapabilityError
 from likedbg.host_profile import HostProfile
 from likedbg.host_profile import Probes
+
+
+def test_hostprofile_has_no_ssh_addr():
+    assert "ssh_addr" not in {f.name for f in dataclasses.fields(HostProfile)}
 
 
 def _settings(arch="arm64", accel="auto", mac_storage="auto"):
@@ -98,7 +103,7 @@ def test_network_auto_linux_is_host_and_localhost():
     p = _probes(system="linux", machine="arm64", kvm=False)
     hp = HostProfile.detect(_settings("arm64"), Path("/ws"), p)
     assert hp.network_mode == "host"
-    assert hp.gdbstub_addr == "localhost" and hp.ssh_addr == "localhost"
+    assert hp.gdbstub_addr == "localhost"
 
 
 def test_network_auto_mac_is_published_and_host_docker_internal():

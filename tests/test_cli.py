@@ -40,7 +40,6 @@ def _host(mode):
         debuggee_mode="in-container",
         storage_mode=mode,
         gdbstub_addr="localhost",
-        ssh_addr="localhost",
     )
 
 

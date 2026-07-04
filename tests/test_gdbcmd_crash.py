@@ -14,7 +14,6 @@ def _host():
         debuggee_mode="in-container",
         storage_mode="volume",
         gdbstub_addr="host.docker.internal",
-        ssh_addr="host.docker.internal",
     )
 
 

@@ -49,7 +49,6 @@ def _ctx(tmp_path):
         debuggee_mode="native-host",
         storage_mode="volume",
         gdbstub_addr="x",
-        ssh_addr="x",
     )
     ctx = PipelineContext(settings=settings, host=host)
     ctx.rootfs_label = _rrecipe().label

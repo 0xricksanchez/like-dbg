@@ -41,7 +41,6 @@ def _ctx(storage_mode, tmp_path, *, label: str = _LABEL):
         debuggee_mode="native-host",
         storage_mode=storage_mode,
         gdbstub_addr="host.docker.internal",
-        ssh_addr="host.docker.internal",
     )
     ctx = PipelineContext(settings=Settings(), host=host)
     ctx.kernel_archive = tmp_path / "linux-6.6.tar.gz"
@@ -78,7 +77,6 @@ def test_archive_outside_workspace_raises_unpack_error(tmp_path):
         debuggee_mode="native-host",
         storage_mode="bind",
         gdbstub_addr="host.docker.internal",
-        ssh_addr="host.docker.internal",
     )
     ctx = PipelineContext(settings=Settings(), host=host)
     ctx.kernel_archive = elsewhere / "linux-6.6.tar.gz"

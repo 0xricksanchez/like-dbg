@@ -16,7 +16,6 @@ def _ctx(mode):
         debuggee_mode=mode,
         storage_mode="volume",
         gdbstub_addr="host.docker.internal",
-        ssh_addr="host.docker.internal",
     )
     ctx = PipelineContext(settings=Settings.model_validate({"general": {"arch": arch}}), host=host)
     ctx.kernel_image = Path("/ws/artifacts/x/Image")
@@ -52,7 +51,6 @@ def _linux_ctx(*, accel="tcg"):
         debuggee_mode="in-container",
         storage_mode="bind",
         gdbstub_addr="localhost",
-        ssh_addr="localhost",
         network_mode="host",
     )
     ctx = PipelineContext(settings=Settings.model_validate({"general": {"arch": "arm64"}}), host=host)

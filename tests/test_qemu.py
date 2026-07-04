@@ -14,7 +14,6 @@ def _host(arch_accel="hvf", mode="native-host", target_arch="arm64"):
         debuggee_mode=mode,
         storage_mode="volume",
         gdbstub_addr="host.docker.internal",
-        ssh_addr="host.docker.internal",
     )
 
 

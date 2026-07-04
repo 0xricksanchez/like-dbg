@@ -67,7 +67,6 @@ def _ctx(tmp_path: Path, arch: str = "arm64", compiler: str = "clang", storage: 
         debuggee_mode="in-container",
         storage_mode=storage,
         gdbstub_addr="localhost",
-        ssh_addr="localhost",
     )
     ctx = PipelineContext(settings=s, host=host)
     ctx.build_label = "linux-6.6.30-a1b2c3d4"
