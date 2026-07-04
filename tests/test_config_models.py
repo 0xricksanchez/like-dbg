@@ -110,3 +110,11 @@ def test_crash_config_defaults() -> None:
 def test_crash_breakpoints_overridable() -> None:
     dg = DebuggerCfg(crash_breakpoints=["panic", "die"])
     assert dg.crash_breakpoints == ("panic", "die")
+
+
+def test_guest_loop_config_defaults() -> None:
+    d = DebuggeeCfg()
+    assert d.ssh_port == 2222
+    assert d.share_dir == "exploit"
+    assert d.guest_net is True
+    assert d.share is True

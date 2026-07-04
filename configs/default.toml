@@ -28,6 +28,10 @@ smap = true
 kpti = true
 panic = "halt"
 capture_console = true
+ssh_port = 2222
+share_dir = "exploit"
+guest_net = true
+share = true
 
 [debugger]
 ext = "pwndbg"
