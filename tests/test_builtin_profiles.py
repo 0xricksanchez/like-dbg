@@ -1,15 +1,23 @@
 from pathlib import Path
 
 from likedbg.config import load_config
-from likedbg.debug_profiles import load_profiles, resolve_run
-from likedbg.host_profile import HostProfile, Probes
+from likedbg.debug_profiles import load_profiles
+from likedbg.debug_profiles import resolve_run
+from likedbg.host_profile import HostProfile
+from likedbg.host_profile import Probes
 
 REPO = Path(__file__).resolve().parents[1]
 
 
 def _host():
-    p = Probes(system=lambda: "linux", machine=lambda: "x86_64", kvm_accessible=lambda: False,
-               hvf_supported=lambda: False, native_qemu_present=lambda _a: True, workspace_case_sensitive=lambda _p: True)
+    p = Probes(
+        system=lambda: "linux",
+        machine=lambda: "x86_64",
+        kvm_accessible=lambda: False,
+        hvf_supported=lambda: False,
+        native_qemu_present=lambda _a: True,
+        workspace_case_sensitive=lambda _p: True,
+    )
     return HostProfile.detect(load_config(REPO).settings, REPO, p)
 
 

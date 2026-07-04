@@ -26,7 +26,6 @@ from likedbg.host_profile import HostProfile
 from likedbg.pipeline import PipelineContext
 from likedbg.stages.rootfs import rootfs_target
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -53,10 +52,7 @@ def _make_project(tmp_path: Path) -> None:
     (cfgs / "default.toml").write_text('[source]\nkind="mmp"\nvalue="6.6.30"\n')
     (cfgs / "fragments" / "generic.config").write_text("CONFIG_X=y\n")
     (cfgs / "profiles" / "exploit-dev.toml").write_text(
-        'name="exploit-dev"\n'
-        'kind="base"\n'
-        'description="d"\n'
-        'fragments=["configs/fragments/generic.config"]\n'
+        'name="exploit-dev"\nkind="base"\ndescription="d"\nfragments=["configs/fragments/generic.config"]\n'
     )
 
 
@@ -414,9 +410,7 @@ def _make_cmd_use_project(tmp_path: Path) -> None:
 
 def test_cmd_use_builds_default_rootfs_when_manifest_is_missing(tmp_path, monkeypatch):
     _make_cmd_use_project(tmp_path)
-    settings = Settings.model_validate(
-        {"general": {"arch": "arm64"}, "debuggee": {"accel": "tcg", "network": "host"}}
-    )
+    settings = Settings.model_validate({"general": {"arch": "arm64"}, "debuggee": {"accel": "tcg", "network": "host"}})
     rr = rootfs_recipe(settings)
     target = rootfs_target(tmp_path, rr.label)
 
@@ -468,8 +462,8 @@ def test_cmd_use_builds_default_rootfs_when_manifest_is_missing(tmp_path, monkey
         cli.RunRecorder,
         "start",
         staticmethod(
-            lambda *, workspace, requested_settings, run_resolution, host, build_label, rootfs_label, profiles: _FakeRecorder(
-                workspace
+            lambda *, workspace, requested_settings, run_resolution, host, build_label, rootfs_label, profiles: (
+                _FakeRecorder(workspace)
             )
         ),
     )
@@ -540,8 +534,8 @@ def test_cmd_use_ensures_images_after_host_detection(tmp_path, monkeypatch):
         cli.RunRecorder,
         "start",
         staticmethod(
-            lambda *, workspace, requested_settings, run_resolution, host, build_label, rootfs_label, profiles: _FakeRecorder(
-                workspace
+            lambda *, workspace, requested_settings, run_resolution, host, build_label, rootfs_label, profiles: (
+                _FakeRecorder(workspace)
             )
         ),
     )
@@ -785,7 +779,9 @@ def test_main_restart_requires_tmux(monkeypatch):
 
 def test_main_build_images_is_docker_only_and_invokes_build_images(monkeypatch):
     built = []
-    monkeypatch.setattr(cli, "load_config", lambda *a, **k: ConfigResolution(settings=Settings(), provenance={}, _ordered_layers=()))
+    monkeypatch.setattr(
+        cli, "load_config", lambda *a, **k: ConfigResolution(settings=Settings(), provenance={}, _ordered_layers=())
+    )
     monkeypatch.setattr(cli.docker_env, "resolve_docker_host", lambda env: "unix:///x")
     monkeypatch.setattr(cli.docker_env, "make_client", lambda host: SimpleNamespace())
     monkeypatch.setattr(cli.images, "build_images", lambda container, workspace, *a, **k: built.append(True))
@@ -831,10 +827,7 @@ def _make_explain_project(tmp_path: Path) -> None:
     (cfgs / "default.toml").write_text('[source]\nkind="mmp"\nvalue="6.6.30"\n')
     (cfgs / "fragments" / "generic.config").write_text("")
     (cfgs / "profiles" / "exploit-dev.toml").write_text(
-        'name="exploit-dev"\n'
-        'kind="base"\n'
-        'description="d"\n'
-        'fragments=["configs/fragments/generic.config"]\n'
+        'name="exploit-dev"\nkind="base"\ndescription="d"\nfragments=["configs/fragments/generic.config"]\n'
     )
 
 
@@ -941,12 +934,8 @@ def _make_cmd_use_with_profile_project(tmp_path: Path) -> None:
     (cfgs / "profiles").mkdir(parents=True, exist_ok=True)
     (cfgs / "fragments").mkdir(parents=True, exist_ok=True)
     (cfgs / "default.toml").write_text('[source]\nkind="mmp"\nvalue="6.6.30"\n[general]\narch="arm64"\n')
-    (cfgs / "profiles" / "exploit-dev.toml").write_text(
-        'name="exploit-dev"\nkind="base"\ndescription="d"\n'
-    )
-    (cfgs / "profiles" / "hardened.toml").write_text(
-        'name="hardened"\nkind="base"\ndescription="hardened"\n'
-    )
+    (cfgs / "profiles" / "exploit-dev.toml").write_text('name="exploit-dev"\nkind="base"\ndescription="d"\n')
+    (cfgs / "profiles" / "hardened.toml").write_text('name="hardened"\nkind="base"\ndescription="hardened"\n')
 
 
 def test_cmd_use_threads_profile_arg_into_resolve_for_run(tmp_path, monkeypatch):
@@ -1002,7 +991,9 @@ def test_cmd_use_threads_profile_arg_into_resolve_for_run(tmp_path, monkeypatch)
     from likedbg.config import load_config as real_load_config
 
     def fake_load_config(workspace, *, scenario=None, cli_overrides=None):
-        return real_load_config(workspace, scenario=scenario, cli_overrides=cli_overrides or {"general": {"arch": "arm64"}})
+        return real_load_config(
+            workspace, scenario=scenario, cli_overrides=cli_overrides or {"general": {"arch": "arm64"}}
+        )
 
     monkeypatch.setattr(cli, "resolve_for_run", capturing_resolve)
     monkeypatch.setattr(cli, "load_config", fake_load_config)
@@ -1013,8 +1004,8 @@ def test_cmd_use_threads_profile_arg_into_resolve_for_run(tmp_path, monkeypatch)
         cli.RunRecorder,
         "start",
         staticmethod(
-            lambda *, workspace, requested_settings, run_resolution, host, build_label, rootfs_label, profiles: _FakeRecorder(
-                workspace
+            lambda *, workspace, requested_settings, run_resolution, host, build_label, rootfs_label, profiles: (
+                _FakeRecorder(workspace)
             )
         ),
     )

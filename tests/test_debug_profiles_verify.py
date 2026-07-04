@@ -1,10 +1,8 @@
-from likedbg.debug_profiles import (
-    Expect,
-    ResolvedDebugProfiles,
-    parse_kernel_release,
-    verify_config,
-    version_tuple,
-)
+from likedbg.debug_profiles import Expect
+from likedbg.debug_profiles import ResolvedDebugProfiles
+from likedbg.debug_profiles import parse_kernel_release
+from likedbg.debug_profiles import verify_config
+from likedbg.debug_profiles import version_tuple
 
 
 def _resolved(*exp: Expect) -> ResolvedDebugProfiles:

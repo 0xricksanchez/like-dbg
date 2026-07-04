@@ -36,37 +36,49 @@ def test_arm64_hvf_machine_and_accel():
 
 
 def test_gdbstub_flags_present_when_gdb_enabled():
-    argv = build_qemu_argv(_debuggee(gdb=True), _host(), target_arch="arm64", kernel_image=Path("/w/Image"), rootfs=None)
+    argv = build_qemu_argv(
+        _debuggee(gdb=True), _host(), target_arch="arm64", kernel_image=Path("/w/Image"), rootfs=None
+    )
     assert "-S" in argv
     assert "-gdb" in argv and "tcp::1234" in argv
     assert "-s" not in argv  # replaced by the explicit -gdb form
 
 
 def test_no_gdbstub_when_disabled():
-    argv = build_qemu_argv(_debuggee(gdb=False), _host(), target_arch="arm64", kernel_image=Path("/w/Image"), rootfs=None)
+    argv = build_qemu_argv(
+        _debuggee(gdb=False), _host(), target_arch="arm64", kernel_image=Path("/w/Image"), rootfs=None
+    )
     assert "-S" not in argv
 
 
 def test_nokaslr_in_append_when_kaslr_false():
-    argv = build_qemu_argv(_debuggee(kaslr=False), _host(), target_arch="arm64", kernel_image=Path("/w/Image"), rootfs=None)
+    argv = build_qemu_argv(
+        _debuggee(kaslr=False), _host(), target_arch="arm64", kernel_image=Path("/w/Image"), rootfs=None
+    )
     append = argv[argv.index("-append") + 1]
     assert "nokaslr" in append and "console=ttyAMA0" in append
 
 
 def test_append_disables_predictable_nic_names():
-    argv = build_qemu_argv(_debuggee(), _host(), target_arch="arm64", kernel_image=Path("/w/Image"), rootfs=Path("/w/rootfs.img"))
+    argv = build_qemu_argv(
+        _debuggee(), _host(), target_arch="arm64", kernel_image=Path("/w/Image"), rootfs=Path("/w/rootfs.img")
+    )
     append = argv[argv.index("-append") + 1]
     assert "net.ifnames=0" in append
 
 
 def test_cpio_rootfs_uses_initrd():
-    argv = build_qemu_argv(_debuggee(), _host(), target_arch="arm64", kernel_image=Path("/w/Image"), rootfs=Path("/w/rootfs.cpio.gz"))
+    argv = build_qemu_argv(
+        _debuggee(), _host(), target_arch="arm64", kernel_image=Path("/w/Image"), rootfs=Path("/w/rootfs.cpio.gz")
+    )
     s = _argstr(argv)
     assert "-initrd /w/rootfs.cpio.gz" in s
 
 
 def test_ext4_rootfs_uses_drive():
-    argv = build_qemu_argv(_debuggee(), _host(), target_arch="arm64", kernel_image=Path("/w/Image"), rootfs=Path("/w/rootfs.img"))
+    argv = build_qemu_argv(
+        _debuggee(), _host(), target_arch="arm64", kernel_image=Path("/w/Image"), rootfs=Path("/w/rootfs.img")
+    )
     s = _argstr(argv)
     assert "-drive" in s and "rootfs.img" in s
 
@@ -79,18 +91,26 @@ def test_gdb_port_is_configurable():
 
 
 def test_arm64_kvm_uses_cpu_host():
-    argv = build_qemu_argv(_debuggee(), _host("kvm", "in-container"), target_arch="arm64", kernel_image=Path("/w/Image"), rootfs=None)
+    argv = build_qemu_argv(
+        _debuggee(), _host("kvm", "in-container"), target_arch="arm64", kernel_image=Path("/w/Image"), rootfs=None
+    )
     assert "-cpu host" in _argstr(argv)
 
 
 def test_arm64_tcg_uses_cortex_a72():
-    argv = build_qemu_argv(_debuggee(), _host("tcg", "in-container"), target_arch="arm64", kernel_image=Path("/w/Image"), rootfs=None)
+    argv = build_qemu_argv(
+        _debuggee(), _host("tcg", "in-container"), target_arch="arm64", kernel_image=Path("/w/Image"), rootfs=None
+    )
     assert "-cpu cortex-a72" in _argstr(argv)
 
 
 def test_x86_64_keeps_qemu64_features_under_kvm():
     argv = build_qemu_argv(
-        _debuggee(), _host("kvm", "in-container", target_arch="x86_64"), target_arch="x86_64", kernel_image=Path("/w/Image"), rootfs=None
+        _debuggee(),
+        _host("kvm", "in-container", target_arch="x86_64"),
+        target_arch="x86_64",
+        kernel_image=Path("/w/Image"),
+        rootfs=None,
     )
     s = _argstr(argv)
     assert "qemu64" in s and "+smep" in s and "+smap" in s  # toggles preserved even under KVM
@@ -114,7 +134,12 @@ def test_extra_boot_args_spliced_into_append_before_oops():
 def test_effective_debuggee_kaslr_false_yields_nokaslr():
     eff = DebuggeeCfg(kaslr=False, memory_mib=2048)
     argv = build_qemu_argv(
-        eff, _host(), target_arch="arm64", kernel_image=Path("/w/Image"), rootfs=None, extra_boot_args=("slub_debug=FZP",)
+        eff,
+        _host(),
+        target_arch="arm64",
+        kernel_image=Path("/w/Image"),
+        rootfs=None,
+        extra_boot_args=("slub_debug=FZP",),
     )
     append = argv[argv.index("-append") + 1]
     assert "nokaslr" in append and "slub_debug=FZP" in append

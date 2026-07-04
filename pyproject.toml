@@ -39,19 +39,8 @@ target-version = "py312"
 src = ["src", "tests"]
 force-exclude = true
 extend-exclude = [
-    "start_kgdb.py",
-    "src/__init__.py",
-    "src/misc.py",
-    "src/linux_kernel_dl.py",
-    "src/kernel_builder.py",
-    "src/kernel_unpacker.py",
-    "src/rootfs_builder.py",
-    "src/debugger.py",
-    "src/tqdm_dlbar.py",
-    "src/docker_runner.py",
-    "src/debuggee.py",
-    "src/tests",
     "ctf",
+    ".claude",
 ]
 
 [tool.ruff.lint]

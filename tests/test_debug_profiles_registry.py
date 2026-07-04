@@ -2,7 +2,8 @@ from pathlib import Path
 
 import pytest
 
-from likedbg.debug_profiles import load_profiles, parse_profile_names
+from likedbg.debug_profiles import load_profiles
+from likedbg.debug_profiles import parse_profile_names
 from likedbg.errors import ConfigError
 
 
@@ -13,9 +14,13 @@ def _profile(dirp: Path, name: str, body: str) -> None:
 
 def test_load_minimal_addon(tmp_path: Path) -> None:
     pdir = tmp_path / "configs" / "profiles"
-    _profile(pdir, "kasan", 'name = "kasan"\nkind = "addon"\ndescription = "x"\nimplies = ["crash-debug"]\n'
-             'fragments = ["configs/fragments/profiles/kasan.config"]\n'
-             '[[expect]]\nsymbol = "CONFIG_KASAN"\nvalue = "y"\nseverity = "hard"\n')
+    _profile(
+        pdir,
+        "kasan",
+        'name = "kasan"\nkind = "addon"\ndescription = "x"\nimplies = ["crash-debug"]\n'
+        'fragments = ["configs/fragments/profiles/kasan.config"]\n'
+        '[[expect]]\nsymbol = "CONFIG_KASAN"\nvalue = "y"\nseverity = "hard"\n',
+    )
     reg = load_profiles(tmp_path)
     assert reg["kasan"].kind == "addon"
     assert reg["kasan"].implies == ("crash-debug",)
@@ -42,6 +47,7 @@ def test_parse_profile_names() -> None:
         parse_profile_names("")
     with pytest.raises(ConfigError):
         parse_profile_names("KASAN")  # uppercase rejected, not normalized
+
 
 # ---------------------------------------------------------------------------
 # FIX 2: path-traversal validation for profile fragments

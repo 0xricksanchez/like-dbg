@@ -76,14 +76,14 @@ class BuildCfg(_Base):
     @field_validator("patch_dirs", "custom_modules", mode="before")
     @classmethod
     def _validate_workspace_relative(cls, v: object) -> object:
-        for p in (v if isinstance(v, (list, tuple)) else ()):
+        for p in v if isinstance(v, (list, tuple)) else ():
             _reject_unsafe_path(str(p))
         return v
 
     @field_validator("extra_fragments", mode="before")
     @classmethod
     def _validate_fragments(cls, v: object) -> object:
-        for p in (v if isinstance(v, (list, tuple)) else ()):
+        for p in v if isinstance(v, (list, tuple)) else ():
             s = str(p)
             _reject_unsafe_path(s)
             if not s.startswith(_FRAGMENTS_PREFIX):

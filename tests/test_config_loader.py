@@ -2,7 +2,12 @@ from pathlib import Path
 
 import pytest
 
-from likedbg.config import LAYER_CLI, LAYER_DEFAULT, LAYER_LOCAL, LAYER_PROFILE, LAYER_SCENARIO, load_config
+from likedbg.config import LAYER_CLI
+from likedbg.config import LAYER_DEFAULT
+from likedbg.config import LAYER_LOCAL
+from likedbg.config import LAYER_PROFILE
+from likedbg.config import LAYER_SCENARIO
+from likedbg.config import load_config
 from likedbg.errors import ConfigError
 
 

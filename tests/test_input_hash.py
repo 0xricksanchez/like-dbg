@@ -1,6 +1,8 @@
 from pathlib import Path
 
-from likedbg.input_hash import DEFAULT_IGNORE, hash_file, hash_tree
+from likedbg.input_hash import DEFAULT_IGNORE
+from likedbg.input_hash import hash_file
+from likedbg.input_hash import hash_tree
 
 
 def test_hash_file_is_sha256_of_content(tmp_path: Path) -> None:

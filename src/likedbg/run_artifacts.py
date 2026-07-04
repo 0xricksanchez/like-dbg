@@ -53,9 +53,7 @@ def _provenance_json(prov: dict[tuple[str, str], str]) -> dict[str, dict[str, st
     return out
 
 
-def _write_profiles_json(
-    run_dir: Path, workspace: Path, rr: RunResolution, profiles: ResolvedDebugProfiles
-) -> None:
+def _write_profiles_json(run_dir: Path, workspace: Path, rr: RunResolution, profiles: ResolvedDebugProfiles) -> None:
     def _snapshot(rel: str, subdir: str) -> dict[str, str]:
         src = workspace / rel
         dest = run_dir / subdir / rel

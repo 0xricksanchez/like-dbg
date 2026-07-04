@@ -30,10 +30,18 @@ def test_build_recipe_label_and_inputs(tmp_path):
 def test_build_recipe_label_changes_with_fragment_content(tmp_path):
     settings = Settings.model_validate({"general": {"arch": "arm64"}})
     a = build_recipe(
-        settings, version="6.6.30", arch="arm64", workspace=tmp_path, fragments=[_frag(tmp_path, "f.config", "CONFIG_A=y\n")]
+        settings,
+        version="6.6.30",
+        arch="arm64",
+        workspace=tmp_path,
+        fragments=[_frag(tmp_path, "f.config", "CONFIG_A=y\n")],
     )
     b = build_recipe(
-        settings, version="6.6.30", arch="arm64", workspace=tmp_path, fragments=[_frag(tmp_path, "f.config", "CONFIG_B=y\n")]
+        settings,
+        version="6.6.30",
+        arch="arm64",
+        workspace=tmp_path,
+        fragments=[_frag(tmp_path, "f.config", "CONFIG_B=y\n")],
     )
     assert a.label != b.label
 

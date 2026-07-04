@@ -111,7 +111,6 @@ def resolve_for_run(
     return cfg, host, rr
 
 
-
 def _provenance_nested(prov: dict[tuple[str, str], str]) -> dict[str, dict[str, str]]:
     """Convert flat provenance dict with (section, key) tuples to nested {section: {key: layer}}.
 
@@ -131,9 +130,7 @@ def explain_config(
     fmt: str,
 ) -> str:
     """Dry-run inspection: resolve profiles and render config summary without touching Docker/tmux/run-dirs."""
-    _cfg, _host, rr = resolve_for_run(
-        workspace, profile_arg=profile_arg, scenario=scenario, cli_overrides=None
-    )
+    _cfg, _host, rr = resolve_for_run(workspace, profile_arg=profile_arg, scenario=scenario, cli_overrides=None)
     eff = rr.effective_debuggee
     payload: dict[str, object] = {
         "target_arch": rr.target_arch,
@@ -375,8 +372,10 @@ def cmd_use(
     _ensure_images(container, workspace, specs=images.required_for_use(host))
     rr_recipe = make_rootfs_recipe(use_settings, arch=host.target_arch, workspace=workspace)
     rlabel = rootfs_label or rr_recipe.label
-    if rootfs_label is not None and rootfs_label != rr_recipe.label and not cache.manifest_exists(
-        workspace, "rootfs", rlabel
+    if (
+        rootfs_label is not None
+        and rootfs_label != rr_recipe.label
+        and not cache.manifest_exists(workspace, "rootfs", rlabel)
     ):
         raise CacheError(
             f"no cached rootfs labelled {rlabel!r}",
@@ -573,20 +572,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--rootfs", default="")
     parser.add_argument("--build-images", action="store_true")
     parser.add_argument("--restart-debuggee", action="store_true")
-    parser.add_argument(
-        "--explain-config", nargs="?", const="text", default=None, choices=["text", "json"]
-    )
+    parser.add_argument("--explain-config", nargs="?", const="text", default=None, choices=["text", "json"])
     args = parser.parse_args(argv)
     logsetup.configure_stderr(verbose=args.verbose)
     try:
         workspace = Path.cwd()
         if args.explain_config is not None:
-            print(explain_config(
-                workspace,
-                profile_arg=args.profile,
-                scenario=_scenario_path(workspace, args.config),
-                fmt=args.explain_config,
-            ))
+            print(
+                explain_config(
+                    workspace,
+                    profile_arg=args.profile,
+                    scenario=_scenario_path(workspace, args.config),
+                    fmt=args.explain_config,
+                )
+            )
             return 0
         if args.restart_debuggee:
             if not os.getenv("TMUX"):
@@ -604,7 +603,9 @@ def main(argv: list[str] | None = None) -> int:
                 return 1
         if args.list:
             try:
-                list_container = ContainerService(docker_env.make_client(docker_env.resolve_docker_host(env=os.environ)))
+                list_container = ContainerService(
+                    docker_env.make_client(docker_env.resolve_docker_host(env=os.environ))
+                )
             except Exception:  # noqa: BLE001 - fall back to host-visible sizes when Docker is unavailable.
                 list_container = None
             return cmd_list(workspace, container=list_container)

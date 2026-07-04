@@ -3,34 +3,46 @@ from pathlib import Path
 
 import pytest
 
-from likedbg.config import GeneralCfg, Settings, load_config
+from likedbg.config import GeneralCfg
+from likedbg.config import Settings
+from likedbg.config import load_config
 from likedbg.debug_profiles import resolve_run
 from likedbg.errors import ConfigError
-from likedbg.host_profile import HostProfile, Probes
+from likedbg.host_profile import HostProfile
+from likedbg.host_profile import Probes
 
 
 def _probes(machine="x86_64", system="linux"):
-    return Probes(system=lambda: system, machine=lambda: machine, kvm_accessible=lambda: False,
-                  hvf_supported=lambda: False, native_qemu_present=lambda _a: True,
-                  workspace_case_sensitive=lambda _p: True)
+    return Probes(
+        system=lambda: system,
+        machine=lambda: machine,
+        kvm_accessible=lambda: False,
+        hvf_supported=lambda: False,
+        native_qemu_present=lambda _a: True,
+        workspace_case_sensitive=lambda _p: True,
+    )
 
 
 def _scaffold(tmp_path: Path, *, kaslr_line: str = "kaslr = false") -> None:
     (tmp_path / "configs").mkdir(parents=True, exist_ok=True)
     (tmp_path / "configs" / "default.toml").write_text(
-        f'[source]\nkind="mmp"\nvalue="6.6.30"\n[debuggee]\n{kaslr_line}\n')
+        f'[source]\nkind="mmp"\nvalue="6.6.30"\n[debuggee]\n{kaslr_line}\n'
+    )
     pdir = tmp_path / "configs" / "profiles"
     pdir.mkdir(parents=True, exist_ok=True)
     (pdir / "exploit-dev.toml").write_text(
         'name="exploit-dev"\nkind="base"\ndescription="d"\n'
         'fragments=["configs/fragments/generic.config","configs/fragments/no-kaslr.config"]\n'
-        '[[expect]]\nsymbol="CONFIG_RANDOMIZE_BASE"\nvalue="n"\nseverity="hard"\n')
+        '[[expect]]\nsymbol="CONFIG_RANDOMIZE_BASE"\nvalue="n"\nseverity="hard"\n'
+    )
     (pdir / "crash-debug.toml").write_text(
-        'name="crash-debug"\nkind="addon"\ndescription="d"\nfragments=["configs/fragments/profiles/crash-debug.config"]\n')
+        'name="crash-debug"\nkind="addon"\ndescription="d"\nfragments=["configs/fragments/profiles/crash-debug.config"]\n'
+    )
     (pdir / "kasan.toml").write_text(
         'name="kasan"\nkind="addon"\ndescription="d"\nimplies=["crash-debug"]\n'
         'fragments=["configs/fragments/profiles/kasan.config"]\n'
-        '[[expect]]\nsymbol="CONFIG_KASAN"\nvalue="y"\nseverity="hard"\n')
+        '[[expect]]\nsymbol="CONFIG_KASAN"\nvalue="y"\nseverity="hard"\n'
+    )
 
 
 def _host(tmp_path):
@@ -79,8 +91,7 @@ def test_default_kaslr_off_is_fine(tmp_path: Path) -> None:
 def test_implies_unknown_profile_errors(tmp_path: Path) -> None:
     _scaffold(tmp_path)
     pdir = tmp_path / "configs" / "profiles"
-    (pdir / "broken.toml").write_text(
-        'name="broken"\nkind="addon"\ndescription="d"\nimplies=["nonexistent"]\n')
+    (pdir / "broken.toml").write_text('name="broken"\nkind="addon"\ndescription="d"\nimplies=["nonexistent"]\n')
     cfg = load_config(tmp_path)
     with pytest.raises(ConfigError):
         resolve_run(profile_names=("broken",), config=cfg, host=_host(tmp_path), workspace=tmp_path)
@@ -89,10 +100,7 @@ def test_implies_unknown_profile_errors(tmp_path: Path) -> None:
 def test_two_base_profiles_is_exclusivity_error(tmp_path: Path) -> None:
     _scaffold(tmp_path)
     pdir = tmp_path / "configs" / "profiles"
-    (pdir / "hardened.toml").write_text(
-        'name="hardened"\nkind="base"\ndescription="d"\n')
+    (pdir / "hardened.toml").write_text('name="hardened"\nkind="base"\ndescription="d"\n')
     cfg = load_config(tmp_path)
     with pytest.raises(ConfigError):
-        resolve_run(
-            profile_names=("exploit-dev", "hardened"), config=cfg, host=_host(tmp_path), workspace=tmp_path
-        )
+        resolve_run(profile_names=("exploit-dev", "hardened"), config=cfg, host=_host(tmp_path), workspace=tmp_path)

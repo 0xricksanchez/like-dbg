@@ -1,7 +1,11 @@
 import pytest
 from pydantic import ValidationError
 
-from likedbg.config import BuildCfg, DebuggerCfg, DebuggingCfg, GeneralCfg, Settings, SourceCfg
+from likedbg.config import BuildCfg
+from likedbg.config import DebuggingCfg
+from likedbg.config import GeneralCfg
+from likedbg.config import Settings
+from likedbg.config import SourceCfg
 from likedbg.errors import ConfigError
 
 

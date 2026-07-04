@@ -316,8 +316,9 @@ def resolve_run(
         w.message
         for d in defs
         for w in d.warning
-        if _selectors_match(arch=w.arch, accel=w.accel, host_os=w.host_os, profiles=w.profiles,
-                            active=active, host=host)
+        if _selectors_match(
+            arch=w.arch, accel=w.accel, host_os=w.host_os, profiles=w.profiles, active=active, host=host
+        )
     ]
 
     boot_args: list[str] = []
@@ -326,8 +327,7 @@ def resolve_run(
         for ba in d.boot_arg:
             if ba.kernel_min is not None or ba.kernel_max is not None:
                 runtime_notes.append(
-                    "deferred version-gated boot arg "
-                    f"{ba.value!r} (B1 does not evaluate kernel_min/max)"
+                    f"deferred version-gated boot arg {ba.value!r} (B1 does not evaluate kernel_min/max)"
                 )
                 continue
             if _selectors_match(arch=ba.arch, profiles=ba.profiles, active=active, host=host):
@@ -338,7 +338,9 @@ def resolve_run(
     for toggle, symbol in _TOGGLE_REQUIRES.items():
         wants_on = bool(getattr(effective_debuggee, toggle))
         forbidden_hard = any(
-            e.symbol == symbol and e.value == "n" and e.severity == "hard"
+            e.symbol == symbol
+            and e.value == "n"
+            and e.severity == "hard"
             and _expect_applies(e, target_arch=host.target_arch, kernel_release=None)
             for e in expectations
         )

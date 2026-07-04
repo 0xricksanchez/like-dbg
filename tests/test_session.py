@@ -156,7 +156,7 @@ def test_pane_base_index_falls_back_to_zero_when_unavailable():
 
 def test_pipe_pane_command(tmp_path: Path) -> None:
     calls: list[list[str]] = []
-    s = Session("LIKE-DBG", runner=lambda a: (calls.append(a) or 0))
+    s = Session("LIKE-DBG", runner=lambda a: calls.append(a) or 0)
     out = tmp_path / "logs" / "debuggee-pane.log"
     s.pipe_pane(pane="%4", output=out)
     assert calls[0][:4] == ["tmux", "pipe-pane", "-o", "-t"]

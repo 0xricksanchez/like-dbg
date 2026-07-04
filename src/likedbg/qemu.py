@@ -63,7 +63,16 @@ def build_qemu_argv(
     argv += ["-kernel", str(kernel_image)]
     drive_args, root = _rootfs_args(rootfs)
     append = " ".join(
-        [console, root, "earlyprintk=serial", "net.ifnames=0", *_mitigations(debuggee), *extra_boot_args, "oops=panic", _panic(debuggee)]
+        [
+            console,
+            root,
+            "earlyprintk=serial",
+            "net.ifnames=0",
+            *_mitigations(debuggee),
+            *extra_boot_args,
+            "oops=panic",
+            _panic(debuggee),
+        ]
     )
     argv += ["-append", append, *drive_args, "-nographic"]
     if debuggee.gdb:
