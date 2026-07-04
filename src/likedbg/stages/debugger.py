@@ -12,10 +12,20 @@ from likedbg.pipeline import PipelineContext
 class DebuggerStage:
     name = "debugger"
 
-    def __init__(self, *, ext: str, run_gdb: Callable[[list[str]], None], breakpoint: str | None) -> None:
+    def __init__(
+        self,
+        *,
+        ext: str,
+        run_gdb: Callable[[list[str]], None],
+        breakpoint: str | None,
+        break_on_crash: bool = False,
+        crash_breakpoints: tuple[str, ...] = (),
+    ) -> None:
         self._ext = ext
         self._run_gdb = run_gdb
         self._breakpoint = breakpoint
+        self._break_on_crash = break_on_crash
+        self._crash_breakpoints = crash_breakpoints
 
     def should_skip(self, ctx: PipelineContext) -> bool:
         return False
@@ -31,6 +41,8 @@ class DebuggerStage:
             ext=self._ext,
             breakpoint=self._breakpoint,
             port=eff.gdb_port,
+            break_on_crash=self._break_on_crash,
+            crash_breakpoints=self._crash_breakpoints,
         )
         if ctx.recorder is not None:
             ctx.recorder.record_command("gdb", shell=" ".join(args), argv=args)  # type: ignore[attr-defined]

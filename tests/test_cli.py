@@ -553,6 +553,7 @@ class _FakeRecorder:
         self.likedbg_log = logs / "likedbg.log"
         self.debuggee_pane_log = logs / "debuggee-pane.log"
         self.debugger_pane_log = logs / "debugger-pane.log"
+        self.console_raw = logs / "console.raw"
 
     def add_warning(self, code: str, message: str) -> None:
         pass

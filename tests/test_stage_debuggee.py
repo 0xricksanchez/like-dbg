@@ -83,6 +83,7 @@ class _Rec:
     def __init__(self):
         self.statuses = []
         self.cmds = []
+        self.console_raw = Path("/ws/run/logs/console.raw")
 
     def set_status(self, s, *, message=None):
         self.statuses.append(s)
