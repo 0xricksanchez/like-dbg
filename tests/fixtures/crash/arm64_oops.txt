@@ -1,0 +1,10 @@
+[    9.100000] Unable to handle kernel NULL pointer dereference at virtual address 0000000000000000
+[    9.100050] Mem abort info:
+[    9.100200] CPU: 0 PID: 130 Comm: poc Not tainted 6.6.30 #1
+[    9.100260] pc : vuln_read+0x1c/0x48
+[    9.100262] lr : vuln_ioctl+0x30/0x60
+[    9.100265] sp : ffff800008abbd60
+[    9.100290] Call trace:
+[    9.100292]  vuln_read+0x1c/0x48
+[    9.100294]  vuln_ioctl+0x30/0x60
+[    9.100296]  __arm64_sys_ioctl+0x54/0x90
