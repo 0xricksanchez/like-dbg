@@ -76,7 +76,10 @@ class RootfsStage:
                 arch=self._recipe.arch,
                 storage_mode=ctx.host.storage_mode,
                 inputs=self._recipe.cache_inputs(),
-                paths={"image_host": str(target)},
+                paths={
+                    "image_host": str(target),
+                    "ssh_key": str(target.parent / f"{target.name}.id_ed25519"),
+                },
             ),
         )
         return ctx
