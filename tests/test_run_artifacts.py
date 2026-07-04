@@ -40,6 +40,18 @@ def _host(tmp_path: Path) -> HostProfile:
     return HostProfile.detect(Settings(), tmp_path, p)
 
 
+def _start_recorder(tmp_path: Path) -> RunRecorder:
+    return RunRecorder.start(
+        workspace=tmp_path,
+        requested_settings=Settings(),
+        run_resolution=_rr(),
+        host=_host(tmp_path),
+        build_label="linux-6.6.30-abcd1234",
+        rootfs_label="rootfs-arm64-bookworm-deadbeef",
+        profiles=_rr().profiles,
+    )
+
+
 def test_start_creates_layout_and_latest(tmp_path: Path) -> None:
     rec = RunRecorder.start(
         workspace=tmp_path,
@@ -95,3 +107,17 @@ def test_set_status_appends_history(tmp_path: Path) -> None:
     run = json.loads((rec.run_dir / "run.json").read_text())
     assert run["status"] == "launched"
     assert [h["status"] for h in run["status_history"]] == ["created", "launched"]
+
+
+def test_recorder_exposes_console_and_crash_paths(tmp_path: Path) -> None:
+    rec = _start_recorder(tmp_path)
+    assert rec.console_raw == rec.run_dir / "logs" / "console.raw"
+    assert rec.crash_dir == rec.run_dir / "crash"
+    assert rec.crash_dir.is_dir()
+
+
+def test_recorder_accepts_crashed_status(tmp_path: Path) -> None:
+    rec = _start_recorder(tmp_path)
+    rec.set_status("crashed", message="oops")
+    rj = json.loads((rec.run_dir / "run.json").read_text())
+    assert rj["status"] == "crashed"

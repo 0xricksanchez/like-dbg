@@ -11,6 +11,24 @@ can continue the rework with one prompt. `dev` represents the FULL rewrite and s
 
 ## Status (2026-06-26)
 
+**Update 2026-07-04 (later) — Branch 1 CRASH INTELLIGENCE (B3 + panic-break) DONE + LIVE-GATE PASSED on
+BOTH arches + merged to `dev`.** `feat/crash-intel`: a dedicated pure-serial **Console log** sink
+(`logs/console.raw` via QEMU `-chardev … logfile=`), a pure `crash/` parser core
+(model/parse/merge/render/analyze), gdb-side `CrashCapture` breakpoints → `crash.gdb.json`,
+`--analyze-crash [run-id]` (pure host), a `.tmux.conf` `pane-died` hook, and a soft `CONFIG_KALLSYMS`
+profile expectation. Built brainstorm→spec→grill-with-docs (ADR-0007; CONTEXT.md +Console log/+Crash report)
+→plan→subagent-driven (17 tasks, per-task reviewed) → **opus whole-branch review** (caught a Critical: the
+parser collapsed to one event) → **controller-driven live gate on the M5: arm64 (native HVF) AND x86_64
+(in-container TCG)**. Both: real `sysrq` panic → gdb trapped at `panic` with a fully symbolized backtrace
+in `crash.gdb.json` → `--analyze-crash` → `crash.json`/`crash.md` + `run.json` status `crashed`; zero
+leftover containers. The live gate caught + fixed **3 real bugs** unit tests missed: (1) parser
+single-event collapse (WARN-before-crash silently not `crashed`); (2) crash software breakpoints installed
+before `start_kernel` can't insert at early boot (MMU off) → guest never boots → install them after
+reaching `start_kernel`; (3) panic-break halts the guest before it prints the panic banner, so the console
+has no onset → synthesize the report from the gdb-live snapshot. Spec/plan:
+`docs/superpowers/{specs,plans}/2026-07-04-crash-intel*`. **Next slice: B4 (GDB helper pack)** — or Branch 2
+(`feat/exploit-loop`).
+
 **Update 2026-07-04 — legacy pre-rework code removed; S-tier work split into two branches; full idea
 backlog recorded (§F).** The quarantined pre-rework `src/*.py`, the old monolithic `start_kgdb.py`, and
 `.flake8` are deleted and the ruff force-exclude is lifted (chore merged to `dev`, `646c4ce`; green:
@@ -226,11 +244,15 @@ Full B slice:
   labels, profile resolution graph, QEMU/GDB commands, kernel `.config`/`System.map` references, and
   Debuggee/Debugger pane transcripts via `tmux pipe-pane`. Transcripts are operator-pane logs, not
   byte-perfect serial capture (small gap at each `C-b B` restart is expected).
-- **B3 — Crash/oops detector + symbolized reports** *(Branch 1 `feat/crash-intel`)*: parse serial
-  output for panics, oopses, KASAN/UBSAN, GP faults, arm64 aborts, and call traces; produce
-  `crash.json` + `crash.md`. **Bundled with panic→auto-break:** set a gdb breakpoint on
-  `panic`/`die`/`oops_enter` so a crash lands you at the fault with live registers/stack instead of a
-  dead trace. (Serial parsing must handle the tty CRLF gotcha — see the B1 `.config` CRLF fix.)
+- **B3 — Crash/oops detector + symbolized reports** *(Branch 1 `feat/crash-intel`)* — ✅ **DONE +
+  LIVE-GATE PASSED (arm64 HVF + x86_64 in-container TCG), merged to `dev`.** Pure `crash/` core parses
+  panic/oops/KASAN/UBSAN/`#GP`/page-fault/arm64-abort/WARN into `crash.json` + blog-ready `crash.md`;
+  panic→auto-break traps gdb at `panic`/`die`/`oops_enter`/`kasan_report`/`ubsan_epilogue` (missing symbols
+  tolerated) and dumps a symbolized live backtrace to `crash.gdb.json`, merged into (or synthesized as) the
+  report; `--analyze-crash [run-id]` regenerates it pure-host; `run.json` gains a `crashed` status. See the
+  2026-07-04 status update for the live-gate results + the 3 bugs it caught. Follow-ups deferred (logged in
+  the SDD ledger): rigorous `incomplete` semantics; System.map/addr2line raw-address enrichment;
+  gate `crash_drop`-path if `breakpoint` ever becomes optional.
 - **B4 — LIKE-DBG GDB helper pack + breakpoint profiles:** first-class GDB Python commands layered on
   `likedbg-reconnect` for kernel/session info, mitigation state, module symbol loading, common exploit
   structures, and breakpoint groups.

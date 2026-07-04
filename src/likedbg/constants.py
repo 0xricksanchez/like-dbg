@@ -17,3 +17,5 @@ DEBUGGER_IMAGE = "like_debugger:latest"
 # The debuggee image runs QEMU in-container (Linux KVM, or x86_64-on-Mac TCG). Spelled out
 # to avoid confusion with the like_debugger image; built from .dockerfile_dbge.
 DEBUGGEE_IMAGE = "like_debuggee:latest"
+
+CRASH_DROP_MOUNT = "/likedbg-crash"

@@ -55,3 +55,7 @@ class CacheError(LikeDbgError):
 
 class SessionError(LikeDbgError):
     """Failure driving the tmux session."""
+
+
+class CrashError(LikeDbgError):
+    """Crash analysis could not run (missing/invalid run dir)."""

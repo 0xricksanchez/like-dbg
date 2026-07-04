@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from likedbg.constants import CRASH_DROP_MOUNT
 from likedbg.host_profile import HostProfile
 
 # Both extensions are installed in the debugger image; exactly one is sourced per run
@@ -87,8 +88,71 @@ LikedbgReconnect()
     return f"python exec({source!r})"
 
 
+def _crash_capture_source(symbols: tuple[str, ...], out_path: str) -> str:
+    # Built via literal placeholder substitution (not %-formatting or f-string
+    # interpolation) so the payload's own `%s` formatting and `{}` dict/set
+    # literals below can be written as plain, unescaped Python source.
+    source = """
+import gdb, json, os
+
+_OUT = __OUT__
+_SYMS = __SYMS__
+
+
+def _regs():
+    out = {}
+    try:
+        frame = gdb.selected_frame()
+        for reg in frame.architecture().registers():
+            try:
+                out[reg.name] = str(frame.read_register(reg.name))
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return out
+
+
+def _bt():
+    try:
+        return gdb.execute("bt", to_string=True).splitlines()
+    except Exception:
+        return []
+
+
+class _LikedbgCrash(gdb.Breakpoint):
+    def stop(self):
+        try:
+            os.makedirs(os.path.dirname(_OUT), exist_ok=True)
+            with open(_OUT, "w") as fh:
+                json.dump({"stopped_at": self.location, "registers": _regs(), "backtrace": _bt()}, fh, indent=2)
+            gdb.write("[likedbg] crash captured at %s -> %s\\n" % (self.location, _OUT))
+        except Exception as exc:
+            gdb.write("[likedbg] crash capture failed: %s\\n" % exc)
+        return True
+
+
+for _s in _SYMS:
+    try:
+        _LikedbgCrash(_s)
+    except Exception:
+        pass
+"""
+    source = source.replace("__OUT__", repr(out_path)).replace("__SYMS__", repr(list(symbols)))
+    return f"python exec({source!r})"
+
+
 def build_gdb_args(
-    host: HostProfile, *, arch: str, vmlinux: Path, ext: str, breakpoint: str | None, port: int = 1234
+    host: HostProfile,
+    *,
+    arch: str,
+    vmlinux: Path,
+    ext: str,
+    breakpoint: str | None,
+    port: int = 1234,
+    break_on_crash: bool = False,
+    crash_breakpoints: tuple[str, ...] = (),
+    crash_drop_path: str = CRASH_DROP_MOUNT,
 ) -> list[str]:
     addr = host.gdbstub_addr
     gdb_arch = _GDB_ARCH.get(arch)
@@ -108,4 +172,14 @@ def build_gdb_args(
         # high-half virtual address before the MMU is enabled at early boot (e.g.
         # start_kernel) — validated live during the Plan 3 PoC.
         args += ["-ex", f"hbreak {breakpoint}", "-ex", "continue"]
+    if break_on_crash and crash_breakpoints:
+        # The crash breakpoints are SOFTWARE breakpoints on high-half kernel VAs
+        # (panic/die/oops_enter). gdb inserts breakpoints on RESUME, so these must
+        # be *created* only after the guest has reached start_kernel (kernel VA
+        # space now mapped) — creating them before the initial `continue` makes
+        # gdb try to insert them from CPU reset (MMU off) and abort the command,
+        # so the guest never boots (arm64 live gate). Deferring their creation to
+        # here means insertion happens on the user's next `continue`, when the VA
+        # is up — exactly like a runtime `break schedule`.
+        args += ["-ex", _crash_capture_source(crash_breakpoints, f"{crash_drop_path}/crash.gdb.json")]
     return args

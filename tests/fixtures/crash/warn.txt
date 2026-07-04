@@ -1,0 +1,5 @@
+[   17.300000] ------------[ cut here ]------------
+[   17.300002] WARNING: CPU: 0 PID: 1 at kernel/sched/core.c:123 __schedule+0x5a0/0x600
+[   17.300010] Call Trace:
+[   17.300011]  __schedule+0x5a0/0x600
+[   17.300013]  schedule+0x40/0xb0

@@ -1,0 +1,5 @@
+[   18.400000] BUG: kernel NULL pointer dereference, address: 0000000000000000
+[   18.400010] RIP: 0010:vuln_read+0x1a/0x40
+[   18.400020] Call Trace:
+[   18.400021]  vuln_ioctl+0x33/0x60
+[   18.400022] Rebooting in 1 seconds..

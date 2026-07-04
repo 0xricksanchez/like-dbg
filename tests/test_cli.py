@@ -553,6 +553,8 @@ class _FakeRecorder:
         self.likedbg_log = logs / "likedbg.log"
         self.debuggee_pane_log = logs / "debuggee-pane.log"
         self.debugger_pane_log = logs / "debugger-pane.log"
+        self.console_raw = logs / "console.raw"
+        self.crash_dir = workspace / "artifacts" / "runs" / "fake" / "crash"
 
     def add_warning(self, code: str, message: str) -> None:
         pass
@@ -899,6 +901,33 @@ def test_build_pipeline_threads_patch_dirs_to_build_stage(tmp_path):
     assert build_stage._patch_dirs == patch_dirs  # type: ignore[attr-defined]
 
 
+def test_build_pipeline_passes_crash_config(tmp_path):
+    """DebuggerStage inside the built pipeline must receive break_on_crash/crash_breakpoints."""
+    settings = Settings.model_validate({"general": {"arch": "arm64"}})
+    br = build_recipe(settings, version="6.6.30", arch="arm64", workspace=tmp_path, fragments=[])
+    rr = rootfs_recipe(settings)
+    session = _FakeSession()
+    pipe = build_pipeline(
+        ContainerService(SimpleNamespace()),
+        session,  # type: ignore[arg-type]
+        host=_host("volume"),
+        workspace=tmp_path,
+        kernel_volume="likedbg_ksrc",
+        dl_dir=tmp_path / "kernels",
+        debugger_image="like_debugger:latest",
+        debuggee_image="like_debuggee:latest",
+        ext="pwndbg",
+        build_recipe=br,
+        rootfs_recipe=rr,
+        recorder=None,
+        break_on_crash=True,
+        crash_breakpoints=("panic", "die"),
+    )
+    dbg = pipe._stages[-1]  # type: ignore[attr-defined]
+    assert dbg._break_on_crash is True  # type: ignore[attr-defined]
+    assert dbg._crash_breakpoints == ("panic", "die")  # type: ignore[attr-defined]
+
+
 def test_build_pipeline_defaults_patch_dirs_to_empty(tmp_path):
     """build_pipeline without patch_dirs defaults to ()."""
     settings = Settings.model_validate({"general": {"arch": "arm64"}})
@@ -1027,3 +1056,33 @@ def test_cmd_use_threads_profile_arg_into_resolve_for_run(tmp_path, monkeypatch)
     assert not any("exploit-dev" in names for names in resolved_profiles), (
         f"exploit-dev must not appear when profile_arg='hardened'; got: {resolved_profiles}"
     )
+
+
+# ---------------------------------------------------------------------------
+# --analyze-crash / cmd_analyze_crash
+# ---------------------------------------------------------------------------
+
+
+def test_cmd_analyze_crash_writes_report(tmp_path, capsys):
+    run = tmp_path / "artifacts" / "runs" / "20260704T000000Z-linux-6.6.30-x"
+    (run / "logs").mkdir(parents=True)
+    (run / "crash").mkdir()
+    (run / "logs" / "console.raw").write_text("[ 1.0] Kernel panic - not syncing: test\n")
+    (run / "host.json").write_text(json.dumps({"target_arch": "x86_64"}))
+    (run / "run.json").write_text(
+        json.dumps({"status": "launched", "build_label": "linux-6.6.30-x", "status_history": []})
+    )
+    rc = cli.cmd_analyze_crash(tmp_path, run_id=run.name)
+    assert rc == 0
+    assert (run / "crash.json").is_file()
+    assert "panic" in capsys.readouterr().out
+
+
+def test_cmd_analyze_crash_no_crash(tmp_path, capsys):
+    run = tmp_path / "artifacts" / "runs" / "r2"
+    (run / "logs").mkdir(parents=True)
+    (run / "logs" / "console.raw").write_text("[ 0.1] booting\n")
+    (run / "host.json").write_text(json.dumps({"target_arch": "x86_64"}))
+    (run / "run.json").write_text(json.dumps({"status": "launched", "build_label": "linux-6.6.30-x"}))
+    assert cli.cmd_analyze_crash(tmp_path, run_id="r2") == 0
+    assert "no crash detected" in capsys.readouterr().out.lower()

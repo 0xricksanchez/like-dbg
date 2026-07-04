@@ -1,0 +1,16 @@
+[   15.100000] ==================================================================
+[   15.100002] BUG: KASAN: use-after-free in kfree_test+0x120/0x180
+[   15.100004] Read of size 8 at addr ffff88800a1b2c00 by task poc/151
+[   15.100010] CPU: 0 PID: 151 Comm: poc Not tainted 6.6.30 #1
+[   15.100020] Call Trace:
+[   15.100021]  <TASK>
+[   15.100022]  kfree_test+0x120/0x180
+[   15.100024]  vuln_ioctl+0x40/0x70
+[   15.100025]  </TASK>
+[   15.100040] Allocated by task 151:
+[   15.100041]  kasan_save_stack+0x26/0x50
+[   15.100042]  kmalloc_test+0x30/0x60
+[   15.100050] Freed by task 151:
+[   15.100051]  kasan_save_stack+0x26/0x50
+[   15.100052]  kfree_test+0x100/0x180
+[   15.100060] ==================================================================

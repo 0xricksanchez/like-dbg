@@ -1,0 +1,17 @@
+[   21.500000] BUG: kernel NULL pointer dereference, address: 0000000000000000
+[   21.500002] #PF: supervisor read access in kernel mode
+[   21.500004] Oops: 0000 [#1] PREEMPT SMP NOPTI
+[   21.500006] CPU: 0 PID: 210 Comm: poc Not tainted 6.6.30 #1
+[   21.500008] RIP: 0010:vuln_read+0x1a/0x40
+[   21.500010] RSP: 0018:ffffc90000abfe10 EFLAGS: 00010246
+[   21.500012] Call Trace:
+[   21.500013]  <TASK>
+[   21.500014]  vuln_ioctl+0x33/0x60
+[   21.500015]  do_syscall_64+0x5c/0x90
+[   21.500016]  </TASK>
+[   21.500018] Modules linked in: foo bar
+[   21.500020] CR2: 0000000000000000
+[   21.500022] ---[ end trace 0000000000000000 ]---
+[   21.500024] RIP: 0010:vuln_read+0x1a/0x40
+[   21.500026] RSP: 0018:ffffc90000abfe10 EFLAGS: 00010246
+[   21.500028] Kernel Offset: disabled

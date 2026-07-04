@@ -21,7 +21,14 @@ from likedbg.debug_profiles import RunResolution
 from likedbg.host_profile import HostProfile
 from likedbg.input_hash import hash_file
 
-RunStatus = Literal["created", "profile-verification-failed", "launching", "launched", "launch-failed"]
+RunStatus = Literal[
+    "created",
+    "profile-verification-failed",
+    "launching",
+    "launched",
+    "launch-failed",
+    "crashed",
+]
 SCHEMA_VERSION = 1
 
 
@@ -100,6 +107,14 @@ class RunRecorder:
     def debugger_pane_log(self) -> Path:
         return self._dir / "logs" / "debugger-pane.log"
 
+    @property
+    def console_raw(self) -> Path:
+        return self._dir / "logs" / "console.raw"
+
+    @property
+    def crash_dir(self) -> Path:
+        return self._dir / "crash"
+
     @classmethod
     def start(
         cls,
@@ -114,7 +129,7 @@ class RunRecorder:
     ) -> RunRecorder:
         run_id = _run_id(build_label)
         run_dir = workspace / "artifacts" / "runs" / run_id
-        for sub in ("logs", "commands", "kernel", "profiles", "fragments"):
+        for sub in ("logs", "commands", "kernel", "profiles", "fragments", "crash"):
             (run_dir / sub).mkdir(parents=True, exist_ok=True)
 
         # requested + effective settings

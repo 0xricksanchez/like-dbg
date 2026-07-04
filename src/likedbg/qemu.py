@@ -45,6 +45,7 @@ def build_qemu_argv(
     kernel_image: Path,
     rootfs: Path | None,
     extra_boot_args: tuple[str, ...] = (),
+    console_log: Path | None = None,
 ) -> list[str]:
     argv = [_QEMU_BIN[target_arch]]
     if target_arch == "arm64":
@@ -74,7 +75,18 @@ def build_qemu_argv(
             _panic(debuggee),
         ]
     )
-    argv += ["-append", append, *drive_args, "-nographic"]
+    argv += ["-append", append, *drive_args]
+    if console_log is not None:
+        argv += [
+            "-chardev",
+            f"stdio,id=cons,logfile={console_log},signal=off",
+            "-serial",
+            "chardev:cons",
+            "-display",
+            "none",
+        ]
+    else:
+        argv += ["-nographic"]
     if debuggee.gdb:
         argv += ["-S", "-gdb", f"tcp::{debuggee.gdb_port}"]
     return argv

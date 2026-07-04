@@ -34,6 +34,7 @@ from likedbg.constants import KERNEL_VOLUME
 from likedbg.constants import ROOTFS_IMAGE
 from likedbg.constants import VOLUME_MOUNT
 from likedbg.container_service import ContainerService
+from likedbg.crash.analyze import analyze_run
 from likedbg.debug_profiles import RunResolution
 from likedbg.debug_profiles import parse_profile_names
 from likedbg.debug_profiles import resolve_run
@@ -201,6 +202,8 @@ def build_pipeline(
     rootfs_recipe: RootfsRecipe,
     patch_dirs: tuple[str, ...] = (),
     recorder: RunRecorder | None = None,
+    break_on_crash: bool = False,
+    crash_breakpoints: tuple[str, ...] = (),
 ) -> Pipeline:
     base_pane = session.current_pane_id()
     debuggee_pane: str | None = None
@@ -233,7 +236,11 @@ def build_pipeline(
             volume=kernel_volume,
         )
         cmd = gdb_pane_command(
-            args, image=debugger_image, mount_source=loc.gdb_mount_source, network_mode=host.network_mode
+            args,
+            image=debugger_image,
+            mount_source=loc.gdb_mount_source,
+            network_mode=host.network_mode,
+            crash_drop=recorder.crash_dir if recorder is not None else None,
         )
         session.set_option("@likedbg_debugger_cmd", cmd)
         debugger_pane = session.run_in_new_pane(
@@ -271,7 +278,13 @@ def build_pipeline(
             ),
             ArtifactExporter(container, kernel_volume=kernel_volume, workspace=workspace),
             DebuggeeStage(launch=launch_debuggee, debuggee_image=debuggee_image),
-            DebuggerStage(ext=ext, run_gdb=run_gdb, breakpoint="start_kernel"),
+            DebuggerStage(
+                ext=ext,
+                run_gdb=run_gdb,
+                breakpoint="start_kernel",
+                break_on_crash=break_on_crash,
+                crash_breakpoints=crash_breakpoints,
+            ),
         ]
     )
 
@@ -289,6 +302,8 @@ def build_use_pipeline(
     gdb_mount_source: str,
     rootfs_recipe: RootfsRecipe,
     recorder: RunRecorder | None = None,
+    break_on_crash: bool = False,
+    crash_breakpoints: tuple[str, ...] = (),
 ) -> Pipeline:
     base_pane = session.current_pane_id()
     debuggee_pane: str | None = None
@@ -314,7 +329,11 @@ def build_use_pipeline(
         if debuggee_pane is None:
             raise RuntimeError("debuggee pane has not been launched")
         cmd = gdb_pane_command(
-            args, image=debugger_image, mount_source=gdb_mount_source, network_mode=host.network_mode
+            args,
+            image=debugger_image,
+            mount_source=gdb_mount_source,
+            network_mode=host.network_mode,
+            crash_drop=recorder.crash_dir if recorder is not None else None,
         )
         session.set_option("@likedbg_debugger_cmd", cmd)
         debugger_pane = session.run_in_new_pane(
@@ -341,7 +360,13 @@ def build_use_pipeline(
             ),
             ArtifactExporter(container, kernel_volume=kernel_volume, workspace=workspace),
             DebuggeeStage(launch=launch_debuggee, debuggee_image=debuggee_image),
-            DebuggerStage(ext=ext, run_gdb=run_gdb, breakpoint="start_kernel"),
+            DebuggerStage(
+                ext=ext,
+                run_gdb=run_gdb,
+                breakpoint="start_kernel",
+                break_on_crash=break_on_crash,
+                crash_breakpoints=crash_breakpoints,
+            ),
         ]
     )
 
@@ -417,6 +442,8 @@ def cmd_use(
         gdb_mount_source=bm.paths["gdb_mount_source"],
         rootfs_recipe=rr_recipe,
         recorder=recorder,
+        break_on_crash=use_settings.debugger.break_on_crash,
+        crash_breakpoints=use_settings.debugger.crash_breakpoints,
     )
     pipeline.run(ctx)
     return 0
@@ -557,6 +584,26 @@ def cmd_restart_debuggee(session: Session) -> int:
         session.unset_option("@likedbg_restart_in_progress")
 
 
+def cmd_analyze_crash(workspace: Path, *, run_id: str) -> int:
+    """Pure-host crash analysis: resolve a run dir, run analyze_run, print a summary.
+
+    Docker/tmux-free — safe to dispatch before any container/session setup.
+    """
+    runs = workspace / "artifacts" / "runs"
+    run_dir = (runs / "latest") if run_id == "latest" else (runs / run_id)
+    run_dir = run_dir.resolve() if run_dir.is_symlink() else run_dir
+    report = analyze_run(run_dir)
+    if report is None:
+        logger.info("no crash detected")
+        print("no crash detected")
+        return 0
+    prim = report.events[report.primary] if report.primary is not None else report.events[0]
+    print(f"crash: {prim.kind} — {prim.title}")
+    print(f"  report: {run_dir / 'crash.md'}")
+    print(f"  json:   {run_dir / 'crash.json'}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="start_kgdb")
     parser.add_argument("--config", "-c", default="")
@@ -573,6 +620,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--build-images", action="store_true")
     parser.add_argument("--restart-debuggee", action="store_true")
     parser.add_argument("--explain-config", nargs="?", const="text", default=None, choices=["text", "json"])
+    parser.add_argument("--analyze-crash", nargs="?", const="latest", default=None, metavar="RUN-ID")
     args = parser.parse_args(argv)
     logsetup.configure_stderr(verbose=args.verbose)
     try:
@@ -587,6 +635,8 @@ def main(argv: list[str] | None = None) -> int:
                 )
             )
             return 0
+        if args.analyze_crash is not None:
+            return cmd_analyze_crash(workspace, run_id=args.analyze_crash)
         if args.restart_debuggee:
             if not os.getenv("TMUX"):
                 logger.error("Not running inside a TMUX session. Start tmux first.")
@@ -706,6 +756,8 @@ def main(argv: list[str] | None = None) -> int:
             rootfs_recipe=rr_recipe,
             patch_dirs=cfg.settings.build.patch_dirs,
             recorder=recorder,
+            break_on_crash=cfg.settings.debugger.break_on_crash,
+            crash_breakpoints=cfg.settings.debugger.crash_breakpoints,
         )
         pipeline.run(ctx)
         return 0

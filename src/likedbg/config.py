@@ -111,10 +111,13 @@ class DebuggeeCfg(_Base):
     smap: bool = True
     kpti: bool = True
     panic: str = "halt"
+    capture_console: bool = True
 
 
 class DebuggerCfg(_Base):
     ext: Ext = "pwndbg"
+    break_on_crash: bool = True
+    crash_breakpoints: tuple[str, ...] = ("panic", "die", "oops_enter", "kasan_report", "ubsan_epilogue")
 
 
 class DebuggingCfg(_Base):

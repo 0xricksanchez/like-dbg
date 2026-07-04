@@ -40,3 +40,39 @@ def test_kasan_resolution_orders_and_implies() -> None:
     rr = resolve_run(profile_names=("kasan",), config=cfg, host=_host(), workspace=REPO)
     assert rr.profiles.names[:2] == ("exploit-dev", "crash-debug")
     assert "kasan" in rr.profiles.names
+
+
+def test_exploit_dev_expects_kallsyms_soft() -> None:
+    cfg = load_config(REPO)
+    rr = resolve_run(profile_names=("exploit-dev",), config=cfg, host=_host(), workspace=REPO)
+    exp = {e.symbol: e for e in rr.profiles.expected_config}
+    assert "CONFIG_KALLSYMS" in exp
+    assert exp["CONFIG_KALLSYMS"].value == "y"
+    assert exp["CONFIG_KALLSYMS"].severity == "soft"
+
+
+def test_crash_debug_expects_kallsyms_soft() -> None:
+    cfg = load_config(REPO)
+    rr = resolve_run(profile_names=("crash-debug",), config=cfg, host=_host(), workspace=REPO)
+    exp = {e.symbol: e for e in rr.profiles.expected_config}
+    assert "CONFIG_KALLSYMS" in exp
+    assert exp["CONFIG_KALLSYMS"].value == "y"
+    assert exp["CONFIG_KALLSYMS"].severity == "soft"
+
+
+def test_kasan_expects_kallsyms_soft() -> None:
+    cfg = load_config(REPO)
+    rr = resolve_run(profile_names=("kasan",), config=cfg, host=_host(), workspace=REPO)
+    exp = {e.symbol: e for e in rr.profiles.expected_config}
+    assert "CONFIG_KALLSYMS" in exp
+    assert exp["CONFIG_KALLSYMS"].value == "y"
+    assert exp["CONFIG_KALLSYMS"].severity == "soft"
+
+
+def test_ubsan_expects_kallsyms_soft() -> None:
+    cfg = load_config(REPO)
+    rr = resolve_run(profile_names=("ubsan",), config=cfg, host=_host(), workspace=REPO)
+    exp = {e.symbol: e for e in rr.profiles.expected_config}
+    assert "CONFIG_KALLSYMS" in exp
+    assert exp["CONFIG_KALLSYMS"].value == "y"
+    assert exp["CONFIG_KALLSYMS"].severity == "soft"

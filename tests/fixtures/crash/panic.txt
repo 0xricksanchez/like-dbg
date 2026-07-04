@@ -1,0 +1,5 @@
+[   20.000000] Kernel panic - not syncing: sysrq triggered crash
+[   20.000010] CPU: 1 PID: 200 Comm: bash Not tainted 6.6.30 #1
+[   20.000020] Call Trace:
+[   20.000021]  panic+0x120/0x2c0
+[   20.000023]  sysrq_handle_crash+0x18/0x20
