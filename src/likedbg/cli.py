@@ -34,6 +34,7 @@ from likedbg.constants import KERNEL_VOLUME
 from likedbg.constants import ROOTFS_IMAGE
 from likedbg.constants import VOLUME_MOUNT
 from likedbg.container_service import ContainerService
+from likedbg.crash.analyze import analyze_run
 from likedbg.debug_profiles import RunResolution
 from likedbg.debug_profiles import parse_profile_names
 from likedbg.debug_profiles import resolve_run
@@ -583,6 +584,26 @@ def cmd_restart_debuggee(session: Session) -> int:
         session.unset_option("@likedbg_restart_in_progress")
 
 
+def cmd_analyze_crash(workspace: Path, *, run_id: str) -> int:
+    """Pure-host crash analysis: resolve a run dir, run analyze_run, print a summary.
+
+    Docker/tmux-free — safe to dispatch before any container/session setup.
+    """
+    runs = workspace / "artifacts" / "runs"
+    run_dir = (runs / "latest") if run_id == "latest" else (runs / run_id)
+    run_dir = run_dir.resolve() if run_dir.is_symlink() else run_dir
+    report = analyze_run(run_dir)
+    if report is None:
+        logger.info("no crash detected")
+        print("no crash detected")
+        return 0
+    prim = report.events[report.primary] if report.primary is not None else report.events[0]
+    print(f"crash: {prim.kind} — {prim.title}")
+    print(f"  report: {run_dir / 'crash.md'}")
+    print(f"  json:   {run_dir / 'crash.json'}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="start_kgdb")
     parser.add_argument("--config", "-c", default="")
@@ -599,6 +620,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--build-images", action="store_true")
     parser.add_argument("--restart-debuggee", action="store_true")
     parser.add_argument("--explain-config", nargs="?", const="text", default=None, choices=["text", "json"])
+    parser.add_argument("--analyze-crash", nargs="?", const="latest", default=None, metavar="RUN-ID")
     args = parser.parse_args(argv)
     logsetup.configure_stderr(verbose=args.verbose)
     try:
@@ -613,6 +635,8 @@ def main(argv: list[str] | None = None) -> int:
                 )
             )
             return 0
+        if args.analyze_crash is not None:
+            return cmd_analyze_crash(workspace, run_id=args.analyze_crash)
         if args.restart_debuggee:
             if not os.getenv("TMUX"):
                 logger.error("Not running inside a TMUX session. Start tmux first.")
