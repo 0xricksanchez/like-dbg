@@ -76,6 +76,7 @@ def analyze_run(run_dir: Path) -> CrashReport | None:
     run_json["crash"] = {
         "primary_class": prim.kind if prim else None,
         "title": prim.title if prim else None,
+        "fatal": bool(prim.fatal) if prim else False,
         "events": len(events),
         "report_json": "crash.json",
         "report_md": "crash.md",

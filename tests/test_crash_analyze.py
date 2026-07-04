@@ -24,6 +24,7 @@ def _mkrun(tmp_path: Path, console: str, *, gdb: dict | None = None, arch: str =
 
 
 PANIC = "[ 1.0] Kernel panic - not syncing: test\n[ 1.0] Call Trace:\n[ 1.0]  panic+0x1/0x2\n"
+WARN = "[ 1.0] WARNING: CPU: 0 PID: 1 at kernel/sched/core.c:1 __schedule+0x1/0x2\n"
 
 
 def test_analyze_writes_report_and_flips_status(tmp_path):
@@ -42,6 +43,29 @@ def test_analyze_no_crash_returns_none(tmp_path):
     run = _mkrun(tmp_path, "[ 0.1] Booting Linux\n[ 0.2] systemd started\n")
     assert analyze_run(run) is None
     assert not (run / "crash.json").exists()
+
+
+def test_analyze_warn_only_records_event_without_flipping_status(tmp_path):
+    run = _mkrun(tmp_path, WARN)
+    rep = analyze_run(run)
+    assert rep is not None and rep.events[0].kind == "warn" and rep.events[0].fatal is False
+    assert (run / "crash.json").is_file()
+    assert (run / "crash.md").is_file()
+    rj = json.loads((run / "run.json").read_text())
+    assert rj["status"] == "launched"
+    assert rj["status_history"] == []
+    assert rj["crash"]["primary_class"] == "warn"
+    assert rj["crash"]["fatal"] is False
+
+
+def test_analyze_tolerates_malformed_gdb_json(tmp_path):
+    run = _mkrun(tmp_path, PANIC)
+    (run / "crash" / "crash.gdb.json").write_text("{not valid json")
+    rep = analyze_run(run)
+    assert rep is not None
+    assert rep.primary is not None
+    assert rep.events[rep.primary].gdb_live is None
+    assert (run / "crash.json").is_file()
 
 
 def test_analyze_missing_run_dir_raises(tmp_path):
