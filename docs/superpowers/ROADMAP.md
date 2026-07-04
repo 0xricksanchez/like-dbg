@@ -11,6 +11,19 @@ can continue the rework with one prompt. `dev` represents the FULL rewrite and s
 
 ## Status (2026-06-26)
 
+**Update 2026-07-04 — legacy pre-rework code removed; S-tier work split into two branches; full idea
+backlog recorded (§F).** The quarantined pre-rework `src/*.py`, the old monolithic `start_kgdb.py`, and
+`.flake8` are deleted and the ruff force-exclude is lifted (chore merged to `dev`, `646c4ce`; green:
+ruff/mypy/299 tests). A weighted backlog of every open debugger idea (roadmap + newly imagined) now lives
+in **§F** so nothing is lost. **Tackling the S-tier items next, grouped so each finishes on its own branch
+(brainstorm→spec→grill→plan→subagent-driven, merge locally):**
+- **Branch 1 — Crash intelligence (`feat/crash-intel`):** B3 crash/oops detector + symbolized reports
+  **+** panic→auto-break-into-gdb (land at the fault with live regs/stack). First — it's the roadmap's
+  next slice, the biggest daily win, and unblocks D & E.
+- **Branch 2 — Fast exploit loop (`feat/exploit-loop`):** guest↔host shared dir (9p/virtiofs or SSH push
+  over the baked ed25519 key) **+** B6 guest deploy/run loop; the shared dir lands first inside the branch
+  as B6's transport substrate. Second — benefits from Branch 1's crash signal.
+
 **Latest: Sub-project B slices B1+B2 (Modern debugging UX) are DONE + LIVE-GATE PASSED + merged to `dev`** —
 TOML debug profiles + post-build `.config` verification, and per-run `artifacts/runs/<run-id>/` + tmux
 pane-transcript capture. Built via brainstorm→spec→grill→plan→subagent-driven-development (19 tasks + a test
@@ -213,15 +226,21 @@ Full B slice:
   labels, profile resolution graph, QEMU/GDB commands, kernel `.config`/`System.map` references, and
   Debuggee/Debugger pane transcripts via `tmux pipe-pane`. Transcripts are operator-pane logs, not
   byte-perfect serial capture (small gap at each `C-b B` restart is expected).
-- **B3 — Crash/oops detector + symbolized reports:** parse serial output for panics, oopses,
-  KASAN/UBSAN, GP faults, arm64 aborts, and call traces; produce `crash.json` + `crash.md`.
+- **B3 — Crash/oops detector + symbolized reports** *(Branch 1 `feat/crash-intel`)*: parse serial
+  output for panics, oopses, KASAN/UBSAN, GP faults, arm64 aborts, and call traces; produce
+  `crash.json` + `crash.md`. **Bundled with panic→auto-break:** set a gdb breakpoint on
+  `panic`/`die`/`oops_enter` so a crash lands you at the fault with live registers/stack instead of a
+  dead trace. (Serial parsing must handle the tty CRLF gotcha — see the B1 `.config` CRLF fix.)
 - **B4 — LIKE-DBG GDB helper pack + breakpoint profiles:** first-class GDB Python commands layered on
   `likedbg-reconnect` for kernel/session info, mitigation state, module symbol loading, common exploit
   structures, and breakpoint groups.
 - **B5 — Reset/snapshot controls:** QMP/HMP-backed stop/continue/reset controls, rootfs
   snapshot/overlay mode for repeatable exploit attempts.
-- **B6 — Guest exploit deploy/run loop:** helper commands to copy/build/run exploit payloads in the
-  guest, capture stdout/stderr, preserve crash artifacts, and wire out-of-tree `custom_modules`.
+- **B6 — Guest exploit deploy/run loop** *(Branch 2 `feat/exploit-loop`)*: helper commands to
+  copy/build/run exploit payloads in the guest, capture stdout/stderr, preserve crash artifacts, and
+  wire out-of-tree `custom_modules`. **Built on a guest↔host shared dir** (9p/virtiofs or SSH push over
+  the baked ed25519 key) that lands first in the branch, so editing an exploit on the host and
+  re-running in the guest needs no rootfs rebuild.
 
 ### E. Later large tracks — Sub-projects C–E
 Each still gets its own brainstorm→spec→grill→plan→subagent-driven cycle after the relevant B foundation
@@ -232,6 +251,48 @@ is in place.
   sanitizer profiles and structured crash artifacts.
 - **E — AI assistant pane:** a Claude-backed tmux pane observing QEMU/gdb output, offering live guidance.
   Best started after B2 creates structured run artifacts and B3 creates crash summaries.
+
+### F. Backlog — additional debugger ideas (added 2026-07-04, weighted for the exploit-dev inner loop)
+Captured so nothing is forgotten; `[R]` = already tracked above, `[+]` = imagined this session. Weight
+1–5 = usefulness for the edit→deploy→crash→root-cause loop and for blog material; S/M/L = effort. The
+S-tier items are pulled into the two branches named in the 2026-07-04 status update.
+
+**S-tier (next):**
+- `[R]` **B3** — crash/oops detector + symbolized reports (5 / M) → Branch 1.
+- `[+]` **panic→auto-break into gdb** — breakpoint on `panic`/`die`/`oops_enter`, land at the fault with
+  live regs/stack (5 / S) → Branch 1.
+- `[+]` **guest↔host shared dir** for the exploit binary — 9p/virtiofs or SSH push over the baked ed25519
+  key; removes rootfs rebuilds from the loop (5 / S–M) → Branch 2.
+- `[R]` **B6** — guest exploit deploy/run loop (5 / M–L) → Branch 2.
+
+**A-tier (high):**
+- `[R]` **B4** — GDB helper pack + breakpoint profiles: kernel/session info, mitigation state, slab/heap
+  introspection, module symbol auto-load, exploit-struct pretty-printers (4 / M).
+- `[R]` **B5** — reset/snapshot controls: QMP/HMP stop/continue/reset + rootfs overlay/snapshot (4 / M).
+- `[+]` **reverse debugging / record-replay** — QEMU `-icount rr=record` + gdb `reverse-continue`; TCG-only,
+  so forgoes native HVF on the Mac (fine for the x86_64-in-container TCG path) (4 / M).
+- `[R]` **C** — CTF/exploitation ergonomics: cpio unpack/repack (`ctf/misc/cpio.sh`), LK01 playground,
+  exploit conveniences (4 / M).
+
+**B-tier (medium):**
+- `[+]` **debuginfod / distro-kernel debugging** — attach to a stock Ubuntu/Debian kernel via symbol
+  server, no self-build → reproduce real CVEs (4 / M).
+- `[+]` **multi-kernel / latest-mainline matrix + Rust-for-Linux** — unpin from 6.6.30, build/boot
+  6.x/-next, Rust-enabled (3 / M–L).
+- `[R]` **D** — syzkaller integration + crash triage/dedup; depends on B3 artifacts (4 / L).
+- `[R]` **version-gated profile evaluation** — evaluate `kernel_min/max` boot args + `kernel_release`
+  `.config` expectations (currently deferred / `None`) (3 / S–M).
+- `[R]` **fragment-hash normalization** — strip comments/whitespace before the ADR-0003 content hash so
+  doc-only kconfig edits don't force a kernel rebuild (3 / S).
+- `[+]` **SMP / per-CPU debugging ergonomics** — `-smp`, thread/CPU awareness, per-cpu helpers (folds into
+  B4) (3 / M).
+
+**C-tier (later / large / low-urgency):**
+- `[R]` **E** — AI assistant pane: Claude-backed tmux pane reading QEMU/gdb output (3 / L; after B3).
+- `[+]` **live-gate/CI smoke harness** — scripted end-to-end boot on the Ubuntu VM to guard regressions
+  (3 / M).
+- `[R]` **`--device /dev/kvm` live-gate** — currently unit-tested only; needs a KVM host (2 / S).
+- `[+]` **more QEMU knobs exposed** — mem size, smp count, extra devices/virtio (2 / S).
 
 ## Workflow (use the same discipline that built Plans 4–6)
 - Features: `superpowers:brainstorming` → write spec (`docs/superpowers/specs/`) →
