@@ -201,6 +201,8 @@ def build_pipeline(
     rootfs_recipe: RootfsRecipe,
     patch_dirs: tuple[str, ...] = (),
     recorder: RunRecorder | None = None,
+    break_on_crash: bool = False,
+    crash_breakpoints: tuple[str, ...] = (),
 ) -> Pipeline:
     base_pane = session.current_pane_id()
     debuggee_pane: str | None = None
@@ -233,7 +235,11 @@ def build_pipeline(
             volume=kernel_volume,
         )
         cmd = gdb_pane_command(
-            args, image=debugger_image, mount_source=loc.gdb_mount_source, network_mode=host.network_mode
+            args,
+            image=debugger_image,
+            mount_source=loc.gdb_mount_source,
+            network_mode=host.network_mode,
+            crash_drop=recorder.crash_dir if recorder is not None else None,
         )
         session.set_option("@likedbg_debugger_cmd", cmd)
         debugger_pane = session.run_in_new_pane(
@@ -271,7 +277,13 @@ def build_pipeline(
             ),
             ArtifactExporter(container, kernel_volume=kernel_volume, workspace=workspace),
             DebuggeeStage(launch=launch_debuggee, debuggee_image=debuggee_image),
-            DebuggerStage(ext=ext, run_gdb=run_gdb, breakpoint="start_kernel"),
+            DebuggerStage(
+                ext=ext,
+                run_gdb=run_gdb,
+                breakpoint="start_kernel",
+                break_on_crash=break_on_crash,
+                crash_breakpoints=crash_breakpoints,
+            ),
         ]
     )
 
@@ -289,6 +301,8 @@ def build_use_pipeline(
     gdb_mount_source: str,
     rootfs_recipe: RootfsRecipe,
     recorder: RunRecorder | None = None,
+    break_on_crash: bool = False,
+    crash_breakpoints: tuple[str, ...] = (),
 ) -> Pipeline:
     base_pane = session.current_pane_id()
     debuggee_pane: str | None = None
@@ -314,7 +328,11 @@ def build_use_pipeline(
         if debuggee_pane is None:
             raise RuntimeError("debuggee pane has not been launched")
         cmd = gdb_pane_command(
-            args, image=debugger_image, mount_source=gdb_mount_source, network_mode=host.network_mode
+            args,
+            image=debugger_image,
+            mount_source=gdb_mount_source,
+            network_mode=host.network_mode,
+            crash_drop=recorder.crash_dir if recorder is not None else None,
         )
         session.set_option("@likedbg_debugger_cmd", cmd)
         debugger_pane = session.run_in_new_pane(
@@ -341,7 +359,13 @@ def build_use_pipeline(
             ),
             ArtifactExporter(container, kernel_volume=kernel_volume, workspace=workspace),
             DebuggeeStage(launch=launch_debuggee, debuggee_image=debuggee_image),
-            DebuggerStage(ext=ext, run_gdb=run_gdb, breakpoint="start_kernel"),
+            DebuggerStage(
+                ext=ext,
+                run_gdb=run_gdb,
+                breakpoint="start_kernel",
+                break_on_crash=break_on_crash,
+                crash_breakpoints=crash_breakpoints,
+            ),
         ]
     )
 
@@ -417,6 +441,8 @@ def cmd_use(
         gdb_mount_source=bm.paths["gdb_mount_source"],
         rootfs_recipe=rr_recipe,
         recorder=recorder,
+        break_on_crash=use_settings.debugger.break_on_crash,
+        crash_breakpoints=use_settings.debugger.crash_breakpoints,
     )
     pipeline.run(ctx)
     return 0
@@ -706,6 +732,8 @@ def main(argv: list[str] | None = None) -> int:
             rootfs_recipe=rr_recipe,
             patch_dirs=cfg.settings.build.patch_dirs,
             recorder=recorder,
+            break_on_crash=cfg.settings.debugger.break_on_crash,
+            crash_breakpoints=cfg.settings.debugger.crash_breakpoints,
         )
         pipeline.run(ctx)
         return 0

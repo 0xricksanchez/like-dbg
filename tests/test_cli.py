@@ -554,6 +554,7 @@ class _FakeRecorder:
         self.debuggee_pane_log = logs / "debuggee-pane.log"
         self.debugger_pane_log = logs / "debugger-pane.log"
         self.console_raw = logs / "console.raw"
+        self.crash_dir = workspace / "artifacts" / "runs" / "fake" / "crash"
 
     def add_warning(self, code: str, message: str) -> None:
         pass
@@ -898,6 +899,33 @@ def test_build_pipeline_threads_patch_dirs_to_build_stage(tmp_path):
     )
     build_stage = next(s for s in pipe._stages if s.name == "build")  # type: ignore[attr-defined]
     assert build_stage._patch_dirs == patch_dirs  # type: ignore[attr-defined]
+
+
+def test_build_pipeline_passes_crash_config(tmp_path):
+    """DebuggerStage inside the built pipeline must receive break_on_crash/crash_breakpoints."""
+    settings = Settings.model_validate({"general": {"arch": "arm64"}})
+    br = build_recipe(settings, version="6.6.30", arch="arm64", workspace=tmp_path, fragments=[])
+    rr = rootfs_recipe(settings)
+    session = _FakeSession()
+    pipe = build_pipeline(
+        ContainerService(SimpleNamespace()),
+        session,  # type: ignore[arg-type]
+        host=_host("volume"),
+        workspace=tmp_path,
+        kernel_volume="likedbg_ksrc",
+        dl_dir=tmp_path / "kernels",
+        debugger_image="like_debugger:latest",
+        debuggee_image="like_debuggee:latest",
+        ext="pwndbg",
+        build_recipe=br,
+        rootfs_recipe=rr,
+        recorder=None,
+        break_on_crash=True,
+        crash_breakpoints=("panic", "die"),
+    )
+    dbg = pipe._stages[-1]  # type: ignore[attr-defined]
+    assert dbg._break_on_crash is True  # type: ignore[attr-defined]
+    assert dbg._crash_breakpoints == ("panic", "die")  # type: ignore[attr-defined]
 
 
 def test_build_pipeline_defaults_patch_dirs_to_empty(tmp_path):
