@@ -18,3 +18,8 @@ value = "y"
 severity = "hard"
 arch = ["x86_64", "arm64"]
 kernel_min = "5.10"
+
+[[expect]]
+symbol = "CONFIG_KALLSYMS"
+value = "y"
+severity = "soft"

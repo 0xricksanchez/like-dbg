@@ -7,3 +7,8 @@ fragments = ["configs/fragments/profiles/crash-debug.config"]
 symbol = "CONFIG_DEBUG_INFO"
 value = "y"
 severity = "soft"
+
+[[expect]]
+symbol = "CONFIG_KALLSYMS"
+value = "y"
+severity = "soft"

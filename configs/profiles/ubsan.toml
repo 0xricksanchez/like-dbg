@@ -8,3 +8,8 @@ fragments = ["configs/fragments/profiles/ubsan.config"]
 symbol = "CONFIG_UBSAN"
 value = "y"
 severity = "hard"
+
+[[expect]]
+symbol = "CONFIG_KALLSYMS"
+value = "y"
+severity = "soft"
