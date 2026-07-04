@@ -233,8 +233,12 @@ sudo mkdir -p "$MNT/etc/systemd/system/multi-user.target.wants" >/dev/null
 sudo ln -sf /lib/systemd/system/ssh.service "$MNT/etc/systemd/system/multi-user.target.wants/ssh.service" >/dev/null
 # Host keys generated on the build host into the chroot (keys are arch-independent;
 # qemu-user is already removed, so a foreign-arch `chroot ssh-keygen` would fail).
+# `-A` is idempotent: it creates only the missing host-key types, so it never hits the
+# non-interactive "Overwrite? (y/n)" prompt (which returns non-zero and would abort the
+# build under `set -Eeuo pipefail`) on the keys openssh-server's postinst already made
+# during debootstrap. `-f "$MNT"` uses $MNT as a path prefix, targeting the chroot's /etc/ssh.
 sudo mkdir -p "$MNT/etc/ssh" >/dev/null
-sudo ssh-keygen -q -t ed25519 -f "$MNT/etc/ssh/ssh_host_ed25519_key" -N '' -C "root@$HOSTNAME" >/dev/null
+sudo ssh-keygen -A -f "$MNT" >/dev/null
 
 log "building final ext4 disk image"
 truncate -s "$((SEEK + 1))M" "$ROOTFS_NAME"
