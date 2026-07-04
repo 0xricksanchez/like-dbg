@@ -45,11 +45,13 @@ def test_panic_detected() -> None:
 def test_timestamp_only_line_does_not_drop_fault_pc_or_trace() -> None:
     # A realistic dmesg timestamp-only line strips to empty mid-dump; it must NOT
     # close the open event and swallow the RIP + trace that follow it.
+    # The blank line sits BEFORE the RIP line so it guards BOTH halves: under the
+    # old blank-line terminator it would null the event and drop fault_pc AND trace.
     log = (
         "[   12.345678] BUG: kernel NULL pointer dereference, address: 0000000000000000\r\n"
+        "[   12.345684]\r\n"
         "[   12.345685] RIP: 0010:vuln_read+0x1a/0x40\r\n"
         "[   12.345687] RSP: 0018:ffffc90000abfe10 EFLAGS: 00010246\r\n"
-        "[   12.345688]\r\n"
         "[   12.345693] Call Trace:\r\n"
         "[   12.345695]  vuln_ioctl+0x33/0x60\r\n"
         "[   12.345699]  do_syscall_64+0x5c/0x90\r\n"
@@ -81,3 +83,32 @@ def test_raw_hex_trace_frames_kept_and_task_markers_ignored() -> None:
     assert any(f.symbol is None and "[<ffffffff81234567>]" in f.raw for f in ev.trace)
     assert any(f.symbol is None and f.raw == "ffffffff89abcdef" for f in ev.trace)
     assert any(f.symbol == "do_syscall_64" for f in ev.trace)
+
+
+def test_post_trace_tail_not_captured_as_frames() -> None:
+    # The trace section ends at the first non-indented line. The standard x86 oops
+    # tail (Modules linked in:, CR2:, ---[ end trace ]---, repeated RIP:/RSP:) is
+    # column-0 and must NOT be scooped into ev.trace as bogus raw frames.
+    log = (
+        "[   12.345678] BUG: kernel NULL pointer dereference, address: 0000000000000000\r\n"
+        "[   12.345685] RIP: 0010:vuln_read+0x1a/0x40\r\n"
+        "[   12.345693] Call Trace:\r\n"
+        "[   12.345694]  <TASK>\r\n"
+        "[   12.345695]  vuln_ioctl+0x33/0x60\r\n"
+        "[   12.345699]  do_syscall_64+0x5c/0x90\r\n"
+        "[   12.345700]  </TASK>\r\n"
+        "[   12.345701] Modules linked in: foo bar\r\n"
+        "[   12.345702] CR2: 0000000000000000\r\n"
+        "[   12.345703] ---[ end trace 0000000000000000 ]---\r\n"
+        "[   12.345704] RIP: 0010:vuln_read+0x1a/0x40\r\n"
+        "[   12.345705] RSP: 0018:ffffc90000abfe10 EFLAGS: 00010246\r\n"
+    )
+    events = parse_console(log, "x86_64")
+    assert len(events) == 1
+    ev = events[0]
+    assert [f.symbol for f in ev.trace] == ["vuln_ioctl", "do_syscall_64"]
+    raws = [f.raw for f in ev.trace]
+    assert not any("CR2" in r for r in raws)
+    assert not any("end trace" in r for r in raws)
+    assert not any("Modules linked in" in r for r in raws)
+    assert not any(r.startswith(("RIP:", "RSP:")) for r in raws)

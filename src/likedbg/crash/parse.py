@@ -135,9 +135,16 @@ def parse_console(text: str, arch: str) -> list[CrashEvent]:
             _x86_line(cur, body)
         else:
             _arm_line(cur, body)
-        # Frames inside the trace.
+        # Frames inside the trace. Genuine call-trace entries stay indented after
+        # the timestamp is stripped; the post-trace tail ("CR2:", "Modules linked
+        # in:", "---[ end trace ]---", the repeated "RIP:"/"RSP:") starts at column
+        # 0. A non-indented line therefore ends the trace section and is not
+        # captured. "<TASK>"/"</TASK>" markers are indented but excluded by _frame.
         if in_trace:
-            fr = _frame(raw_line)
-            if fr is not None:
-                cur.trace.append(fr)
+            if not body[:1].isspace():
+                in_trace = False
+            else:
+                fr = _frame(body)
+                if fr is not None:
+                    cur.trace.append(fr)
     return events
