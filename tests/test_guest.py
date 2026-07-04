@@ -17,6 +17,8 @@ def test_ssh_argv_has_key_flags_port():
     assert "-i" in argv and "/w/rootfs.id_ed25519" in argv
     assert "-p" in argv and "2222" in argv
     assert "StrictHostKeyChecking=no" in j and "UserKnownHostsFile=/dev/null" in j
+    # keepalive so a kernel-killing exploit (guest frozen under gdb) doesn't hang `run` forever
+    assert "ServerAliveInterval=5" in j and "ServerAliveCountMax=3" in j
     assert argv[-2] == "root@127.0.0.1"
     assert argv[-1] == "cd /mnt/exploit && ./poc"
 

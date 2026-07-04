@@ -10,6 +10,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+# ServerAlive* bounds an established-then-frozen session: a kernel-killing exploit halts the
+# guest (panic trapped under gdb), freezing its TCP stack mid-command. ConnectTimeout only covers
+# the connect phase, so without these `run` would block indefinitely and `--run` would never reach
+# the capture + crash-analyze step. ~15s (5s x 3) after the guest stops answering keepalives, ssh
+# exits non-zero and `--run` proceeds to capture the rc and chain the analyzer. A healthy guest
+# answers keepalives in its TCP stack even under load, so normal runs are unaffected.
 _SSH_OPTS = [
     "-o",
     "StrictHostKeyChecking=no",
@@ -17,6 +23,10 @@ _SSH_OPTS = [
     "UserKnownHostsFile=/dev/null",
     "-o",
     "ConnectTimeout=5",
+    "-o",
+    "ServerAliveInterval=5",
+    "-o",
+    "ServerAliveCountMax=3",
     "-o",
     "LogLevel=ERROR",
 ]
