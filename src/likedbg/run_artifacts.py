@@ -167,12 +167,13 @@ class RunRecorder:
             "status_history": [{"status": "created", "at": now}],
         }
         eff = run_resolution.effective_debuggee
-        run_json["guest"] = {
-            "ssh_host": "127.0.0.1",
-            "ssh_port": eff.ssh_port,
-            "share_mount": "/mnt/exploit",
-            "share_dir": requested_settings.debuggee.share_dir,
-        }
+        if eff.guest_net:
+            run_json["guest"] = {
+                "ssh_host": "127.0.0.1",
+                "ssh_port": eff.ssh_port,
+                "share_mount": "/mnt/exploit",
+                "share_dir": eff.share_dir,
+            }
         rec = cls(run_dir, run_json)
         rec._flush()
         _point(workspace / "artifacts" / "runs" / "latest", run_dir)

@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+from likedbg.config import DebuggeeCfg
 from likedbg.config import Settings
 from likedbg.debug_profiles import ResolvedDebugProfiles
 from likedbg.debug_profiles import RunResolution
@@ -9,7 +10,7 @@ from likedbg.host_profile import Probes
 from likedbg.run_artifacts import RunRecorder
 
 
-def _rr() -> RunResolution:
+def _rr(*, effective_debuggee: DebuggeeCfg | None = None) -> RunResolution:
     return RunResolution(
         requested_settings=Settings(),
         provenance={("debuggee", "kaslr"): "default"},
@@ -18,7 +19,7 @@ def _rr() -> RunResolution:
             names=("exploit-dev",), base="exploit-dev", expected_config=(), future_breakpoint_groups=()
         ),
         fragments=(),
-        effective_debuggee=Settings().debuggee,
+        effective_debuggee=effective_debuggee if effective_debuggee is not None else Settings().debuggee,
         runtime_defaults={},
         runtime_overrides=(),
         extra_boot_args=(),
@@ -40,11 +41,11 @@ def _host(tmp_path: Path) -> HostProfile:
     return HostProfile.detect(Settings(), tmp_path, p)
 
 
-def _start_recorder(tmp_path: Path) -> RunRecorder:
+def _start_recorder(tmp_path: Path, *, effective_debuggee: DebuggeeCfg | None = None) -> RunRecorder:
     return RunRecorder.start(
         workspace=tmp_path,
         requested_settings=Settings(),
-        run_resolution=_rr(),
+        run_resolution=_rr(effective_debuggee=effective_debuggee),
         host=_host(tmp_path),
         build_label="linux-6.6.30-abcd1234",
         rootfs_label="rootfs-arm64-bookworm-deadbeef",
@@ -130,4 +131,12 @@ def test_run_json_has_guest_block(tmp_path: Path) -> None:
     assert g["ssh_host"] == "127.0.0.1"
     assert g["ssh_port"] == 2222
     assert g["share_mount"] == "/mnt/exploit"
+    assert g["share_dir"] == "exploit"
+    assert rec.run_dir.joinpath("exploit").is_dir()
+
+
+def test_run_json_omits_guest_block_when_guest_net_false(tmp_path: Path) -> None:
+    rec = _start_recorder(tmp_path, effective_debuggee=DebuggeeCfg(guest_net=False))
+    rj = json.loads((rec.run_dir / "run.json").read_text())
+    assert "guest" not in rj
     assert rec.run_dir.joinpath("exploit").is_dir()
