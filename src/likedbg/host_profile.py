@@ -83,7 +83,6 @@ class HostProfile:
     debuggee_mode: DebuggeeMode
     storage_mode: StorageMode
     gdbstub_addr: str
-    ssh_addr: str
     network_mode: NetworkMode = "published"
 
     @classmethod
@@ -117,7 +116,6 @@ class HostProfile:
             debuggee_mode=mode,
             storage_mode=storage,
             gdbstub_addr=addr,
-            ssh_addr=addr,
             network_mode=network_mode,
         )
 

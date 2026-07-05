@@ -46,6 +46,7 @@ def build_qemu_argv(
     rootfs: Path | None,
     extra_boot_args: tuple[str, ...] = (),
     console_log: Path | None = None,
+    share_host_dir: Path | None = None,
 ) -> list[str]:
     argv = [_QEMU_BIN[target_arch]]
     if target_arch == "arm64":
@@ -87,6 +88,11 @@ def build_qemu_argv(
         ]
     else:
         argv += ["-nographic"]
+    if debuggee.guest_net:
+        argv += ["-netdev", f"user,id=net0,hostfwd=tcp::{debuggee.ssh_port}-:22"]
+        argv += ["-device", "virtio-net-pci,netdev=net0"]
+    if debuggee.share and share_host_dir is not None:
+        argv += ["-virtfs", f"local,path={share_host_dir},mount_tag=exploit,security_model=mapped-xattr,id=fsdev0"]
     if debuggee.gdb:
         argv += ["-S", "-gdb", f"tcp::{debuggee.gdb_port}"]
     return argv

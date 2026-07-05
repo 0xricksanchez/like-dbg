@@ -49,7 +49,6 @@ def _ctx(storage: str, tmp_path: Path) -> PipelineContext:
         debuggee_mode="native-host",
         storage_mode=storage,
         gdbstub_addr="host.docker.internal",
-        ssh_addr="host.docker.internal",
     )
     ctx = PipelineContext(settings=Settings(), host=host)
     ctx.build_label = _LABEL

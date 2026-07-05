@@ -16,27 +16,30 @@ def _ctx(mode):
         debuggee_mode=mode,
         storage_mode="volume",
         gdbstub_addr="host.docker.internal",
-        ssh_addr="host.docker.internal",
     )
     ctx = PipelineContext(settings=Settings.model_validate({"general": {"arch": arch}}), host=host)
     ctx.kernel_image = Path("/ws/artifacts/x/Image")
     return ctx
 
 
-def test_native_debuggee_sends_plain_qemu_argv():
+def test_native_debuggee_sends_plain_qemu_argv(tmp_path):
     launched = {}
-    DebuggeeStage(launch=lambda cmd: launched.setdefault("cmd", cmd), debuggee_image="like_debuggee:latest").run(
-        _ctx("native-host")
-    )
+    DebuggeeStage(
+        launch=lambda cmd: launched.setdefault("cmd", cmd),
+        debuggee_image="like_debuggee:latest",
+        workspace=tmp_path,
+    ).run(_ctx("native-host"))
     assert launched["cmd"].startswith("qemu-system-aarch64")
     assert "docker run" not in launched["cmd"]
 
 
-def test_in_container_debuggee_wraps_docker_run():
+def test_in_container_debuggee_wraps_docker_run(tmp_path):
     launched = {}
-    DebuggeeStage(launch=lambda cmd: launched.setdefault("cmd", cmd), debuggee_image="like_debuggee:latest").run(
-        _ctx("in-container")
-    )
+    DebuggeeStage(
+        launch=lambda cmd: launched.setdefault("cmd", cmd),
+        debuggee_image="like_debuggee:latest",
+        workspace=tmp_path,
+    ).run(_ctx("in-container"))
     assert launched["cmd"].startswith("docker run --rm -it -p 1234:1234")
     assert "like_debuggee:latest" in launched["cmd"]
     assert "qemu-system-x86_64" in launched["cmd"]
@@ -52,7 +55,6 @@ def _linux_ctx(*, accel="tcg"):
         debuggee_mode="in-container",
         storage_mode="bind",
         gdbstub_addr="localhost",
-        ssh_addr="localhost",
         network_mode="host",
     )
     ctx = PipelineContext(settings=Settings.model_validate({"general": {"arch": "arm64"}}), host=host)
@@ -61,21 +63,25 @@ def _linux_ctx(*, accel="tcg"):
     return ctx
 
 
-def test_linux_in_container_uses_host_network():
+def test_linux_in_container_uses_host_network(tmp_path):
     launched = {}
-    DebuggeeStage(launch=lambda cmd: launched.setdefault("cmd", cmd), debuggee_image="like_debuggee:latest").run(
-        _linux_ctx()
-    )
+    DebuggeeStage(
+        launch=lambda cmd: launched.setdefault("cmd", cmd),
+        debuggee_image="like_debuggee:latest",
+        workspace=tmp_path,
+    ).run(_linux_ctx())
     assert "--network host" in launched["cmd"]
     assert "-p 1234:1234" not in launched["cmd"]
     assert "/dev/kvm" not in launched["cmd"]  # tcg → no kvm device
 
 
-def test_linux_kvm_passes_device():
+def test_linux_kvm_passes_device(tmp_path):
     launched = {}
-    DebuggeeStage(launch=lambda cmd: launched.setdefault("cmd", cmd), debuggee_image="like_debuggee:latest").run(
-        _linux_ctx(accel="kvm")
-    )
+    DebuggeeStage(
+        launch=lambda cmd: launched.setdefault("cmd", cmd),
+        debuggee_image="like_debuggee:latest",
+        workspace=tmp_path,
+    ).run(_linux_ctx(accel="kvm"))
     assert "--device /dev/kvm" in launched["cmd"]
 
 
@@ -95,9 +101,13 @@ class _Rec:
         pass
 
 
-def test_debuggee_records_command_and_status():
+def test_debuggee_records_command_and_status(tmp_path):
     launched = {}
-    stage = DebuggeeStage(launch=lambda cmd: launched.setdefault("cmd", cmd), debuggee_image="like_debuggee:latest")
+    stage = DebuggeeStage(
+        launch=lambda cmd: launched.setdefault("cmd", cmd),
+        debuggee_image="like_debuggee:latest",
+        workspace=tmp_path,
+    )
     rec = _Rec()
     ctx = _ctx("native-host")
     ctx.recorder = rec
@@ -107,12 +117,12 @@ def test_debuggee_records_command_and_status():
     assert "launching" in rec.statuses
 
 
-def test_debuggee_records_launch_failed_on_exception():
+def test_debuggee_records_launch_failed_on_exception(tmp_path):
     def _raise(cmd):
         raise RuntimeError("boom")
 
     rec = _Rec()
-    stage = DebuggeeStage(launch=_raise, debuggee_image="like_debuggee:latest")
+    stage = DebuggeeStage(launch=_raise, debuggee_image="like_debuggee:latest", workspace=tmp_path)
     ctx = _ctx("native-host")
     ctx.recorder = rec
     try:
@@ -122,10 +132,31 @@ def test_debuggee_records_launch_failed_on_exception():
     assert "launch-failed" in rec.statuses
 
 
-def test_debuggee_no_recorder_still_launches():
+def test_debuggee_no_recorder_still_launches(tmp_path):
     launched = {}
-    stage = DebuggeeStage(launch=lambda cmd: launched.setdefault("cmd", cmd), debuggee_image="like_debuggee:latest")
+    stage = DebuggeeStage(
+        launch=lambda cmd: launched.setdefault("cmd", cmd),
+        debuggee_image="like_debuggee:latest",
+        workspace=tmp_path,
+    )
     ctx = _ctx("native-host")
     # recorder is None by default
     stage.run(ctx)
     assert "cmd" in launched
+
+
+def test_debuggee_threads_share_and_ssh_port(tmp_path, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(
+        "likedbg.stages.debuggee.build_qemu_argv",
+        lambda *a, **k: captured.update(k) or ["qemu"],
+    )
+    stage = DebuggeeStage(
+        launch=lambda cmd: None,
+        debuggee_image="like_debuggee:latest",
+        workspace=tmp_path,
+    )
+    ctx = _ctx("native-host")
+    stage.run(ctx)
+    assert captured["share_host_dir"] == tmp_path / "exploit"
+    assert (tmp_path / "exploit").is_dir()

@@ -42,6 +42,7 @@ from likedbg.errors import CacheError
 from likedbg.errors import HostCapabilityError
 from likedbg.errors import LikeDbgError
 from likedbg.errors import SessionError
+from likedbg.exploit import run_exploit
 from likedbg.host_profile import HostProfile
 from likedbg.launchers import gdb_pane_command
 from likedbg.pipeline import Pipeline
@@ -277,7 +278,7 @@ def build_pipeline(
                 workspace=workspace,
             ),
             ArtifactExporter(container, kernel_volume=kernel_volume, workspace=workspace),
-            DebuggeeStage(launch=launch_debuggee, debuggee_image=debuggee_image),
+            DebuggeeStage(launch=launch_debuggee, debuggee_image=debuggee_image, workspace=workspace),
             DebuggerStage(
                 ext=ext,
                 run_gdb=run_gdb,
@@ -359,7 +360,7 @@ def build_use_pipeline(
                 workspace=workspace,
             ),
             ArtifactExporter(container, kernel_volume=kernel_volume, workspace=workspace),
-            DebuggeeStage(launch=launch_debuggee, debuggee_image=debuggee_image),
+            DebuggeeStage(launch=launch_debuggee, debuggee_image=debuggee_image, workspace=workspace),
             DebuggerStage(
                 ext=ext,
                 run_gdb=run_gdb,
@@ -604,6 +605,10 @@ def cmd_analyze_crash(workspace: Path, *, run_id: str) -> int:
     return 0
 
 
+def cmd_run(workspace: Path, *, run_id: str, exploit: str, args: str) -> int:
+    return run_exploit(workspace, run_id, Path(exploit), args)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="start_kgdb")
     parser.add_argument("--config", "-c", default="")
@@ -621,6 +626,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--restart-debuggee", action="store_true")
     parser.add_argument("--explain-config", nargs="?", const="text", default=None, choices=["text", "json"])
     parser.add_argument("--analyze-crash", nargs="?", const="latest", default=None, metavar="RUN-ID")
+    parser.add_argument("--run", default="", metavar="EXPLOIT-PATH")
+    parser.add_argument("--args", default="")
+    parser.add_argument("--run-id", default="latest")
     args = parser.parse_args(argv)
     logsetup.configure_stderr(verbose=args.verbose)
     try:
@@ -637,6 +645,8 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.analyze_crash is not None:
             return cmd_analyze_crash(workspace, run_id=args.analyze_crash)
+        if args.run:
+            return cmd_run(workspace, run_id=args.run_id, exploit=args.run, args=args.args)
         if args.restart_debuggee:
             if not os.getenv("TMUX"):
                 logger.error("Not running inside a TMUX session. Start tmux first.")

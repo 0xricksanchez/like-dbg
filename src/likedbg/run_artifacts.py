@@ -129,7 +129,7 @@ class RunRecorder:
     ) -> RunRecorder:
         run_id = _run_id(build_label)
         run_dir = workspace / "artifacts" / "runs" / run_id
-        for sub in ("logs", "commands", "kernel", "profiles", "fragments", "crash"):
+        for sub in ("logs", "commands", "kernel", "profiles", "fragments", "crash", "exploit"):
             (run_dir / sub).mkdir(parents=True, exist_ok=True)
 
         # requested + effective settings
@@ -166,6 +166,14 @@ class RunRecorder:
             "warnings": list(run_resolution.profile_warnings),
             "status_history": [{"status": "created", "at": now}],
         }
+        eff = run_resolution.effective_debuggee
+        if eff.guest_net:
+            run_json["guest"] = {
+                "ssh_host": "127.0.0.1",
+                "ssh_port": eff.ssh_port,
+                "share_mount": "/mnt/exploit",
+                "share_dir": eff.share_dir,
+            }
         rec = cls(run_dir, run_json)
         rec._flush()
         _point(workspace / "artifacts" / "runs" / "latest", run_dir)

@@ -207,6 +207,8 @@ echo 'T0:23:respawn:/sbin/getty -L ttyS0 115200 vt100' | sudo tee -a "$MNT/etc/i
 printf '\nauto eth0\niface eth0 inet dhcp\n' | sudo tee -a "$MNT/etc/network/interfaces" >/dev/null
 echo '/dev/vda / ext4 defaults 0 0' | sudo tee -a "$MNT/etc/fstab" >/dev/null
 echo 'debugfs /sys/kernel/debug debugfs defaults 0 0' | sudo tee -a "$MNT/etc/fstab" >/dev/null
+sudo mkdir -p "$MNT/mnt/exploit" >/dev/null
+echo 'exploit /mnt/exploit 9p trans=virtio,version=9p2000.L,nofail,msize=104857600 0 0' | sudo tee -a "$MNT/etc/fstab" >/dev/null
 # echo 'securityfs /sys/kernel/security securityfs defaults 0 0' | sudo tee -a "$MNT/etc/fstab"
 # echo 'configfs /sys/kernel/config/ configfs defaults 0 0' | sudo tee -a "$MNT/etc/fstab"
 echo -en "127.0.0.1\tlocalhost $ROOTFS_NAME\n" | sudo tee "$MNT/etc/hosts" >/dev/null
@@ -225,6 +227,18 @@ sudo mkdir -p "$MNT/root/.ssh/" >/dev/null
 cat "$SSH_KEY.pub" | sudo tee "$MNT/root/.ssh/authorized_keys" >/dev/null
 sudo chmod 0700 "$MNT/root/.ssh" >/dev/null
 sudo chmod 0600 "$MNT/root/.ssh/authorized_keys" >/dev/null
+# Enable sshd at boot (systemd). Symlink the wants unit directly — robust across
+# debootstrap policy-rc.d suppression; no chroot systemctl needed.
+sudo mkdir -p "$MNT/etc/systemd/system/multi-user.target.wants" >/dev/null
+sudo ln -sf /lib/systemd/system/ssh.service "$MNT/etc/systemd/system/multi-user.target.wants/ssh.service" >/dev/null
+# Host keys generated on the build host into the chroot (keys are arch-independent;
+# qemu-user is already removed, so a foreign-arch `chroot ssh-keygen` would fail).
+# `-A` is idempotent: it creates only the missing host-key types, so it never hits the
+# non-interactive "Overwrite? (y/n)" prompt (which returns non-zero and would abort the
+# build under `set -Eeuo pipefail`) on the keys openssh-server's postinst already made
+# during debootstrap. `-f "$MNT"` uses $MNT as a path prefix, targeting the chroot's /etc/ssh.
+sudo mkdir -p "$MNT/etc/ssh" >/dev/null
+sudo ssh-keygen -A -f "$MNT" >/dev/null
 
 log "building final ext4 disk image"
 truncate -s "$((SEEK + 1))M" "$ROOTFS_NAME"

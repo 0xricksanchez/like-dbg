@@ -112,6 +112,10 @@ class DebuggeeCfg(_Base):
     kpti: bool = True
     panic: str = "halt"
     capture_console: bool = True
+    ssh_port: int = 2222
+    share_dir: str = "exploit"
+    guest_net: bool = True
+    share: bool = True
 
 
 class DebuggerCfg(_Base):

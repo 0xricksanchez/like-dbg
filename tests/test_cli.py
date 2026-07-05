@@ -6,6 +6,7 @@ import pytest
 
 import likedbg.cli as cli
 from likedbg import cache
+from likedbg import guest
 from likedbg.cache import Manifest
 from likedbg.cache import build_recipe
 from likedbg.cache import rootfs_recipe
@@ -40,7 +41,6 @@ def _host(mode):
         debuggee_mode="in-container",
         storage_mode=mode,
         gdbstub_addr="localhost",
-        ssh_addr="localhost",
     )
 
 
@@ -218,6 +218,29 @@ def test_build_pipeline_includes_all_stage_names(tmp_path):
         "debuggee",
         "debugger",
     ]
+
+
+def test_debuggee_stage_has_workspace(tmp_path):
+    settings = Settings.model_validate({"general": {"arch": "arm64"}})
+    br = build_recipe(settings, version="6.6.30", arch="arm64", workspace=tmp_path, fragments=[])
+    rr = rootfs_recipe(settings)
+    session = _FakeSession()
+    pipe = build_pipeline(
+        ContainerService(SimpleNamespace()),
+        session,  # type: ignore[arg-type]
+        host=_host("volume"),
+        workspace=tmp_path,
+        kernel_volume="likedbg_ksrc",
+        dl_dir=tmp_path / "kernels",
+        debugger_image="like_debugger:latest",
+        debuggee_image="like_debuggee:latest",
+        ext="gef",
+        build_recipe=br,
+        rootfs_recipe=rr,
+        recorder=None,
+    )
+    dbge = next(s for s in pipe._stages if s.name == "debuggee")  # type: ignore[attr-defined]
+    assert dbge._workspace == tmp_path  # type: ignore[attr-defined]
 
 
 def test_adopt_guard_rejects_bind():
@@ -1086,3 +1109,62 @@ def test_cmd_analyze_crash_no_crash(tmp_path, capsys):
     (run / "run.json").write_text(json.dumps({"status": "launched", "build_label": "linux-6.6.30-x"}))
     assert cli.cmd_analyze_crash(tmp_path, run_id="r2") == 0
     assert "no crash detected" in capsys.readouterr().out.lower()
+
+
+# ---------------------------------------------------------------------------
+# --run / cmd_run
+# ---------------------------------------------------------------------------
+
+
+def test_cmd_run_dispatches(tmp_path, monkeypatch, capsys):
+    run = tmp_path / "artifacts" / "runs" / "r1"
+    (run / "logs").mkdir(parents=True)
+    (run / "exploit").mkdir()
+    (run / "crash").mkdir()
+    (run / "logs" / "console.raw").write_text("[ 0.1] booting\n")
+    (run / "host.json").write_text(json.dumps({"target_arch": "x86_64"}))
+    (run / "run.json").write_text(
+        json.dumps(
+            {
+                "status": "launched",
+                "build_label": "linux-6.6.30-x",
+                "rootfs_label": "rootfs-x86_64-bookworm-abc",
+                "guest": {
+                    "ssh_host": "127.0.0.1",
+                    "ssh_port": 2222,
+                    "share_mount": "/mnt/exploit",
+                    "share_dir": "exploit",
+                },
+            }
+        )
+    )
+    reg = tmp_path / "artifacts" / "cache" / "rootfs"
+    reg.mkdir(parents=True)
+    (reg / "rootfs-x86_64-bookworm-abc.json").write_text(
+        json.dumps(
+            {
+                "kind": "rootfs",
+                "label": "rootfs-x86_64-bookworm-abc",
+                "key": "k",
+                "version": "",
+                "arch": "x86_64",
+                "paths": {
+                    "image_host": "/w/artifacts/rootfs/rootfs.img",
+                    "ssh_key": "/w/artifacts/rootfs/rootfs.img.id_ed25519",
+                },
+            }
+        )
+    )
+    (tmp_path / "exploit").mkdir()
+    poc = tmp_path / "exploit" / "poc"
+    poc.write_text("#!/bin/sh\necho pwned\n")
+
+    monkeypatch.setattr(guest, "wait_ready", lambda ep, **kw: True)
+    monkeypatch.setattr(guest, "run", lambda ep, cmd, **kw: SimpleNamespace(rc=0, stdout="pwned\n", stderr=""))
+    monkeypatch.setattr(guest, "push", lambda ep, local, remote, **kw: None)
+
+    rc = cli.cmd_run(tmp_path, run_id="r1", exploit=str(poc), args="")
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "pwned" in out
+    assert (run / "exploit" / "poc.log").read_text().strip() == "pwned"

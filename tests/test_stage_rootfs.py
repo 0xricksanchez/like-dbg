@@ -7,6 +7,7 @@ from loguru import logger
 from likedbg import images
 from likedbg.cache import Manifest
 from likedbg.cache import RootfsRecipe
+from likedbg.cache import load_manifest
 from likedbg.cache import manifest_exists
 from likedbg.cache import write_manifest
 from likedbg.config import GeneralCfg
@@ -49,7 +50,6 @@ def _ctx(tmp_path):
         debuggee_mode="native-host",
         storage_mode="volume",
         gdbstub_addr="x",
-        ssh_addr="x",
     )
     ctx = PipelineContext(settings=settings, host=host)
     ctx.rootfs_label = _rrecipe().label
@@ -138,6 +138,22 @@ def test_rootfs_builds_and_writes_manifest_on_miss(tmp_path):
     assert out.rootfs_image == target
     assert manifest_exists(tmp_path, "rootfs", _rrecipe().label) is True
     assert c.run_kwargs["privileged"] is True
+
+
+def test_rootfs_manifest_records_ssh_key(tmp_path):
+    c = FakeC()
+    ctx = _ctx(tmp_path)
+    ctx.rootfs_label = _rrecipe().label
+    # Simulate the build container producing the image (FakeC runs no real container).
+    target = rootfs_target(tmp_path, _rrecipe().label)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(b"img")
+    RootfsStage(c, recipe=_rrecipe(), rootfs_image="like_rootfs", workspace=tmp_path).run(ctx)
+    m = load_manifest(tmp_path, "rootfs", _rrecipe().label)
+    assert m.paths["ssh_key"].endswith(".id_ed25519")
+    assert m.paths["ssh_key"] == str(
+        Path(m.paths["image_host"]).parent / (Path(m.paths["image_host"]).name + ".id_ed25519")
+    )
 
 
 def test_rootfs_build_rejects_stale_rootfs_image(tmp_path):

@@ -31,3 +31,6 @@ artifacts/
 
 # SDD controller scratch (briefs, reports, review packages, ledger)
 .superpowers/
+
+exploit/*
+!exploit/README.md

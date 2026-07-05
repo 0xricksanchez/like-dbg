@@ -43,6 +43,7 @@ def qemu_container_command(
     ro_mounts: list[Path],
     rw_mounts: list[Path],
     gdbstub_port: int = 1234,
+    ssh_port: int | None = None,
     network_mode: str = "published",
     kvm: bool = False,
     extra_rw_dirs: tuple[Path, ...] = (),
@@ -56,6 +57,8 @@ def qemu_container_command(
     mounts += [f"-v {q(str(d))}:{q(str(d))}:rw" for d in extra_rw_dirs]
     net = "--network host" if network_mode == "host" else f"-p {gdbstub_port}:{gdbstub_port}"
     parts = ["docker run --rm -it", net, *mounts]
+    if ssh_port is not None and network_mode != "host":
+        parts.append(f"-p {ssh_port}:{ssh_port}")
     if kvm:
         parts.append("--device /dev/kvm")
     parts.append(image)

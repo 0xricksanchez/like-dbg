@@ -15,7 +15,6 @@ def _ctx():
         debuggee_mode="native-host",
         storage_mode="volume",
         gdbstub_addr="host.docker.internal",
-        ssh_addr="host.docker.internal",
     )
     ctx = PipelineContext(settings=Settings.model_validate({"general": {"arch": "arm64"}}), host=host)
     ctx.vmlinux = Path("/ws/artifacts/linux-6.6.30/vmlinux")
@@ -42,7 +41,6 @@ def test_debugger_threads_custom_gdb_port():
         debuggee_mode="in-container",
         storage_mode="bind",
         gdbstub_addr="localhost",
-        ssh_addr="localhost",
         network_mode="host",
     )
     ctx = PipelineContext(settings=settings, host=host)

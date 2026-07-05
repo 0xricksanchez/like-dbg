@@ -16,7 +16,6 @@ def _ctx():
         debuggee_mode="in-container",
         storage_mode="bind",
         gdbstub_addr="localhost",
-        ssh_addr="localhost",
     )
     return PipelineContext(settings=Settings(), host=host)
 
