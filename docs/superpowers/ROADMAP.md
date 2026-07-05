@@ -258,11 +258,24 @@ Full B slice:
   structures, and breakpoint groups.
 - **B5 — Reset/snapshot controls:** QMP/HMP-backed stop/continue/reset controls, rootfs
   snapshot/overlay mode for repeatable exploit attempts.
-- **B6 — Guest exploit deploy/run loop** *(Branch 2 `feat/exploit-loop`)*: helper commands to
-  copy/build/run exploit payloads in the guest, capture stdout/stderr, preserve crash artifacts, and
-  wire out-of-tree `custom_modules`. **Built on a guest↔host shared dir** (9p/virtiofs or SSH push over
-  the baked ed25519 key) that lands first in the branch, so editing an exploit on the host and
-  re-running in the guest needs no rootfs rebuild.
+- **B6 — Guest exploit deploy/run loop** *(Branch 2 `feat/exploit-loop` / `feat/custom-modules`)*: helper
+  commands to copy/build/run exploit payloads in the guest, capture stdout/stderr, preserve crash
+  artifacts, and wire out-of-tree `custom_modules`. **Built on a guest↔host shared dir.** Split into two
+  slices:
+  - **B6 part 1 — 2a (`feat/exploit-loop`) — ✅ DONE + LIVE-GATE PASSED (arm64 native/HVF + x86_64
+    in-container/TCG), 2026-07-05, merged to `dev`.** Wires the guest transport (virtio-net + user-mode
+    `hostfwd` for SSH over the baked ed25519 key, + a virtio-9p live `/mnt/exploit` share, both gated on
+    config) and a re-runnable `start_kgdb --run ./exploit` loop: resolve the live `latest` run → deliver
+    (in-place via the 9p share, else scp) → run over SSH → capture stdout/stderr + artifacts into the run
+    dir → chain to Branch 1's `--analyze-crash` (idempotent). Host reaches `127.0.0.1:<ssh_port>` in both
+    modes; dead `host_profile.ssh_addr` removed. Live gate confirmed boot+net+9p, SSH with the baked key,
+    9p bidirectional, `--run` happy-path, and `--run` crash-durable (leak file survives a panic +
+    `crash.json`/`crash.md` auto-produced + status `crashed` + symbolized backtrace). Caught + fixed 2
+    live-gate bugs (rootfs `ssh-keygen -A` idempotency; SSH keepalive so a kernel-killing `--run` doesn't
+    hang). Spec `2026-07-04-exploit-loop-design.md`, ADR-0008, transcript `2026-07-05-exploit-loop-live.md`.
+  - **B6 part 2 — 2b (`feat/custom-modules`) — NEXT.** Build out-of-tree `custom_modules` (e.g. the LK01
+    vuln driver) against the kernel + auto-`insmod`. Deferred out of 2a; keeps the validated schema slot
+    from B1.
 
 ### E. Later large tracks — Sub-projects C–E
 Each still gets its own brainstorm→spec→grill→plan→subagent-driven cycle after the relevant B foundation
@@ -285,7 +298,8 @@ S-tier items are pulled into the two branches named in the 2026-07-04 status upd
   live regs/stack (5 / S) → Branch 1.
 - `[+]` **guest↔host shared dir** for the exploit binary — 9p/virtiofs or SSH push over the baked ed25519
   key; removes rootfs rebuilds from the loop (5 / S–M) → Branch 2.
-- `[R]` **B6** — guest exploit deploy/run loop (5 / M–L) → Branch 2.
+- `[R]` **B6** — guest exploit deploy/run loop (5 / M–L) → Branch 2. **Part 1 (2a transport + `--run`
+  loop) ✅ DONE + live-gated + merged (2026-07-05); part 2 (2b `custom_modules`) next.**
 
 **A-tier (high):**
 - `[R]` **B4** — GDB helper pack + breakpoint profiles: kernel/session info, mitigation state, slab/heap
