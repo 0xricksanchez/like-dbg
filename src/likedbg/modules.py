@@ -137,3 +137,39 @@ def stale(src_dir: Path, ko: Path, kernel_label: str) -> bool:
 
 def record_hash(src_dir: Path, ko: Path, kernel_label: str) -> None:
     ko.with_suffix(ko.suffix + ".hash").write_text(_stamp(src_dir, kernel_label))
+
+
+def stage_module(
+    container: Any,
+    *,
+    entry: Path,
+    out_dir: Path,
+    kernel_root: str,
+    mount_source: str,
+    env: dict[str, str],
+    image: str,
+    volume: str,
+    kernel_label: str,
+) -> Path:
+    """Bring one custom_modules entry to a staged `.ko` in out_dir. Prebuilt `.ko` → copy it; source dir →
+    build if the content hash (or kernel label) changed, else reuse the staged `.ko` (named after the dir)."""
+    if entry.is_file() and entry.suffix == ".ko":
+        out_dir.mkdir(parents=True, exist_ok=True)
+        dest = out_dir / entry.name
+        shutil.copy2(entry, dest)
+        return dest
+    ko = out_dir / f"{entry.name}.ko"
+    if not stale(entry, ko, kernel_label):
+        return ko
+    built = build_module(
+        container,
+        src_dir=entry,
+        kernel_root=kernel_root,
+        mount_source=mount_source,
+        env=env,
+        out_dir=out_dir,
+        image=image,
+        volume=volume,
+    )
+    record_hash(entry, built, kernel_label)
+    return built
