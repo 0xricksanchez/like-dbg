@@ -215,9 +215,34 @@ def test_build_pipeline_includes_all_stage_names(tmp_path):
         "profile-verification",
         "rootfs",
         "export",
+        "module-build",
         "debuggee",
         "debugger",
     ]
+
+
+def test_pipeline_has_module_build_before_debuggee(tmp_path):
+    settings = Settings.model_validate({"general": {"arch": "arm64"}})
+    br = build_recipe(settings, version="6.6.30", arch="arm64", workspace=tmp_path, fragments=[])
+    rr = rootfs_recipe(settings)
+    session = _FakeSession()
+    pipe = build_pipeline(
+        ContainerService(SimpleNamespace()),
+        session,  # type: ignore[arg-type]
+        host=_host("volume"),
+        workspace=tmp_path,
+        kernel_volume="likedbg_ksrc",
+        dl_dir=tmp_path / "kernels",
+        debugger_image="like_debugger:latest",
+        debuggee_image="like_debuggee:latest",
+        ext="gef",
+        build_recipe=br,
+        rootfs_recipe=rr,
+        recorder=None,
+    )
+    names = [s.name for s in pipe._stages]  # type: ignore[attr-defined]
+    assert "module-build" in names
+    assert names.index("module-build") < names.index("debuggee")
 
 
 def test_debuggee_stage_has_workspace(tmp_path):
@@ -408,12 +433,14 @@ def test_build_use_pipeline_includes_rootfs_before_launch(tmp_path):
         ext="pwndbg",
         gdb_mount_source="likedbg_ksrc",
         rootfs_recipe=rootfs_recipe(settings),
+        module_env={},
         recorder=None,
     )
     assert [s.name for s in pipe._stages] == [  # type: ignore[attr-defined]
         "profile-verification",
         "rootfs",
         "export",
+        "module-build",
         "debuggee",
         "debugger",
     ]

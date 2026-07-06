@@ -60,6 +60,7 @@ from likedbg.stages.debugger import DebuggerStage
 from likedbg.stages.download import DownloadStage
 from likedbg.stages.download import resolve_version
 from likedbg.stages.export import ArtifactExporter
+from likedbg.stages.module_build import ModuleBuildStage
 from likedbg.stages.profile_verification import ProfileVerificationStage
 from likedbg.stages.rootfs import RootfsStage
 from likedbg.stages.unpack import UnpackStage
@@ -284,6 +285,14 @@ def build_pipeline(
                 workspace=workspace,
             ),
             ArtifactExporter(container, kernel_volume=kernel_volume, workspace=workspace),
+            ModuleBuildStage(
+                container,
+                image=KBUILDER_IMAGE,
+                workspace=workspace,
+                env=build_recipe.env(),
+                arch=build_recipe.arch,
+                volume=kernel_volume,
+            ),
             DebuggeeStage(launch=launch_debuggee, debuggee_image=debuggee_image, workspace=workspace),
             DebuggerStage(
                 ext=ext,
@@ -308,6 +317,7 @@ def build_use_pipeline(
     ext: str,
     gdb_mount_source: str,
     rootfs_recipe: RootfsRecipe,
+    module_env: dict[str, str],
     recorder: RunRecorder | None = None,
     break_on_crash: bool = False,
     crash_breakpoints: tuple[str, ...] = (),
@@ -366,6 +376,14 @@ def build_use_pipeline(
                 workspace=workspace,
             ),
             ArtifactExporter(container, kernel_volume=kernel_volume, workspace=workspace),
+            ModuleBuildStage(
+                container,
+                image=KBUILDER_IMAGE,
+                workspace=workspace,
+                env=module_env,
+                arch=host.target_arch,
+                volume=kernel_volume,
+            ),
             DebuggeeStage(launch=launch_debuggee, debuggee_image=debuggee_image, workspace=workspace),
             DebuggerStage(
                 ext=ext,
@@ -448,6 +466,7 @@ def cmd_use(
         ext=use_settings.debugger.ext,
         gdb_mount_source=bm.paths["gdb_mount_source"],
         rootfs_recipe=rr_recipe,
+        module_env=dict(resolve_toolchain(use_settings.build.compiler, host.target_arch).make_vars),
         recorder=recorder,
         break_on_crash=use_settings.debugger.break_on_crash,
         crash_breakpoints=use_settings.debugger.crash_breakpoints,
