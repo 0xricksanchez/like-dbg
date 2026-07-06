@@ -79,3 +79,37 @@ def test_build_module_raises_when_no_ko(tmp_path):
         raise AssertionError("expected ModuleError")
     except ModuleError as e:
         assert "no .ko" in str(e).lower() or "produced" in str(e).lower()
+
+
+def test_module_name_from_modinfo(tmp_path):
+    ko = tmp_path / "my-mod.ko"
+    ko.write_bytes(b"ELFKO")
+
+    class C:
+        def run_detached(self, image, **kw):
+            return "CID"
+
+        def exec(self, c, cmd, *, workdir=None):
+            return FakeExec(output="my_mod\r\n")  # CRLF, as tty=True
+
+        def stop(self, c):
+            pass
+
+    assert modules.module_name(C(), ko, image="img") == "my_mod"
+
+
+def test_module_name_falls_back_to_stem(tmp_path):
+    ko = tmp_path / "foo-bar.ko"
+    ko.write_bytes(b"ELFKO")
+
+    class C:
+        def run_detached(self, image, **kw):
+            return "CID"
+
+        def exec(self, c, cmd, *, workdir=None):
+            return FakeExec(output="")  # modinfo yielded nothing
+
+        def stop(self, c):
+            pass
+
+    assert modules.module_name(C(), ko, image="img") == "foo_bar"

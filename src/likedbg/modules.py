@@ -54,3 +54,24 @@ def build_module(
     dest = out_dir / kos[0].name
     shutil.copy2(kos[0], dest)
     return dest
+
+
+def module_name(
+    container: Any,
+    ko: Path,
+    *,
+    image: str,
+) -> str:
+    """The loadable module name: `modinfo -F name`, else the .ko stem with `-`→`_`."""
+    c = container.run_detached(
+        image,
+        volumes={str(ko.parent): {"bind": _MOD_MOUNT, "mode": "ro"}},
+        detach=True,
+        tty=True,
+    )
+    try:
+        out = container.exec(c, f"modinfo -F name {_MOD_MOUNT}/{ko.name}").output
+    finally:
+        container.stop(c)
+    name = out.replace("\r\n", "\n").strip()
+    return name or ko.stem.replace("-", "_")
