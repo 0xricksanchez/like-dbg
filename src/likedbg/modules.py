@@ -4,10 +4,12 @@ kernel's toolchain env so vermagic matches; loading rides 2a's guest.py (ssh ins
 
 from __future__ import annotations
 
+import shlex
 import shutil
 from pathlib import Path
 from typing import Any
 
+from likedbg import guest as _guest
 from likedbg.constants import VOLUME_MOUNT
 from likedbg.errors import ModuleError
 
@@ -75,3 +77,47 @@ def module_name(
         container.stop(c)
     name = out.replace("\r\n", "\n").strip()
     return name or ko.stem.replace("-", "_")
+
+
+def _is_loaded(endpoint: object, name: str, client: Any) -> bool:
+    r = client.run(endpoint, f"test -d /sys/module/{name} && echo Y || echo N")
+    return bool(r.stdout.replace("\r\n", "\n").strip() == "Y")
+
+
+def load(
+    endpoint: object,
+    ko: Path,
+    *,
+    name: str,
+    share_dir: Path,
+    share_mount: str,
+    args: str = "",
+    reload: bool = True,
+    force_unload: bool = False,
+    client: Any = _guest,
+) -> Any:
+    """Deliver `ko` to the guest and insmod it; reload = rmmod-then-insmod (EBUSY aborts unless force)."""
+    try:
+        remote = f"{share_mount}/{ko.resolve().relative_to(share_dir.resolve())}"
+    except ValueError:
+        remote = f"{share_mount}/modules/{ko.name}"
+        client.push(endpoint, ko, remote)
+    if reload and _is_loaded(endpoint, name, client):
+        rm = client.run(endpoint, f"rmmod {'-f ' if force_unload else ''}{name}".strip())
+        if rm.rc != 0:
+            raise ModuleError(
+                f"could not unload {name}: {rm.stderr.strip() or 'in use'}",
+                remedy="close the module's users / restart the session, or pass --force-unload",
+            )
+    ins = client.run(endpoint, f"insmod {shlex.quote(remote)} {args}".strip())
+    if ins.rc != 0:
+        dmesg = client.run(endpoint, "dmesg | tail -n 20").stdout.replace("\r\n", "\n")
+        raise ModuleError(
+            f"insmod {name} failed (rc={ins.rc}): {ins.stderr.strip()}\n{dmesg}",
+            remedy="vermagic mismatch → rebuild the kernel to match, or build the module from source",
+        )
+    return ins
+
+
+def unload(endpoint: object, name: str, *, force: bool = False, client: Any = _guest) -> Any:
+    return client.run(endpoint, f"rmmod {'-f ' if force else ''}{name}".strip())

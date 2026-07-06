@@ -1,5 +1,8 @@
+from pathlib import Path
+
 from likedbg import modules
 from likedbg.errors import ModuleError
+from likedbg.guest import GuestEndpoint
 
 
 class FakeExec:
@@ -113,3 +116,95 @@ def test_module_name_falls_back_to_stem(tmp_path):
             pass
 
     assert modules.module_name(C(), ko, image="img") == "foo_bar"
+
+
+class FakeGuest:
+    """Scriptable guest client mirroring likedbg.guest's module API."""
+
+    def __init__(self):
+        self.ran: list[str] = []
+        self.pushed: list = []
+        self._loaded = False
+        self._rmmod_rc = 0
+        self._rmmod_err = ""
+        self._insmod_rc = 0
+
+    def run(self, ep, cmd, **kw):
+        self.ran.append(cmd)
+
+        class R:
+            rc = 0
+            stdout = ""
+            stderr = ""
+
+        r = R()
+        if cmd.startswith("test -d /sys/module/"):
+            r.stdout = "Y" if self._loaded else "N"
+        elif cmd.startswith("rmmod"):
+            r.rc = self._rmmod_rc
+            r.stderr = self._rmmod_err
+        elif cmd.startswith("insmod"):
+            r.rc = self._insmod_rc
+        elif cmd.startswith("dmesg"):
+            r.stdout = "some dmesg\n"
+        return r
+
+    def push(self, ep, local, remote, **kw):
+        self.pushed.append((local, remote))
+
+
+def _ep():
+    return GuestEndpoint(host="127.0.0.1", port=2222, key=Path("/w/key"))
+
+
+def test_load_in_place_insmods(tmp_path):
+    share = tmp_path / "exploit"
+    (share / "modules").mkdir(parents=True)
+    ko = share / "modules" / "lk01.ko"
+    ko.write_bytes(b"K")
+    g = FakeGuest()
+    modules.load(_ep(), ko, name="lk01", share_dir=share, share_mount="/mnt/exploit", client=g)
+    assert not g.pushed  # under share → in place, no scp
+    assert any(c == "insmod /mnt/exploit/modules/lk01.ko" for c in g.ran)
+
+
+def test_load_scp_when_outside_share(tmp_path):
+    share = tmp_path / "exploit"
+    share.mkdir()
+    ko = tmp_path / "elsewhere" / "lk01.ko"
+    ko.parent.mkdir()
+    ko.write_bytes(b"K")
+    g = FakeGuest()
+    modules.load(_ep(), ko, name="lk01", share_dir=share, share_mount="/mnt/exploit", client=g)
+    assert g.pushed and g.pushed[0][1] == "/mnt/exploit/modules/lk01.ko"
+
+
+def test_reload_busy_raises_and_keeps_old(tmp_path):
+    share = tmp_path / "exploit"
+    (share / "modules").mkdir(parents=True)
+    ko = share / "modules" / "lk01.ko"
+    ko.write_bytes(b"K")
+    g = FakeGuest()
+    g._loaded = True
+    g._rmmod_rc = 1
+    g._rmmod_err = "rmmod: ERROR: Module lk01 is in use"
+    try:
+        modules.load(_ep(), ko, name="lk01", share_dir=share, share_mount="/mnt/exploit", reload=True, client=g)
+        raise AssertionError("expected ModuleError")
+    except ModuleError as e:
+        assert "in use" in str(e).lower() or "busy" in str(e).lower()
+    assert not any(c.startswith("insmod") for c in g.ran)  # no duplicate insmod
+
+
+def test_reload_force_unload_uses_rmmod_f(tmp_path):
+    share = tmp_path / "exploit"
+    (share / "modules").mkdir(parents=True)
+    ko = share / "modules" / "lk01.ko"
+    ko.write_bytes(b"K")
+    g = FakeGuest()
+    g._loaded = True
+    modules.load(
+        _ep(), ko, name="lk01", share_dir=share, share_mount="/mnt/exploit", reload=True, force_unload=True, client=g
+    )
+    assert any(c == "rmmod -f lk01" for c in g.ran)
+    assert any(c.startswith("insmod") for c in g.ran)
