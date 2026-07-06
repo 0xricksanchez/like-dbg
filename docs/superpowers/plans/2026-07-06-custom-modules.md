@@ -4,7 +4,7 @@
 
 **Goal:** Build out-of-tree kernel modules against the running session's kernel and load them into the live Debuggee on command, feeding the 2a exploit loop and the crash detector.
 
-**Architecture:** A deep `modules.py` seam (kbuilder-container `make -C <kernel_root> M=/mod modules` build + SSH `insmod`/`rmmod` over 2a's `guest.py`) + a boot-time `ModuleBuildStage` that stages each `custom_modules` `.ko` into the 2a Guest share (`exploit/modules/`) + a re-runnable `start_kgdb --insmod`/`--rmmod` command (pure host, mirrors `--run`). Prebuilt `.ko`s pass through; a content-hash (`input_hash`) gates rebuilds; an original vuln-driver seed + crash PoC ships under `modules/`.
+**Architecture:** A deep `modules.py` seam (kbuilder-container `make -C <kernel_root> M=/mod modules` build + SSH `insmod`/`rmmod` over 2a's `guest.py`) + a boot-time `ModuleBuildStage` that stages each `custom_modules` `.ko` into the 2a Guest share (`exploit/modules/`) + a re-runnable `start_kgdb --insmod`/`--rmmod` command (host-side; `--insmod` builds-if-stale via its own kbuilder container, then loads over SSH — no tmux). Prebuilt `.ko`s pass through; a content-hash (`input_hash`) gates rebuilds; an original vuln-driver seed + crash PoC ships under `modules/`.
 
 **Tech Stack:** Python 3.12, Pydantic v2, Docker (kbuilder image, clang cross), out-of-tree Kbuild (`obj-m`), system `ssh`/`scp` (2a), pytest, ruff, mypy `--strict`, uv.
 
@@ -596,7 +596,7 @@ def test_builds_and_stages_ko(tmp_path, monkeypatch):
         ko.write_bytes(b"K")
         return ko
 
-    monkeypatch.setattr("likedbg.stages.module_build.build_module", fake_build)
+    monkeypatch.setattr("likedbg.modules.build_module", fake_build)
     stage = ModuleBuildStage(FakeC(), image="img", workspace=tmp_path,
                              env={"ARCH": "arm64", "LLVM": "1"}, arch="arm64", volume="likedbg_ksrc")
     ctx = _ctx(tmp_path, ("modules/lk01",))
@@ -613,7 +613,7 @@ def test_prebuilt_ko_passthrough_copies_without_build(tmp_path, monkeypatch):
     def boom(*a, **k):
         raise AssertionError("must not build a prebuilt .ko")
 
-    monkeypatch.setattr("likedbg.stages.module_build.build_module", boom)
+    monkeypatch.setattr("likedbg.modules.build_module", boom)
     stage = ModuleBuildStage(FakeC(), image="img", workspace=tmp_path,
                              env={"ARCH": "arm64", "LLVM": "1"}, arch="arm64", volume="likedbg_ksrc")
     ctx = _ctx(tmp_path, ("prebuilt/given.ko",))
@@ -625,7 +625,40 @@ def test_prebuilt_ko_passthrough_copies_without_build(tmp_path, monkeypatch):
 Run: `uv run pytest tests/test_stage_module_build.py -q`
 Expected: FAIL — no module `likedbg.stages.module_build`.
 
-- [ ] **Step 3: Implement**
+- [ ] **Step 3a: Add the shared `stage_module` helper to `src/likedbg/modules.py`**
+This is the ONE build-or-stage routine, reused by both `ModuleBuildStage` (this task) and `cmd_insmod` (Task 6), per the pre-flight decision (`--insmod` rebuilds-if-stale). **Convention:** a source-dir entry's `.ko` is named after the dir (`obj-m += <dirname>.o`); the seeds follow it.
+```python
+def stage_module(
+    container: Any,
+    *,
+    entry: Path,
+    out_dir: Path,
+    kernel_root: str,
+    mount_source: str,
+    env: dict[str, str],
+    image: str,
+    volume: str,
+    kernel_label: str,
+) -> Path:
+    """Bring one custom_modules entry to a staged `.ko` in out_dir. Prebuilt `.ko` → copy it; source dir →
+    build if the content hash (or kernel label) changed, else reuse the staged `.ko` (named after the dir)."""
+    if entry.is_file() and entry.suffix == ".ko":
+        out_dir.mkdir(parents=True, exist_ok=True)
+        dest = out_dir / entry.name
+        shutil.copy2(entry, dest)
+        return dest
+    ko = out_dir / f"{entry.name}.ko"
+    if not stale(entry, ko, kernel_label):
+        return ko
+    built = build_module(
+        container, src_dir=entry, kernel_root=kernel_root, mount_source=mount_source,
+        env=env, out_dir=out_dir, image=image, volume=volume,
+    )
+    record_hash(entry, built, kernel_label)
+    return built
+```
+
+- [ ] **Step 3b: Implement `ModuleBuildStage`**
 ```python
 # src/likedbg/stages/module_build.py
 """Boot-time stage: build each build.custom_modules entry out-of-tree against the built kernel tree and
@@ -633,16 +666,13 @@ stage the .ko into the Guest share (exploit/modules/), so --insmod can load it l
 
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 from typing import Any
 
 from likedbg import cache
 from likedbg.constants import KERNEL_VOLUME
 from likedbg.errors import BuildError
-from likedbg.modules import build_module
-from likedbg.modules import record_hash
-from likedbg.modules import stale
+from likedbg.modules import stage_module
 from likedbg.pipeline import PipelineContext
 
 
@@ -679,22 +709,14 @@ class ModuleBuildStage:
         eff = ctx.effective_debuggee or ctx.settings.debuggee
         out_dir = self._workspace / eff.share_dir / "modules"
         for rel in ctx.settings.build.custom_modules:
-            entry = self._workspace / rel
-            if entry.is_file() and entry.suffix == ".ko":
-                out_dir.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(entry, out_dir / entry.name)
-                continue
-            ko_guess = out_dir / f"{entry.name}.ko"
-            if not stale(entry, ko_guess, ctx.build_label):
-                continue
-            ko = build_module(
-                self._c, src_dir=entry, kernel_root=loc.kernel_root, mount_source=loc.gdb_mount_source,
-                env=self._env, out_dir=out_dir, image=self._image, volume=self._volume,
+            stage_module(
+                self._c, entry=self._workspace / rel, out_dir=out_dir, kernel_root=loc.kernel_root,
+                mount_source=loc.gdb_mount_source, env=self._env, image=self._image,
+                volume=self._volume, kernel_label=ctx.build_label,
             )
-            record_hash(entry, ko, ctx.build_label)
         return ctx
 ```
-> `cache.locations(label, arch=, storage_mode=, workspace=, volume=)` returns an object with `.kernel_root` (`/ksrc/<label>`) and `.gdb_mount_source` (the volume name in volume mode, the host `artifacts/ksrc` dir in bind mode) — check its real field names in `cache.py` and match them; the build manifest's `paths` carries the same values if you prefer `cache.load_manifest(...).paths`.
+> `cache.locations(...)` returns `Locations(.kernel_root="/ksrc/<label>", .gdb_mount_source=<volume name | host artifacts/ksrc dir>)` — verified fields. The T5 test (Step 1) monkeypatches `likedbg.modules.build_module` (which `stage_module` calls) so the stage's build path is exercised without Docker.
 
 - [ ] **Step 4: Run + full suite**
 Run: `uv run pytest tests/test_stage_module_build.py -q && uv run pytest -q && uv run mypy && uv run ruff check src tests`
@@ -720,9 +742,13 @@ git commit -m "feat(module-build): ModuleBuildStage builds+stages custom_modules
 ```python
 # tests/test_cli_insmod.py
 import json
+import types
 from pathlib import Path
 
+import pytest
+
 from likedbg import cli
+from likedbg.errors import LikeDbgError
 
 
 def _mkrun(tmp_path):
@@ -733,6 +759,7 @@ def _mkrun(tmp_path):
         "guest": {"ssh_host": "127.0.0.1", "ssh_port": 2222, "share_mount": "/mnt/exploit",
                   "share_dir": "exploit"},
     }))
+    (runs / "host.json").write_text(json.dumps({"target_arch": "arm64", "storage_mode": "volume"}))
     reg = tmp_path / "artifacts" / "cache" / "rootfs"
     reg.mkdir(parents=True)
     (reg / "rootfs-arm64-x.json").write_text(json.dumps({
@@ -745,54 +772,66 @@ def _mkrun(tmp_path):
     return tmp_path, ko
 
 
-class _Client:
-    def __init__(self):
-        self.loaded = []
+def _patch_docker(monkeypatch):
+    class FakeCS:
+        def __init__(self, *a, **k):
+            pass
 
-    def wait_ready(self, ep, **kw):
-        return True
+    monkeypatch.setattr(cli, "ContainerService", FakeCS)
+    monkeypatch.setattr(cli.docker_env, "make_client", lambda **k: object())
+    monkeypatch.setattr(cli.docker_env, "resolve_docker_host", lambda **k: "unix://x")
+    monkeypatch.setattr(cli, "resolve_toolchain", lambda comp, arch: types.SimpleNamespace(
+        make_vars={"ARCH": arch, "LLVM": "1"}))
+    monkeypatch.setattr(cli.cache, "locations", lambda *a, **k: types.SimpleNamespace(
+        kernel_root="/ksrc/x", gdb_mount_source="likedbg_ksrc"))
+    monkeypatch.setattr(cli, "load_config", lambda ws: types.SimpleNamespace(
+        settings=types.SimpleNamespace(build=types.SimpleNamespace(compiler="clang", custom_modules=()))))
+    monkeypatch.setattr(cli.guest, "wait_ready", lambda ep, **kw: True)
 
-    # mimic modules.load being called with client=<guest module>; here we monkeypatch modules.load instead.
 
-
-def test_cmd_insmod_loads_prebuilt_ko(tmp_path, monkeypatch, capsys):
+def test_cmd_insmod_stages_and_loads_prebuilt_ko(tmp_path, monkeypatch):
     ws, ko = _mkrun(tmp_path)
-    calls = {}
+    _patch_docker(monkeypatch)
+    captured: dict = {}
 
-    def fake_load(ep, ko_arg, *, name, share_dir, share_mount, args, reload, force_unload, client):
-        calls.update(name=name, share_mount=share_mount, ko=ko_arg)
+    def fake_stage(container, *, entry, out_dir, **kw):
+        return entry if entry.suffix == ".ko" else out_dir / "lk01.ko"
 
-        class R:
-            rc = 0
-            stdout = ""
-            stderr = ""
+    def fake_load(ep, ko_arg, *, name, share_dir, share_mount, args, reload, force_unload):
+        captured.update(name=name, share_mount=share_mount, ko=ko_arg)
+        return types.SimpleNamespace(rc=0, stdout="", stderr="")
 
-        return R()
-
-    monkeypatch.setattr(cli, "_module_name", lambda ko, arch: "lk01")
-    monkeypatch.setattr("likedbg.modules.load", fake_load)
-    monkeypatch.setattr("likedbg.guest.wait_ready", lambda ep, **kw: True)
+    monkeypatch.setattr(cli, "stage_module", fake_stage)
+    monkeypatch.setattr(cli.modules, "module_name", lambda c, k, *, image: "lk01")
+    monkeypatch.setattr(cli.modules, "load", fake_load)
     rc = cli.cmd_insmod(ws, run_id="r1", path=str(ko), args="", force_unload=False)
     assert rc == 0
-    assert calls["name"] == "lk01" and calls["share_mount"] == "/mnt/exploit"
+    assert captured["name"] == "lk01" and captured["share_mount"] == "/mnt/exploit"
 
 
-def test_cmd_insmod_no_run_errors(tmp_path):
-    rc = cli.cmd_insmod(tmp_path, run_id="latest", path="", args="", force_unload=False)
-    assert rc == 1  # LikeDbgError → main handler returns 1; cmd returns via raise→caller
+def test_cmd_insmod_no_run_raises(tmp_path):
+    with pytest.raises(LikeDbgError):
+        cli.cmd_insmod(tmp_path, run_id="latest", path="", args="", force_unload=False)
 ```
 
-> Adapt to the file's existing test conventions: this file's `cmd_analyze_crash`/`cmd_run` tests (in `tests/test_cli.py`) show how run dirs + capsys are used; mirror them. If `cmd_insmod` raises `ModuleError`/`ExploitError` on no-run, wrap the second test in `pytest.raises(LikeDbgError)` instead of asserting `rc == 1` — match how the sibling `cmd_run` no-run case behaves.
+> `cli` exposes `stage_module`/`ContainerService`/`docker_env`/`resolve_toolchain`/`cache`/`guest`/`modules`/`load_config` as module attributes (top-of-file imports), so `monkeypatch.setattr(cli, …)` patches them. Mirror `tests/test_cli.py`'s existing container-faking for the pipeline tests. `main()` catches `LikeDbgError` → rc 1, so the raise integrates.
 
 - [ ] **Step 2: Run to verify it fails**
 Run: `uv run pytest tests/test_cli_insmod.py -q`
 Expected: FAIL — `cli` has no `cmd_insmod`.
 
 - [ ] **Step 3: Implement**
-Add to `cli.py` (imports: `from likedbg import modules`, `from likedbg import guest`, and reuse `from likedbg.exploit import _resolve_run` OR re-resolve inline; one per line). Add a small helper to resolve the endpoint + a module name, mirroring `exploit.run_exploit`'s guest-block read:
+Add to `cli.py` imports (one per line): `from likedbg import modules`, `from likedbg import guest`, `from likedbg import docker_env`, `from likedbg.container_service import ContainerService`, `from likedbg.toolchain import resolve_toolchain`, `from likedbg.modules import stage_module`, `from likedbg.errors import ModuleError` (or `from likedbg.errors import ModuleError` if not already). Per the pre-flight decision, `--insmod` **rebuilds-if-stale** — so it creates its own Docker `ContainerService` (no tmux) to build a stale source dir, then loads over SSH.
 ```python
-def _resolve_endpoint(workspace: Path, run_id: str) -> tuple[Path, dict, "guest.GuestEndpoint"]:
-    from likedbg import cache
+def _guest_endpoint(workspace: Path, run_dir: Path, g: dict) -> guest.GuestEndpoint:
+    rootfs_label = json.loads((run_dir / "run.json").read_text()).get("rootfs_label", "")
+    key = cache.load_manifest(workspace, "rootfs", rootfs_label).paths.get("ssh_key", "")
+    if not key:
+        raise ModuleError("rootfs has no recorded SSH key", remedy="rebuild the rootfs")
+    return guest.GuestEndpoint(host=g["ssh_host"], port=int(g["ssh_port"]), key=Path(key))
+
+
+def cmd_insmod(workspace: Path, *, run_id: str, path: str, args: str, force_unload: bool) -> int:
     from likedbg.exploit import _resolve_run
 
     run_dir = _resolve_run(workspace, run_id)
@@ -800,66 +839,66 @@ def _resolve_endpoint(workspace: Path, run_id: str) -> tuple[Path, dict, "guest.
     g = run_json.get("guest")
     if not g:
         raise ModuleError("this run has no guest endpoint", remedy="boot with guest_net enabled")
-    rootfs_label = run_json.get("rootfs_label", "")
-    key = cache.load_manifest(workspace, "rootfs", rootfs_label).paths.get("ssh_key", "")
-    if not key:
-        raise ModuleError("rootfs has no recorded SSH key", remedy="rebuild the rootfs")
-    ep = guest.GuestEndpoint(host=g["ssh_host"], port=int(g["ssh_port"]), key=Path(key))
-    return run_dir, g, ep
-
-
-def _module_name(ko: Path, arch: str) -> str:
-    # module name from the .ko without a container (stem normalization is enough for load/rmmod;
-    # the authoritative modinfo path lives in modules.module_name for the build stage).
-    return ko.stem.replace("-", "_")
-
-
-def cmd_insmod(workspace: Path, *, run_id: str, path: str, args: str, force_unload: bool) -> int:
-    _run_dir, g, ep = _resolve_endpoint(workspace, run_id)
+    ep = _guest_endpoint(workspace, run_dir, g)
     share_dir = (workspace / g["share_dir"]).resolve()
-    targets: list[Path] = []
+    out_dir = share_dir / "modules"
+
+    # build context (kernel tree + toolchain env) — reads the run's build label + host profile + config.
+    build_label = run_json.get("build_label", "")
+    host_json = json.loads((run_dir / "host.json").read_text())
+    arch = host_json["target_arch"]
+    storage_mode = host_json.get("storage_mode", "volume")
+    compiler = load_config(workspace).settings.build.compiler
+    env = dict(resolve_toolchain(compiler, arch).make_vars)
+    loc = cache.locations(build_label, arch=arch, storage_mode=storage_mode, workspace=workspace)
+    container = ContainerService(docker_env.make_client(docker_env.resolve_docker_host(env=os.environ)))
+
+    # resolve the entries to stage (a PATH, else all configured custom_modules)
     if path:
         p = Path(path)
-        p = p if p.is_absolute() else workspace / p
-        targets = [_build_or_ko(workspace, p)]
+        entries = [p if p.is_absolute() else workspace / p]
     else:
-        for rel in _load_settings_custom_modules(workspace):
-            targets.append((workspace / g["share_dir"] / "modules" / f"{Path(rel).name}.ko"))
-    if not targets:
+        entries = [workspace / rel for rel in load_config(workspace).settings.build.custom_modules]
+    if not entries:
         raise ModuleError("nothing to load", remedy="set custom_modules or pass a module path")
+
+    kos = [
+        stage_module(
+            container, entry=e, out_dir=out_dir, kernel_root=loc.kernel_root,
+            mount_source=loc.gdb_mount_source, env=env, image=KBUILDER_IMAGE,
+            volume=KERNEL_VOLUME, kernel_label=build_label,
+        )
+        for e in entries
+    ]
     if not guest.wait_ready(ep):
-        raise ModuleError(f"guest not reachable at {ep.host}:{ep.port}",
-                          remedy="is a start_kgdb session booted and continued past start_kernel?")
-    for ko in targets:
-        name = _module_name(ko, "")
+        raise ModuleError(
+            f"guest not reachable at {ep.host}:{ep.port}",
+            remedy="is a start_kgdb session booted and continued past start_kernel?",
+        )
+    for ko in kos:
+        name = modules.module_name(container, ko, image=KBUILDER_IMAGE)
         res = modules.load(ep, ko, name=name, share_dir=share_dir, share_mount=g["share_mount"],
                            args=args, reload=True, force_unload=force_unload)
-        print(f"[likedbg] loaded {name} (rc={res.rc}) — /mnt/exploit/modules/{ko.name} "
-              f"(add-symbol-file this .ko for gdb)")
+        print(f"[likedbg] loaded {name} (rc={res.rc}) — {g['share_mount']}/modules/{ko.name} "
+              f"(add-symbol-file this .ko in gdb)")
     return 0
 
 
 def cmd_rmmod(workspace: Path, *, run_id: str, name: str, force_unload: bool) -> int:
-    _run_dir, _g, ep = _resolve_endpoint(workspace, run_id)
+    from likedbg.exploit import _resolve_run
+
+    run_dir = _resolve_run(workspace, run_id)
+    g = json.loads((run_dir / "run.json").read_text()).get("guest")
+    if not g:
+        raise ModuleError("this run has no guest endpoint", remedy="boot with guest_net enabled")
+    ep = _guest_endpoint(workspace, run_dir, g)
     if not guest.wait_ready(ep):
         raise ModuleError(f"guest not reachable at {ep.host}:{ep.port}", remedy="boot + continue the session")
     res = modules.unload(ep, name, force=force_unload)
     print(f"[likedbg] rmmod {name} (rc={res.rc})")
     return 0
 ```
-`_build_or_ko` decides build-vs-passthrough for a `--insmod PATH` (a dir → build if stale, else reuse the staged `.ko`; a `.ko` → return it):
-```python
-def _build_or_ko(workspace: Path, p: Path) -> Path:
-    if p.is_file() and p.suffix == ".ko":
-        return p
-    # a source dir: reuse the .ko the boot stage staged (rebuild handled at boot / by re-running start_kgdb).
-    staged = workspace / "exploit" / "modules" / f"{p.name}.ko"
-    if staged.is_file():
-        return staged
-    raise ModuleError(f"no built .ko for {p.name}", remedy="add it to custom_modules and re-run start_kgdb, "
-                      "or pass a prebuilt .ko path")
-```
-> `_build_or_ko` intentionally does NOT spin a kbuilder container from the pure-host `--insmod` path (that needs a Docker client + the volume; the boot-time `ModuleBuildStage` owns building). `--insmod PATH-to-dir` loads the already-staged `.ko`; editing a driver + rebuilding is a re-`start_kgdb` (or a follow-up that wires an on-demand build). If the reviewer/plan prefers on-demand rebuild here, thread a `ContainerService` + `modules.build_module` into `cmd_insmod` — but keep it out of the pure-host early-dispatch block. Adjust `_load_settings_custom_modules` to read `cfg.settings.build.custom_modules` via `load_config(workspace)`.
+> `stage_module` (Task 5) does the build-if-stale + prebuilt-`.ko` passthrough; a `.ko` PATH passes straight through, a stale source dir builds in the kbuilder container, a fresh one reuses the staged `.ko`. `cmd_insmod` therefore needs Docker (via its own `ContainerService`) but NOT tmux — so it still dispatches in the early host-command block. The T6 test monkeypatches `likedbg.modules.stage_module`, `likedbg.modules.module_name`, `likedbg.modules.load`, and `likedbg.guest.wait_ready`, and monkeypatches `cli.ContainerService`/`cli.docker_env` (or injects a fake) so no real Docker is needed in the unit test — mirror how `tests/test_cli.py` fakes the container for pipeline tests.
 
 Argparse (next to `--run`, cli.py ~line 629-631):
 ```python
