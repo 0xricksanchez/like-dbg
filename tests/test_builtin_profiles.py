@@ -76,3 +76,12 @@ def test_ubsan_expects_kallsyms_soft() -> None:
     assert "CONFIG_KALLSYMS" in exp
     assert exp["CONFIG_KALLSYMS"].value == "y"
     assert exp["CONFIG_KALLSYMS"].severity == "soft"
+
+
+def test_exploit_dev_expects_module_force_unload() -> None:
+    cfg = load_config(REPO)
+    rr = resolve_run(profile_names=("exploit-dev",), config=cfg, host=_host(), workspace=REPO)
+    exp = {e.symbol: e for e in rr.profiles.expected_config}
+    assert exp["CONFIG_MODULE_FORCE_UNLOAD"].value == "y"
+    assert exp["CONFIG_MODULE_FORCE_UNLOAD"].severity == "hard"
+    assert any(f.endswith("module-unload.config") for f in rr.fragments)
