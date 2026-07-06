@@ -1,5 +1,7 @@
 # README
 
+Legacy in-tree module injection (pre-2b). Out-of-tree modules now live in `modules/` (see 2b / ADR-0009).
+
 This directory houses example kernel modules that can automatically be compiled into a kernel by tweaking your `LIKE_DBG` config:
 You can either provide a path to a folder housing a single kernel module such as `examples/c_kmod/ioctl_test_drv/`.
 Alternatively, you can provide a path to a folder housing multiple kernel modules as well, e.g.: `examples/c_kmod/`.

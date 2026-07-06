@@ -16,7 +16,7 @@ kernels/
 kernel_root
 io/rootfs*
 io/filesystem*
-examples/c_kmod/compile_commands.json
+examples/legacy-intree/compile_commands.json
 patches/*
 configs/kernel_configs/*.conf*
 configs/local.toml
@@ -34,3 +34,12 @@ artifacts/
 
 exploit/*
 !exploit/README.md
+
+# out-of-tree module build litter (keep sources + READMEs)
+modules/**/*.ko
+modules/**/*.o
+modules/**/*.mod
+modules/**/*.mod.c
+modules/**/.*.cmd
+modules/**/Module.symvers
+modules/**/modules.order
