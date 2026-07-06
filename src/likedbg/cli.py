@@ -10,13 +10,16 @@ import urllib.request
 from datetime import UTC
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from loguru import logger
 
 from likedbg import cache
 from likedbg import docker_env
+from likedbg import guest
 from likedbg import images
 from likedbg import logsetup
+from likedbg import modules
 from likedbg.adopt import adopt_legacy_build
 from likedbg.adopt import adopt_legacy_rootfs
 from likedbg.cache import BuildRecipe
@@ -41,10 +44,12 @@ from likedbg.debug_profiles import resolve_run
 from likedbg.errors import CacheError
 from likedbg.errors import HostCapabilityError
 from likedbg.errors import LikeDbgError
+from likedbg.errors import ModuleError
 from likedbg.errors import SessionError
 from likedbg.exploit import run_exploit
 from likedbg.host_profile import HostProfile
 from likedbg.launchers import gdb_pane_command
+from likedbg.modules import stage_module
 from likedbg.pipeline import Pipeline
 from likedbg.pipeline import PipelineContext
 from likedbg.run_artifacts import RunRecorder
@@ -58,6 +63,7 @@ from likedbg.stages.export import ArtifactExporter
 from likedbg.stages.profile_verification import ProfileVerificationStage
 from likedbg.stages.rootfs import RootfsStage
 from likedbg.stages.unpack import UnpackStage
+from likedbg.toolchain import resolve_toolchain
 
 _FRAGMENTS = (
     "configs/fragments/debug.config",
@@ -609,6 +615,98 @@ def cmd_run(workspace: Path, *, run_id: str, exploit: str, args: str) -> int:
     return run_exploit(workspace, run_id, Path(exploit), args)
 
 
+def _guest_endpoint(workspace: Path, run_dir: Path, g: dict[str, Any]) -> guest.GuestEndpoint:
+    rootfs_label = json.loads((run_dir / "run.json").read_text()).get("rootfs_label", "")
+    key = cache.load_manifest(workspace, "rootfs", rootfs_label).paths.get("ssh_key", "")
+    if not key:
+        raise ModuleError("rootfs has no recorded SSH key", remedy="rebuild the rootfs")
+    return guest.GuestEndpoint(host=str(g["ssh_host"]), port=int(g["ssh_port"]), key=Path(key))
+
+
+def cmd_insmod(workspace: Path, *, run_id: str, path: str, args: str, force_unload: bool) -> int:
+    from likedbg.exploit import _resolve_run
+
+    run_dir = _resolve_run(workspace, run_id)
+    run_json = json.loads((run_dir / "run.json").read_text())
+    g = run_json.get("guest")
+    if not g:
+        raise ModuleError("this run has no guest endpoint", remedy="boot with guest_net enabled")
+    ep = _guest_endpoint(workspace, run_dir, g)
+    share_dir = (workspace / g["share_dir"]).resolve()
+    out_dir = share_dir / "modules"
+
+    # build context (kernel tree + toolchain env) — reads the run's build label + host profile + config.
+    build_label = run_json.get("build_label", "")
+    host_json = json.loads((run_dir / "host.json").read_text())
+    arch = host_json["target_arch"]
+    storage_mode = host_json.get("storage_mode", "volume")
+    compiler = load_config(workspace).settings.build.compiler
+    env = dict(resolve_toolchain(compiler, arch).make_vars)
+    loc = cache.locations(build_label, arch=arch, storage_mode=storage_mode, workspace=workspace)
+    container = ContainerService(docker_env.make_client(host=docker_env.resolve_docker_host(env=os.environ)))
+
+    # resolve the entries to stage (a PATH, else all configured custom_modules)
+    if path:
+        p = Path(path)
+        entries = [p if p.is_absolute() else workspace / p]
+    else:
+        entries = [workspace / rel for rel in load_config(workspace).settings.build.custom_modules]
+    if not entries:
+        raise ModuleError("nothing to load", remedy="set custom_modules or pass a module path")
+
+    kos = [
+        stage_module(
+            container,
+            entry=e,
+            out_dir=out_dir,
+            kernel_root=loc.kernel_root,
+            mount_source=loc.gdb_mount_source,
+            env=env,
+            image=KBUILDER_IMAGE,
+            volume=KERNEL_VOLUME,
+            kernel_label=build_label,
+        )
+        for e in entries
+    ]
+    if not guest.wait_ready(ep):
+        raise ModuleError(
+            f"guest not reachable at {ep.host}:{ep.port}",
+            remedy="is a start_kgdb session booted and continued past start_kernel?",
+        )
+    for ko in kos:
+        name = modules.module_name(container, ko, image=KBUILDER_IMAGE)
+        res = modules.load(
+            ep,
+            ko,
+            name=name,
+            share_dir=share_dir,
+            share_mount=g["share_mount"],
+            args=args,
+            reload=True,
+            force_unload=force_unload,
+        )
+        print(
+            f"[likedbg] loaded {name} (rc={res.rc}) — {g['share_mount']}/modules/{ko.name} "
+            f"(add-symbol-file this .ko in gdb)"
+        )
+    return 0
+
+
+def cmd_rmmod(workspace: Path, *, run_id: str, name: str, force_unload: bool) -> int:
+    from likedbg.exploit import _resolve_run
+
+    run_dir = _resolve_run(workspace, run_id)
+    g = json.loads((run_dir / "run.json").read_text()).get("guest")
+    if not g:
+        raise ModuleError("this run has no guest endpoint", remedy="boot with guest_net enabled")
+    ep = _guest_endpoint(workspace, run_dir, g)
+    if not guest.wait_ready(ep):
+        raise ModuleError(f"guest not reachable at {ep.host}:{ep.port}", remedy="boot + continue the session")
+    res = modules.unload(ep, name, force=force_unload)
+    print(f"[likedbg] rmmod {name} (rc={res.rc})")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="start_kgdb")
     parser.add_argument("--config", "-c", default="")
@@ -629,6 +727,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--run", default="", metavar="EXPLOIT-PATH")
     parser.add_argument("--args", default="")
     parser.add_argument("--run-id", default="latest")
+    parser.add_argument("--insmod", default="", metavar="MODULE")
+    parser.add_argument("--rmmod", default="")
+    parser.add_argument("--force-unload", action="store_true")
     args = parser.parse_args(argv)
     logsetup.configure_stderr(verbose=args.verbose)
     try:
@@ -647,6 +748,12 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_analyze_crash(workspace, run_id=args.analyze_crash)
         if args.run:
             return cmd_run(workspace, run_id=args.run_id, exploit=args.run, args=args.args)
+        if args.insmod:
+            return cmd_insmod(
+                workspace, run_id=args.run_id, path=args.insmod, args=args.args, force_unload=args.force_unload
+            )
+        if args.rmmod:
+            return cmd_rmmod(workspace, run_id=args.run_id, name=args.rmmod, force_unload=args.force_unload)
         if args.restart_debuggee:
             if not os.getenv("TMUX"):
                 logger.error("Not running inside a TMUX session. Start tmux first.")
