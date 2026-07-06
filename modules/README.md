@@ -13,9 +13,13 @@ cache invalidation from a module edit.
 
 ## Convention: directory name == `.ko` name
 
-Each module directory's name must match the `.ko` it produces — `modules/lk01/` builds `lk01.ko`
-(via `obj-m += lk01.o` in its Makefile). Keep new modules named consistently so the built artifact
-is unambiguous when staged into the Guest share.
+The staged `.ko` is always named after the module's **directory**, regardless of the `obj-m` object
+name in its Makefile — e.g. a dir `modules/bar/` whose Makefile says `obj-m += foo.o` still gets
+staged as `bar.ko` (the build's `foo.ko` is renamed on staging). This is safe: a module's loadable
+name is its *internal* name (`modinfo -F name`), independent of the `.ko` filename — `insmod`
+resolves it regardless of what the file is called. Keep new modules named consistently
+(`modules/lk01/` -> `obj-m += lk01.o` -> `lk01.ko`) anyway; it's the tidy default and keeps the
+directory-name canonicalization a no-op rename.
 
 ## `custom_modules`
 
@@ -51,6 +55,12 @@ uv run ./start_kgdb --rmmod lk01 --force-unload
 `--insmod` reloads (`rmmod`-then-`insmod`) if the module is already loaded. The `.ko` is staged into
 the Guest share (`<share_dir>/modules/` -> guest `/mnt/exploit/modules/`), and its path is printed
 so you can `add-symbol-file` it in gdb.
+
+**Compiler match matters:** `--use` / `--insmod` build the module with the compiler from your
+*current* config (`build.compiler`) — it must still match the compiler the reused kernel was built
+with (clang vs. gcc), or `insmod` will reject the `.ko` on a vermagic/ABI mismatch. If you switch
+`build.compiler` between sessions, rebuild the kernel (or point at a kernel built with the same
+compiler) before loading modules against it.
 
 ## `modules/template/` — start a new module
 

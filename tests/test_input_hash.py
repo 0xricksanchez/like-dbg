@@ -33,6 +33,7 @@ def test_hash_tree_ignores_build_junk(tmp_path: Path) -> None:
     (tmp_path / ".git" / "HEAD").write_text("ref")
     (tmp_path / "m.o").write_text("obj")
     (tmp_path / ".DS_Store").write_text("junk")
+    (tmp_path / ".m.o.cmd").write_text("cmd litter")  # kbuild .cmd litter, see .gitignore
     th = hash_tree(tmp_path, ignore=DEFAULT_IGNORE)
     assert [rel for rel, _ in th.files] == ["keep.c"]
 

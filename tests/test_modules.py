@@ -272,3 +272,52 @@ def test_stage_module_reuses_ko_when_source_unchanged(tmp_path, monkeypatch):
     )
     assert calls["n"] == 1
     assert ko1 == ko2 == out / "lk01.ko"
+
+
+def test_stage_module_canonicalizes_ko_name_to_dir_when_obj_name_differs(tmp_path, monkeypatch):
+    """A module dir named `bar` whose Makefile's obj-m produces `foo.ko` must still be staged (and
+    hash-skipped on rebuild) as `bar.ko` — the loadable name comes from modinfo, not the filename."""
+    src = tmp_path / "bar"
+    src.mkdir()
+    (src / "bar.c").write_text("x\n")
+    (src / "Makefile").write_text("obj-m += foo.o\n")
+    out = tmp_path / "exploit" / "modules"
+    calls = {"n": 0}
+
+    def fake_build(container, *, src_dir, kernel_root, mount_source, env, out_dir, image, volume):
+        calls["n"] += 1
+        out_dir.mkdir(parents=True, exist_ok=True)
+        ko = out_dir / "foo.ko"
+        ko.write_bytes(b"K")
+        return ko
+
+    monkeypatch.setattr("likedbg.modules.build_module", fake_build)
+    ko1 = modules.stage_module(
+        object(),
+        entry=src,
+        out_dir=out,
+        kernel_root="/ksrc/x",
+        mount_source="likedbg_ksrc",
+        env={"ARCH": "arm64", "LLVM": "1"},
+        image="img",
+        volume="likedbg_ksrc",
+        kernel_label="linux-x",
+    )
+    assert ko1 == out / "bar.ko"
+    assert ko1.is_file()
+    assert not (out / "foo.ko").exists()
+    assert (out / "bar.ko.hash").is_file()
+
+    ko2 = modules.stage_module(  # unchanged source → reuse the canonicalized .ko, no rebuild
+        object(),
+        entry=src,
+        out_dir=out,
+        kernel_root="/ksrc/x",
+        mount_source="likedbg_ksrc",
+        env={"ARCH": "arm64", "LLVM": "1"},
+        image="img",
+        volume="likedbg_ksrc",
+        kernel_label="linux-x",
+    )
+    assert calls["n"] == 1
+    assert ko2 == out / "bar.ko"

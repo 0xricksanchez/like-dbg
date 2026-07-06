@@ -171,5 +171,7 @@ def stage_module(
         image=image,
         volume=volume,
     )
-    record_hash(entry, built, kernel_label)
-    return built
+    if built != ko:
+        built.replace(ko)
+    record_hash(entry, ko, kernel_label)
+    return ko
