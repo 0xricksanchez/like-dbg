@@ -12,6 +12,7 @@ from typing import Any
 from likedbg import guest as _guest
 from likedbg.constants import VOLUME_MOUNT
 from likedbg.errors import ModuleError
+from likedbg.input_hash import hash_tree
 
 _MOD_MOUNT = "/mod"
 
@@ -121,3 +122,18 @@ def load(
 
 def unload(endpoint: object, name: str, *, force: bool = False, client: Any = _guest) -> Any:
     return client.run(endpoint, f"rmmod {'-f ' if force else ''}{name}".strip())
+
+
+def _stamp(src_dir: Path, kernel_label: str) -> str:
+    return f"{kernel_label}:{hash_tree(src_dir).aggregate}"
+
+
+def stale(src_dir: Path, ko: Path, kernel_label: str) -> bool:
+    sidecar = ko.with_suffix(ko.suffix + ".hash")
+    if not ko.is_file() or not sidecar.is_file():
+        return True
+    return sidecar.read_text().strip() != _stamp(src_dir, kernel_label)
+
+
+def record_hash(src_dir: Path, ko: Path, kernel_label: str) -> None:
+    ko.with_suffix(ko.suffix + ".hash").write_text(_stamp(src_dir, kernel_label))

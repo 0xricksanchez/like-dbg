@@ -208,3 +208,24 @@ def test_reload_force_unload_uses_rmmod_f(tmp_path):
     )
     assert any(c == "rmmod -f lk01" for c in g.ran)
     assert any(c.startswith("insmod") for c in g.ran)
+
+
+def test_stale_true_when_ko_missing(tmp_path):
+    src = tmp_path / "m"
+    src.mkdir()
+    (src / "m.c").write_text("a\n")
+    assert modules.stale(src, tmp_path / "m.ko", "linux-x") is True
+
+
+def test_record_then_not_stale_until_source_or_label_changes(tmp_path):
+    src = tmp_path / "m"
+    src.mkdir()
+    (src / "m.c").write_text("a\n")
+    ko = tmp_path / "m.ko"
+    ko.write_bytes(b"K")
+    modules.record_hash(src, ko, "linux-x")
+    assert modules.stale(src, ko, "linux-x") is False
+    (src / "m.c").write_text("b\n")  # source changed
+    assert modules.stale(src, ko, "linux-x") is True
+    modules.record_hash(src, ko, "linux-x")
+    assert modules.stale(src, ko, "linux-y") is True  # kernel label changed
