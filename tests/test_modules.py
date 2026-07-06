@@ -229,3 +229,46 @@ def test_record_then_not_stale_until_source_or_label_changes(tmp_path):
     assert modules.stale(src, ko, "linux-x") is True
     modules.record_hash(src, ko, "linux-x")
     assert modules.stale(src, ko, "linux-y") is True  # kernel label changed
+
+
+def test_stage_module_reuses_ko_when_source_unchanged(tmp_path, monkeypatch):
+    """Second stage_module call for an unchanged source dir must not invoke build_module again."""
+    src = tmp_path / "lk01"
+    src.mkdir()
+    (src / "lk01.c").write_text("x\n")
+    (src / "Makefile").write_text("obj-m += lk01.o\n")
+    out = tmp_path / "exploit" / "modules"
+    calls = {"n": 0}
+
+    def fake_build(container, *, src_dir, kernel_root, mount_source, env, out_dir, image, volume):
+        calls["n"] += 1
+        out_dir.mkdir(parents=True, exist_ok=True)
+        ko = out_dir / "lk01.ko"
+        ko.write_bytes(b"K")
+        return ko
+
+    monkeypatch.setattr("likedbg.modules.build_module", fake_build)
+    ko1 = modules.stage_module(
+        object(),
+        entry=src,
+        out_dir=out,
+        kernel_root="/ksrc/x",
+        mount_source="likedbg_ksrc",
+        env={"ARCH": "arm64", "LLVM": "1"},
+        image="img",
+        volume="likedbg_ksrc",
+        kernel_label="linux-x",
+    )
+    ko2 = modules.stage_module(  # unchanged source → reuse the staged .ko, no rebuild
+        object(),
+        entry=src,
+        out_dir=out,
+        kernel_root="/ksrc/x",
+        mount_source="likedbg_ksrc",
+        env={"ARCH": "arm64", "LLVM": "1"},
+        image="img",
+        volume="likedbg_ksrc",
+        kernel_label="linux-x",
+    )
+    assert calls["n"] == 1
+    assert ko1 == ko2 == out / "lk01.ko"
