@@ -28,6 +28,18 @@ The exploit deploy/run loop needs a **vulnerable kernel module** to target. `bui
   live, crash-durably, with no rebake — the natural carrier.
 - **A separate module-signing / signed-`insmod` path.** Rejected as unnecessary: the built kernel has
   `CONFIG_MODULE_SIG` unset, so unsigned `insmod` is accepted; adding signing is scope we do not need.
+- **Foreign kernel adoption (the CTF bring-your-own `bzImage`+`vmlinux`, ± initramfs).** Deferred to a
+  separate spec (2c), not folded into 2b. A foreign kernel has no `/ksrc` build tree, so modules cannot be
+  built out-of-tree against it — only a prebuilt `.ko` that already matches it can load. And 2a's SSH+9p
+  transport (which `--insmod` rides) exists only because *our* `rootfs.sh` bakes sshd + the 9p mount; a
+  foreign CTF initramfs has neither, so the delivery path does not reach it. Foreign-kernel boot + a
+  non-SSH delivery path is a distinct subsystem that deserves its own design. 2b therefore scopes prebuilt
+  `.ko` passthrough to a `.ko` whose vermagic matches the like-dbg-built kernel.
+- **A `--force`/vermagic-override `insmod`.** Rejected as wishful thinking: the vermagic check lives in the
+  kernel and `insmod` cannot override it; `modprobe --force` only strips a field or two and is unreliable.
+  A vermagic-mismatch load surfaces the guest `dmesg` line (`version magic '…' should be '…'`) with a
+  remedy — rebuild the kernel to match, or build the module from source against this kernel — instead of
+  faking a force.
 - **Fold module loading into `--run`.** Rejected: `--run` executes a userspace exploit binary; loading a
   module is distinct behavior (`insmod`/`rmmod`, module name resolution, reload) and deserves its own
   `--insmod`/`--rmmod` verbs. They compose in the loop (`--insmod` the driver, then `--run` the exploit).
