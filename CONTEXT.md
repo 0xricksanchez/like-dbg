@@ -85,6 +85,21 @@ else copied over SSH), executed over SSH, its stdout/stderr and artifacts captur
 and a Crash report produced if it faults the kernel.
 _Avoid_: exploit session, payload run.
 
+**Custom module**:
+An out-of-tree kernel module (a `custom_modules` entry: a source dir with an `obj-m` Makefile, or a
+prebuilt `.ko`) built against the running session's kernel and loaded into the live Debuggee. The `.ko` is
+staged in the Guest share (`/mnt/exploit/modules/`) and loaded on command with `start_kgdb --insmod`
+(`rmmod`-then-`insmod` to reload) — never auto-loaded at boot, so gdb can be armed before the module's
+`init` runs. Typically the vulnerable driver an Exploit run then targets.
+_Avoid_: in-tree module, driver injection, kernel patch.
+
+**Module build**:
+The out-of-tree compile of a Custom module — `make -C /ksrc/<label> M=<src> modules` in the kbuilder
+container against the already-built kernel tree, using the Kernel Build's toolchain env (`ARCH`, `LLVM`) so
+vermagic/ABI match. Runs as a boot-time stage over all `custom_modules` and on demand (build-if-stale) via
+`--insmod`. Does **not** rebuild or invalidate the Kernel Build.
+_Avoid_: recompiling the kernel; "module compile" (say Module build).
+
 **Effective settings**:
 The runtime Debuggee toggles LIKE-DBG actually uses after the 6-layer precedence merge — built-in <
 project default < profile runtime defaults < local < scenario < CLI. Held as
