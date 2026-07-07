@@ -261,6 +261,56 @@ def test_repack_initramfs_quotes_filename_with_space(tmp_path: Path) -> None:
     assert "/in/odd name.cpio.gz " not in cmd.replace("'/in/odd name.cpio.gz'", "")
 
 
+def test_console_upload_probe_failure_says_use_repack(tmp_path):
+    from likedbg.foreign import console_upload
+
+    payload = tmp_path / "expl"
+    payload.write_bytes(b"\x7fELFsmall")
+
+    class _Sess:
+        def __init__(self):
+            self.sent = []
+
+        def send_keys(self, pane, keys, *, enter=True):
+            self.sent.append(keys)
+
+    sess = _Sess()
+    # console read reports base64 missing -> probe fails
+    with pytest.raises(ForeignError, match="use repack"):
+        console_upload(sess, "%2", payload, read_console=lambda: "LIKEDBG-PROBE base64=no tmp=yes\n")
+
+
+def test_console_upload_sends_chunks_and_verifies(tmp_path):
+    from hashlib import sha256
+
+    from likedbg.foreign import console_upload
+
+    payload = tmp_path / "expl"
+    data = b"\x7fELF" + b"A" * 40
+    payload.write_bytes(data)
+    digest = sha256(data).hexdigest()
+
+    class _Sess:
+        def __init__(self):
+            self.sent = []
+
+        def send_keys(self, pane, keys, *, enter=True):
+            self.sent.append(keys)
+
+    sess = _Sess()
+    # probe OK, then the guest echoes matching size + sha256
+    reads = iter(
+        [
+            "LIKEDBG-PROBE base64=yes tmp=yes\n",
+            f"LIKEDBG-DONE size={len(data)} sha={digest}\n",
+        ]
+    )
+    console_upload(sess, "%2", payload, read_console=lambda: next(reads))
+    joined = "\n".join(sess.sent)
+    assert "base64 -d" in joined  # decode step sent
+    assert any("LIKEDBG-PROBE" in s for s in sess.sent)  # probe sent
+
+
 def test_extract_vmlinux_quotes_filename_with_space(tmp_path: Path) -> None:
     from likedbg.foreign import extract_vmlinux
 

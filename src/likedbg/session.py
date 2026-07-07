@@ -57,6 +57,12 @@ class Session:
     def select_pane(self, target: int | str) -> None:
         self._tmux("selectp", "-t", str(target))
 
+    def send_keys(self, pane: str, keys: str, *, enter: bool = True) -> None:
+        args = ["send-keys", "-t", pane, keys]
+        if enter:
+            args.append("Enter")
+        self._tmux(*args)
+
     def start(self, name: str) -> None:
         self._tmux("rename-session", name)
         self._tmux("rename-window", name)

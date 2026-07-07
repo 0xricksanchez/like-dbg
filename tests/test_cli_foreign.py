@@ -1,6 +1,10 @@
+import pytest
+
 from likedbg import cli
 from likedbg.cli import build_foreign_pipeline
 from likedbg.container_service import ContainerService
+from likedbg.errors import LikeDbgError
+from likedbg.foreign import ForeignError
 from likedbg.foreign import ForeignKernel
 from likedbg.host_profile import HostProfile
 
@@ -152,3 +156,56 @@ def test_main_dispatches_to_cmd_foreign_when_image_set(tmp_path, monkeypatch):
     monkeypatch.setattr(cli.Session, "start", lambda self, name: None)
     rc = cli.main(["-c", "lk01"])
     assert called.get("hit") and rc == 0
+
+
+class _FakeUploadSession:
+    def __init__(self, name):
+        self.name = name
+
+    def get_option(self, key):
+        assert key == "@likedbg_debuggee_pane"
+        return "%7"
+
+
+def test_cmd_upload_run_not_found_raises(tmp_path):
+    with pytest.raises(LikeDbgError):
+        cli.cmd_upload(tmp_path, run_id="latest", file="expl")
+
+
+def test_cmd_upload_calls_console_upload_with_resolved_pane(tmp_path, monkeypatch):
+    run_dir = tmp_path / "artifacts" / "runs" / "r1"
+    (run_dir / "logs").mkdir(parents=True)
+    (run_dir / "logs" / "console.raw").write_text("boot log\n")
+    exploit = tmp_path / "expl"
+    exploit.write_bytes(b"\x7fELF")
+
+    captured: dict = {}
+
+    def fake_console_upload(session, pane, file, *, read_console):
+        captured.update(session=session, pane=pane, file=file, read_console=read_console)
+
+    monkeypatch.setattr(cli, "Session", _FakeUploadSession)
+    monkeypatch.setattr(cli, "console_upload", fake_console_upload)
+
+    rc = cli.cmd_upload(tmp_path, run_id="r1", file=str(exploit))
+
+    assert rc == 0
+    assert captured["pane"] == "%7"
+    assert captured["file"] == exploit
+    assert callable(captured["read_console"])
+
+
+def test_cmd_upload_no_pane_raises_foreign_error(tmp_path, monkeypatch):
+    run_dir = tmp_path / "artifacts" / "runs" / "r1"
+    (run_dir / "logs").mkdir(parents=True)
+
+    class _NoPaneSession:
+        def __init__(self, name):
+            pass
+
+        def get_option(self, key):
+            return ""
+
+    monkeypatch.setattr(cli, "Session", _NoPaneSession)
+    with pytest.raises(ForeignError):
+        cli.cmd_upload(tmp_path, run_id="r1", file="expl")

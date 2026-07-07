@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import shlex
+import time
 import urllib.request
 from collections.abc import Callable
 from datetime import UTC
@@ -51,6 +52,7 @@ from likedbg.errors import SessionError
 from likedbg.exploit import run_exploit
 from likedbg.foreign import ForeignError
 from likedbg.foreign import ForeignKernel
+from likedbg.foreign import console_upload
 from likedbg.foreign import resolve_foreign
 from likedbg.foreign import resolve_input_path
 from likedbg.host_profile import HostProfile
@@ -826,6 +828,53 @@ def cmd_insmod(workspace: Path, *, run_id: str, path: str, args: str, force_unlo
     return 0
 
 
+def _console_tail_reader(console_path: Path, *, timeout: float = 10.0, poll: float = 0.5) -> Callable[[], str]:
+    """Build a `read_console` callable for `foreign.console_upload`: each call blocks (up to
+    `timeout`) polling `console_path` for newly-appended bytes since the previous call, and
+    returns them CRLF-normalized (the serial console writes \\r\\n)."""
+    pos = 0
+
+    def read_console() -> str:
+        nonlocal pos
+        deadline = timeout
+        while True:
+            if console_path.is_file():
+                with console_path.open("rb") as f:
+                    f.seek(pos)
+                    chunk = f.read()
+                if chunk:
+                    pos += len(chunk)
+                    return chunk.decode(errors="replace").replace("\r\n", "\n")
+            if deadline <= 0:
+                return ""
+            time.sleep(poll)
+            deadline -= poll
+
+    return read_console
+
+
+def cmd_upload(workspace: Path, *, run_id: str, file: str) -> int:
+    """Live exploit delivery over the serial console — see foreign.console_upload. Optional
+    fallback to repack; NEVER runs the uploaded file (delivery only)."""
+    from likedbg.exploit import _resolve_run
+
+    run_dir = _resolve_run(workspace, run_id)
+    session = Session("LIKE-DBG")
+    pane = session.get_option("@likedbg_debuggee_pane")
+    if not pane:
+        raise ForeignError(
+            "no live Debuggee pane recorded for this tmux session",
+            remedy="boot a session first (`start_kgdb`), then retry --upload",
+        )
+    console_upload(
+        session,
+        pane,
+        Path(file),
+        read_console=_console_tail_reader(run_dir / "logs" / "console.raw"),
+    )
+    return 0
+
+
 def cmd_rmmod(workspace: Path, *, run_id: str, name: str, force_unload: bool) -> int:
     from likedbg.exploit import _resolve_run
 
@@ -859,6 +908,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--explain-config", nargs="?", const="text", default=None, choices=["text", "json"])
     parser.add_argument("--analyze-crash", nargs="?", const="latest", default=None, metavar="RUN-ID")
     parser.add_argument("--run", default="", metavar="EXPLOIT-PATH")
+    parser.add_argument("--upload", default="", metavar="EXPLOIT-PATH")
     parser.add_argument("--args", default="")
     parser.add_argument("--run-id", default="latest")
     parser.add_argument("--insmod", default="", metavar="MODULE")
@@ -882,6 +932,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_analyze_crash(workspace, run_id=args.analyze_crash)
         if args.run:
             return cmd_run(workspace, run_id=args.run_id, exploit=args.run, args=args.args)
+        if args.upload:
+            return cmd_upload(workspace, run_id=args.run_id, file=args.upload)
         if args.insmod:
             return cmd_insmod(
                 workspace, run_id=args.run_id, path=args.insmod, args=args.args, force_unload=args.force_unload

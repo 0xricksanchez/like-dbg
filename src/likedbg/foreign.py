@@ -3,8 +3,11 @@ initramfs repack, and live console upload. See ADR-0010."""
 
 from __future__ import annotations
 
+import base64
 import shlex
+from collections.abc import Callable
 from dataclasses import dataclass
+from hashlib import sha256
 from pathlib import Path
 from typing import Any
 from typing import Literal
@@ -187,3 +190,55 @@ def repack_initramfs(
             remedy="check the exploit compiles and the cpio format round-trips",
         )
     return out
+
+
+_PROBE = "LIKEDBG-PROBE"
+_DONE = "LIKEDBG-DONE"
+
+
+def console_upload(
+    session: Any,
+    pane: str,
+    file: Path,
+    *,
+    read_console: Callable[[], str],
+    chunk: int = 512,
+    dest: str = "/tmp/exploit",
+) -> None:
+    """Best-effort live upload of a SMALL static exploit over the serial console (no reboot).
+
+    Probes for base64 + a writable /tmp (else ForeignError 'use repack'), sends the payload as
+    chunked base64 appended to `dest`, then verifies the echoed byte-count + sha256 match.
+    Repack (ForeignRepackStage) is the reliable fallback.
+    """
+    session.send_keys(
+        pane,
+        f'echo "{_PROBE} base64=$(command -v base64 >/dev/null && echo yes || echo no) '
+        f'tmp=$(touch /tmp/.lk && echo yes || echo no)"',
+    )
+    probe = read_console()
+    if "base64=yes" not in probe or "tmp=yes" not in probe:
+        raise ForeignError(
+            "guest lacks base64 or a writable /tmp for console-upload",
+            remedy="use repack (set [foreign].exploit and reboot)",
+        )
+
+    data = file.read_bytes()
+    session.send_keys(pane, f": > {dest}.b64")
+    b64 = base64.b64encode(data).decode()
+    for i in range(0, len(b64), chunk):
+        session.send_keys(pane, f"printf %s {b64[i : i + chunk]} >> {dest}.b64")
+    session.send_keys(pane, f"base64 -d {dest}.b64 > {dest} && chmod +x {dest}")
+    session.send_keys(
+        pane,
+        f"echo \"{_DONE} size=$(wc -c < {dest}) sha=$(sha256sum {dest} | cut -d' ' -f1)\"",
+    )
+
+    echoed = read_console().replace("\r\n", "\n")
+    want_size = str(len(data))
+    want_sha = sha256(data).hexdigest()
+    if f"size={want_size}" not in echoed or f"sha={want_sha}" not in echoed:
+        raise ForeignError(
+            "console-upload verification failed (size/hash mismatch)",
+            remedy="chunking corrupted the transfer — retry or use repack",
+        )
