@@ -37,6 +37,14 @@ def _rootfs_args(rootfs: Path | None) -> tuple[list[str], str]:
     return ["-drive", f"file={rootfs},format=raw,if=virtio"], "root=/dev/vda"
 
 
+def _foreign_append(cmdline: str, console_dev: str, extra_boot_args: tuple[str, ...]) -> str:
+    parts = [cmdline]
+    if "console=" not in cmdline:
+        parts.append(f"console={console_dev}")
+    parts.extend(extra_boot_args)
+    return " ".join(p for p in parts if p)
+
+
 def build_qemu_argv(
     debuggee: DebuggeeCfg,
     host: HostProfile,
@@ -47,12 +55,15 @@ def build_qemu_argv(
     extra_boot_args: tuple[str, ...] = (),
     console_log: Path | None = None,
     share_host_dir: Path | None = None,
+    foreign_cmdline: str | None = None,
+    qemu_extra: tuple[str, ...] = (),
 ) -> list[str]:
     argv = [_QEMU_BIN[target_arch]]
     if target_arch == "arm64":
         cpu = "host" if host.accel in ("hvf", "kvm") else "cortex-a72"
         argv += ["-M", "virt", "-cpu", cpu]
-        console = "console=ttyAMA0"
+        console_dev = "ttyAMA0"
+        console = f"console={console_dev}"
     else:
         cpu = "qemu64"
         if debuggee.smep:
@@ -60,22 +71,26 @@ def build_qemu_argv(
         if debuggee.smap:
             cpu += ",+smap"
         argv += ["-cpu", cpu]
-        console = "console=ttyS0"
+        console_dev = "ttyS0"
+        console = f"console={console_dev}"
     argv += ["-accel", host.accel, "-m", str(debuggee.memory_mib), "-smp", str(debuggee.smp)]
     argv += ["-kernel", str(kernel_image)]
     drive_args, root = _rootfs_args(rootfs)
-    append = " ".join(
-        [
-            console,
-            root,
-            "earlyprintk=serial",
-            "net.ifnames=0",
-            *_mitigations(debuggee),
-            *extra_boot_args,
-            "oops=panic",
-            _panic(debuggee),
-        ]
-    )
+    if foreign_cmdline is not None:
+        append = _foreign_append(foreign_cmdline, console_dev, extra_boot_args)
+    else:
+        append = " ".join(
+            [
+                console,
+                root,
+                "earlyprintk=serial",
+                "net.ifnames=0",
+                *_mitigations(debuggee),
+                *extra_boot_args,
+                "oops=panic",
+                _panic(debuggee),
+            ]
+        )
     argv += ["-append", append, *drive_args]
     if console_log is not None:
         argv += [
@@ -95,4 +110,5 @@ def build_qemu_argv(
         argv += ["-virtfs", f"local,path={share_host_dir},mount_tag=exploit,security_model=mapped-xattr,id=fsdev0"]
     if debuggee.gdb:
         argv += ["-S", "-gdb", f"tcp::{debuggee.gdb_port}"]
+    argv += list(qemu_extra)
     return argv

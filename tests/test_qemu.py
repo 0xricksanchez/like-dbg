@@ -166,3 +166,93 @@ def test_no_console_log_keeps_nographic():
     argv = build_qemu_argv(_debuggee(), _host(), target_arch="arm64", kernel_image=Path("/w/Image"), rootfs=None)
     assert "-nographic" in argv
     assert "-chardev" not in argv
+
+
+def test_foreign_cmdline_used_verbatim_no_mitigations():
+    argv = build_qemu_argv(
+        _debuggee(kaslr=False),
+        _host(target_arch="x86_64"),
+        target_arch="x86_64",
+        kernel_image=Path("/w/bzImage"),
+        rootfs=Path("/w/initramfs.cpio.gz"),
+        foreign_cmdline="quiet console=ttyS0 kaslr",
+    )
+    append = argv[argv.index("-append") + 1]
+    assert append.startswith("quiet console=ttyS0 kaslr")
+    # no imposed mitigation/root/panic tokens
+    for tok in ("nokaslr", "nosmep", "nosmap", "pti=on", "root=/dev/ram", "oops=panic", "panic="):
+        assert tok not in append
+
+
+def test_foreign_cmdline_adds_console_when_missing():
+    argv = build_qemu_argv(
+        _debuggee(),
+        _host(target_arch="x86_64"),
+        target_arch="x86_64",
+        kernel_image=Path("/w/bzImage"),
+        rootfs=None,
+        foreign_cmdline="quiet",
+    )
+    append = argv[argv.index("-append") + 1]
+    assert "console=ttyS0" in append
+
+
+def test_foreign_cmdline_arm64_console_ttyama0():
+    argv = build_qemu_argv(
+        _debuggee(),
+        _host(target_arch="arm64"),
+        target_arch="arm64",
+        kernel_image=Path("/w/Image"),
+        rootfs=None,
+        foreign_cmdline="quiet",
+    )
+    append = argv[argv.index("-append") + 1]
+    assert "console=ttyAMA0" in append
+
+
+def test_foreign_cmdline_layers_extra_boot_args():
+    argv = build_qemu_argv(
+        _debuggee(),
+        _host(target_arch="x86_64"),
+        target_arch="x86_64",
+        kernel_image=Path("/w/bzImage"),
+        rootfs=None,
+        foreign_cmdline="quiet console=ttyS0",
+        extra_boot_args=("nokaslr",),
+    )
+    append = argv[argv.index("-append") + 1]
+    assert append.endswith("nokaslr")
+
+
+def test_foreign_initramfs_uses_initrd_and_gdbstub():
+    argv = build_qemu_argv(
+        _debuggee(gdb=True),
+        _host(target_arch="x86_64"),
+        target_arch="x86_64",
+        kernel_image=Path("/w/bzImage"),
+        rootfs=Path("/w/initramfs.cpio.gz"),
+        foreign_cmdline="quiet console=ttyS0",
+    )
+    s = _argstr(argv)
+    assert "-initrd /w/initramfs.cpio.gz" in s
+    assert "-S" in argv and "tcp::1234" in argv
+
+
+def test_qemu_extra_appended_to_argv():
+    argv = build_qemu_argv(
+        _debuggee(),
+        _host(target_arch="x86_64"),
+        target_arch="x86_64",
+        kernel_image=Path("/w/bzImage"),
+        rootfs=None,
+        foreign_cmdline="quiet console=ttyS0",
+        qemu_extra=("-no-reboot", "-monitor", "none"),
+    )
+    assert "-no-reboot" in argv and "-monitor" in argv and "none" in argv
+    # appears after the gdbstub block
+    assert argv.index("-no-reboot") > argv.index("-gdb")
+
+
+def test_qemu_extra_empty_by_default_keeps_existing_argv():
+    argv = build_qemu_argv(_debuggee(), _host(), target_arch="arm64", kernel_image=Path("/w/Image"), rootfs=None)
+    assert "nokaslr" in argv[argv.index("-append") + 1]  # normal path unchanged
