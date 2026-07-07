@@ -273,9 +273,25 @@ Full B slice:
     `crash.json`/`crash.md` auto-produced + status `crashed` + symbolized backtrace). Caught + fixed 2
     live-gate bugs (rootfs `ssh-keygen -A` idempotency; SSH keepalive so a kernel-killing `--run` doesn't
     hang). Spec `2026-07-04-exploit-loop-design.md`, ADR-0008, transcript `2026-07-05-exploit-loop-live.md`.
-  - **B6 part 2 — 2b (`feat/custom-modules`) — NEXT.** Build out-of-tree `custom_modules` (e.g. the LK01
-    vuln driver) against the kernel + auto-`insmod`. Deferred out of 2a; keeps the validated schema slot
-    from B1.
+  - **B6 part 2 — 2b (`feat/custom-modules`) — ✅ DONE + LIVE-GATE PASSED (arm64 native/HVF + x86_64
+    in-container/TCG), 2026-07-07, merged to `dev`.** Wires out-of-tree `custom_modules` into a real
+    build-and-load path: a deep `modules.py` seam (kbuilder-container `make -C <ksrc> M=/mod modules` with
+    the kernel's own toolchain env → vermagic matches; `insmod`/`rmmod`/reload over 2a's SSH), a boot-time
+    `ModuleBuildStage` that builds each entry + stages the `.ko` (content-hash-gated, name-canonicalized)
+    into the 2a Guest share, and `start_kgdb --insmod [PATH]` / `--rmmod NAME` / `--force-unload`
+    (builds-if-stale via its own Docker client, loads on command — never auto-`insmod` at boot, so gdb can
+    breakpoint the module's `init`). Prebuilt-`.ko` passthrough (matching kernel only). Ships an obj-m
+    template + an original deliberately-vulnerable **LK01** char/ioctl driver (`copy_from_user` stack
+    overflow) + crash PoC; exploit-dev now enables `CONFIG_MODULE_FORCE_UNLOAD`; legacy in-tree `c_kmod` →
+    `examples/legacy-intree/`. Live gate confirmed the full loop on both arches (module build → `--insmod`
+    + reload/force-unload → PoC → kernel oops [arm64 stack-protector] / WARN [x86_64 FORTIFY, bt names
+    `lk01_ioctl [lk01]`] → B3 crash report). Spec `2026-07-06-custom-modules-design.md`, ADR-0009,
+    transcript `2026-07-07-custom-modules-live.md`.
+  - **B6 part 3 — 2c (`feat/foreign-kernel` / CTF adopt) — NEXT.** The CTF "bring-your-own-kernel" shape,
+    decomposed out of 2b (a distinct subsystem): boot a provided `bzImage`+`vmlinux` (vuln baked in), a
+    foreign initramfs/cpio rootfs, and a console/init-based path to load a provided `.ko` — a foreign
+    kernel has no `/ksrc` build tree and 2a's SSH+9p transport doesn't reach a foreign initramfs. See the
+    2b spec §2 non-goals + ADR-0009.
 
 ### E. Later large tracks — Sub-projects C–E
 Each still gets its own brainstorm→spec→grill→plan→subagent-driven cycle after the relevant B foundation
