@@ -124,15 +124,12 @@ def test_cmd_foreign_runs_pipeline(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "_ensure_images", lambda container, workspace, *, specs: None)
     monkeypatch.setattr(cli.HostProfile, "detect", staticmethod(lambda s, workspace: _host(target_arch=s.general.arch)))
     monkeypatch.setattr(cli.logsetup, "add_run_logfile", lambda workspace, **kw: None)
-    monkeypatch.setattr(
-        cli.RunRecorder,
-        "start",
-        staticmethod(
-            lambda *, workspace, requested_settings, run_resolution, host, build_label, rootfs_label, profiles: (
-                _FakeRecorder(workspace)
-            )
-        ),
-    )
+
+    def _fake_start(*, workspace, requested_settings, run_resolution, host, build_label, rootfs_label, profiles):
+        ran["run_resolution"] = run_resolution
+        return _FakeRecorder(workspace)
+
+    monkeypatch.setattr(cli.RunRecorder, "start", staticmethod(_fake_start))
 
     class _Pipe:
         def run(self, ctx):
@@ -143,6 +140,47 @@ def test_cmd_foreign_runs_pipeline(tmp_path, monkeypatch):
     rc = cli.cmd_foreign(_FakeContainer(), _FakeSession(), tmp_path, scenario=scenario)
     assert rc == 0
     assert ran["ctx"].host.target_arch == "x86_64"  # arch injected from the vmlinux ELF
+
+
+def test_cmd_foreign_forces_serial_only_no_guest_net_or_share(tmp_path, monkeypatch):
+    """ADR-0010: a foreign guest exposes only the serial console. Regression test for the
+    finding that cmd_foreign left guest_net/share at their (True) defaults, which both
+    perturbed the QEMU device model (unsolicited -netdev/-virtfs) and made RunRecorder.start
+    write a run.json `guest` block that --run/--insmod/--rmmod would then try (and fail) to
+    SSH into, instead of refusing cleanly on a missing guest block."""
+    scenario = _write_project(tmp_path)
+    ran = {}
+
+    monkeypatch.setattr(cli, "_ensure_images", lambda container, workspace, *, specs: None)
+    monkeypatch.setattr(cli.HostProfile, "detect", staticmethod(lambda s, workspace: _host(target_arch=s.general.arch)))
+    monkeypatch.setattr(cli.logsetup, "add_run_logfile", lambda workspace, **kw: None)
+
+    def _fake_start(*, workspace, requested_settings, run_resolution, host, build_label, rootfs_label, profiles):
+        ran["run_resolution"] = run_resolution
+        return _FakeRecorder(workspace)
+
+    monkeypatch.setattr(cli.RunRecorder, "start", staticmethod(_fake_start))
+
+    class _Pipe:
+        def run(self, ctx):
+            ran["ctx"] = ctx
+
+    monkeypatch.setattr(cli, "build_foreign_pipeline", lambda *a, **k: _Pipe())
+
+    rc = cli.cmd_foreign(_FakeContainer(), _FakeSession(), tmp_path, scenario=scenario)
+    assert rc == 0
+
+    # Seam 1: the PipelineContext's effective_debuggee feeds build_qemu_argv in DebuggeeStage.
+    eff = ran["ctx"].effective_debuggee
+    assert eff is not None
+    assert eff.guest_net is False
+    assert eff.share is False
+
+    # Seam 2: RunRecorder.start reads run_resolution.effective_debuggee to decide whether to
+    # write a `guest` block into run.json — must be the same forced-off values.
+    rr_eff = ran["run_resolution"].effective_debuggee
+    assert rr_eff.guest_net is False
+    assert rr_eff.share is False
 
 
 def test_main_dispatches_to_cmd_foreign_when_image_set(tmp_path, monkeypatch):

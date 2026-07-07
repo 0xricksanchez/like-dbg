@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import os
 import shlex
@@ -546,6 +547,13 @@ def cmd_foreign(
         scenario=scenario,
         cli_overrides={"general": {"arch": fk.arch}},
     )
+    # ADR-0010: a foreign guest exposes only the serial console — no virtio-net/9p devices the
+    # CTF challenge never specified, and no run.json `guest` block (which would otherwise make
+    # --run/--insmod/--rmmod try to SSH to a nonexistent sshd instead of refusing cleanly).
+    # Both RunRecorder.start (run.json `guest` block) and the pipeline's DebuggeeStage (QEMU argv)
+    # read effective_debuggee off the RunResolution, so overriding it here fixes both at once.
+    eff = rr.effective_debuggee.model_copy(update={"guest_net": False, "share": False})
+    rr = dataclasses.replace(rr, effective_debuggee=eff)
     _ensure_images(container, workspace, specs=images.required_for_foreign(host))
 
     exploit = resolve_input_path(workspace, fcfg.exploit) if fcfg.exploit else None

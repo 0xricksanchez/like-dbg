@@ -6,6 +6,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from loguru import logger
+
 from likedbg.constants import VOLUME_MOUNT
 from likedbg.foreign import ForeignKernel
 from likedbg.foreign import repack_initramfs
@@ -64,6 +66,11 @@ class ForeignRepackStage:
         self._out_dir = out_dir
 
     def should_skip(self, ctx: PipelineContext) -> bool:
+        if self._exploit is not None and self._foreign.initramfs is None:
+            logger.warning(
+                "foreign kernel has no initramfs to repack — exploit "
+                f"{self._exploit} will NOT be delivered into the guest"
+            )
         return self._exploit is None or self._foreign.initramfs is None
 
     def run(self, ctx: PipelineContext) -> PipelineContext:

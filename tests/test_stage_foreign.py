@@ -96,6 +96,34 @@ def test_foreign_repack_skips_without_exploit(tmp_path):
     assert stage.should_skip(ctx) is True
 
 
+def test_foreign_repack_warns_when_exploit_set_but_no_initramfs(tmp_path, monkeypatch):
+    from likedbg.stages import foreign as foreign_mod
+
+    warnings: list[str] = []
+    monkeypatch.setattr(foreign_mod.logger, "warning", lambda msg: warnings.append(msg))
+
+    ctx = PipelineContext(settings=Settings(), host=_host())
+    fk = ForeignKernel(
+        image=tmp_path / "bzImage",
+        vmlinux=tmp_path / "vmlinux",
+        initramfs=None,
+        arch="x86_64",
+        cmdline="quiet console=ttyS0",
+    )
+    exploit = tmp_path / "exploit.c"
+    exploit.write_text("int main(){}\n")
+    stage = ForeignRepackStage(
+        _RepackFakeContainer(tmp_path / "x"),
+        foreign=fk,
+        exploit=exploit,
+        image="like_musl:latest",
+        out_dir=tmp_path / "stage",
+    )
+    assert stage.should_skip(ctx) is True
+    assert len(warnings) == 1
+    assert "initramfs" in warnings[0]
+
+
 def test_foreign_repack_repoints_rootfs(tmp_path):
     (tmp_path / "initramfs.cpio.gz").write_bytes(b"\x1f\x8b")
     exploit = tmp_path / "exploit.c"
