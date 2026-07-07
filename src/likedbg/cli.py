@@ -7,6 +7,7 @@ import json
 import os
 import shlex
 import urllib.request
+from collections.abc import Callable
 from datetime import UTC
 from datetime import datetime
 from pathlib import Path
@@ -197,25 +198,20 @@ def explain_config(
     return "\n".join(lines)
 
 
-def build_pipeline(
-    container: ContainerService,
+def _make_pane_launchers(
     session: Session,
-    *,
     host: HostProfile,
-    chown_to: tuple[int, int] | None = None,
+    *,
     workspace: Path,
-    kernel_volume: str,
-    dl_dir: Path,
     debugger_image: str,
-    debuggee_image: str,
-    ext: str,
-    build_recipe: BuildRecipe,
-    rootfs_recipe: RootfsRecipe,
-    patch_dirs: tuple[str, ...] = (),
-    recorder: RunRecorder | None = None,
-    break_on_crash: bool = False,
-    crash_breakpoints: tuple[str, ...] = (),
-) -> Pipeline:
+    gdb_mount_source: str,
+    recorder: RunRecorder | None,
+) -> tuple[Callable[[str], None], Callable[[list[str]], None]]:
+    """Wire the debuggee/debugger tmux panes + session-restart options for a pipeline run.
+
+    Shared by build_pipeline / build_use_pipeline / build_foreign_pipeline, which differ only
+    in how `gdb_mount_source` is sourced.
+    """
     base_pane = session.current_pane_id()
     debuggee_pane: str | None = None
 
@@ -239,17 +235,10 @@ def build_pipeline(
     def run_gdb(args: list[str]) -> None:
         if debuggee_pane is None:
             raise RuntimeError("debuggee pane has not been launched")
-        loc = cache.locations(
-            build_recipe.label,
-            arch=build_recipe.arch,
-            storage_mode=host.storage_mode,
-            workspace=workspace,
-            volume=kernel_volume,
-        )
         cmd = gdb_pane_command(
             args,
             image=debugger_image,
-            mount_source=loc.gdb_mount_source,
+            mount_source=gdb_mount_source,
             network_mode=host.network_mode,
             crash_drop=recorder.crash_dir if recorder is not None else None,
         )
@@ -266,6 +255,44 @@ def build_pipeline(
                 session.pipe_pane(pane=debugger_pane, output=recorder.debugger_pane_log)
             except LikeDbgError as exc:
                 recorder.add_warning("transcript-capture-failed", f"pipe-pane failed for Debugger: {exc}")
+
+    return launch_debuggee, run_gdb
+
+
+def build_pipeline(
+    container: ContainerService,
+    session: Session,
+    *,
+    host: HostProfile,
+    chown_to: tuple[int, int] | None = None,
+    workspace: Path,
+    kernel_volume: str,
+    dl_dir: Path,
+    debugger_image: str,
+    debuggee_image: str,
+    ext: str,
+    build_recipe: BuildRecipe,
+    rootfs_recipe: RootfsRecipe,
+    patch_dirs: tuple[str, ...] = (),
+    recorder: RunRecorder | None = None,
+    break_on_crash: bool = False,
+    crash_breakpoints: tuple[str, ...] = (),
+) -> Pipeline:
+    gdb_mount_source = cache.locations(
+        build_recipe.label,
+        arch=build_recipe.arch,
+        storage_mode=host.storage_mode,
+        workspace=workspace,
+        volume=kernel_volume,
+    ).gdb_mount_source
+    launch_debuggee, run_gdb = _make_pane_launchers(
+        session,
+        host,
+        workspace=workspace,
+        debugger_image=debugger_image,
+        gdb_mount_source=gdb_mount_source,
+        recorder=recorder,
+    )
 
     return Pipeline(
         [
@@ -325,49 +352,14 @@ def build_use_pipeline(
     break_on_crash: bool = False,
     crash_breakpoints: tuple[str, ...] = (),
 ) -> Pipeline:
-    base_pane = session.current_pane_id()
-    debuggee_pane: str | None = None
-
-    for opt in _SESSION_STATE_OPTIONS:
-        session.unset_option(opt)
-    session.set_option("@likedbg_workspace", str(workspace))
-    session.set_option("@likedbg_base_pane_id", base_pane)
-
-    def launch_debuggee(cmd: str) -> None:
-        nonlocal debuggee_pane
-        session.set_option("@likedbg_debuggee_cmd", cmd)
-        debuggee_pane = session.run_in_new_pane(target=base_pane, direction="h", percent=66, cmd=cmd)
-        session.set_option("@likedbg_debuggee_pane", debuggee_pane)
-        if recorder is not None:
-            session.set_option("@likedbg_debuggee_pane_log", str(recorder.debuggee_pane_log))
-            try:
-                session.pipe_pane(pane=debuggee_pane, output=recorder.debuggee_pane_log)
-            except LikeDbgError as exc:
-                recorder.add_warning("transcript-capture-failed", f"pipe-pane failed for Debuggee: {exc}")
-
-    def run_gdb(args: list[str]) -> None:
-        if debuggee_pane is None:
-            raise RuntimeError("debuggee pane has not been launched")
-        cmd = gdb_pane_command(
-            args,
-            image=debugger_image,
-            mount_source=gdb_mount_source,
-            network_mode=host.network_mode,
-            crash_drop=recorder.crash_dir if recorder is not None else None,
-        )
-        session.set_option("@likedbg_debugger_cmd", cmd)
-        debugger_pane = session.run_in_new_pane(
-            target=debuggee_pane,
-            direction="v",
-            percent=50,
-            cmd=cmd,
-        )
-        session.set_option("@likedbg_debugger_pane", debugger_pane)
-        if recorder is not None:
-            try:
-                session.pipe_pane(pane=debugger_pane, output=recorder.debugger_pane_log)
-            except LikeDbgError as exc:
-                recorder.add_warning("transcript-capture-failed", f"pipe-pane failed for Debugger: {exc}")
+    launch_debuggee, run_gdb = _make_pane_launchers(
+        session,
+        host,
+        workspace=workspace,
+        debugger_image=debugger_image,
+        gdb_mount_source=gdb_mount_source,
+        recorder=recorder,
+    )
 
     return Pipeline(
         [
@@ -418,49 +410,14 @@ def build_foreign_pipeline(
     break_on_crash: bool = False,
     crash_breakpoints: tuple[str, ...] = (),
 ) -> Pipeline:
-    base_pane = session.current_pane_id()
-    debuggee_pane: str | None = None
-
-    for opt in _SESSION_STATE_OPTIONS:
-        session.unset_option(opt)
-    session.set_option("@likedbg_workspace", str(workspace))
-    session.set_option("@likedbg_base_pane_id", base_pane)
-
-    def launch_debuggee(cmd: str) -> None:
-        nonlocal debuggee_pane
-        session.set_option("@likedbg_debuggee_cmd", cmd)
-        debuggee_pane = session.run_in_new_pane(target=base_pane, direction="h", percent=66, cmd=cmd)
-        session.set_option("@likedbg_debuggee_pane", debuggee_pane)
-        if recorder is not None:
-            session.set_option("@likedbg_debuggee_pane_log", str(recorder.debuggee_pane_log))
-            try:
-                session.pipe_pane(pane=debuggee_pane, output=recorder.debuggee_pane_log)
-            except LikeDbgError as exc:
-                recorder.add_warning("transcript-capture-failed", f"pipe-pane failed for Debuggee: {exc}")
-
-    def run_gdb(args: list[str]) -> None:
-        if debuggee_pane is None:
-            raise RuntimeError("debuggee pane has not been launched")
-        cmd = gdb_pane_command(
-            args,
-            image=debugger_image,
-            mount_source=gdb_mount_source,
-            network_mode=host.network_mode,
-            crash_drop=recorder.crash_dir if recorder is not None else None,
-        )
-        session.set_option("@likedbg_debugger_cmd", cmd)
-        debugger_pane = session.run_in_new_pane(
-            target=debuggee_pane,
-            direction="v",
-            percent=50,
-            cmd=cmd,
-        )
-        session.set_option("@likedbg_debugger_pane", debugger_pane)
-        if recorder is not None:
-            try:
-                session.pipe_pane(pane=debugger_pane, output=recorder.debugger_pane_log)
-            except LikeDbgError as exc:
-                recorder.add_warning("transcript-capture-failed", f"pipe-pane failed for Debugger: {exc}")
+    launch_debuggee, run_gdb = _make_pane_launchers(
+        session,
+        host,
+        workspace=workspace,
+        debugger_image=debugger_image,
+        gdb_mount_source=gdb_mount_source,
+        recorder=recorder,
+    )
 
     return Pipeline(
         [
