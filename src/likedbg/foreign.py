@@ -3,6 +3,7 @@ initramfs repack, and live console upload. See ADR-0010."""
 
 from __future__ import annotations
 
+import shlex
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -70,7 +71,10 @@ def extract_vmlinux(container: Any, image_path: Path, out: Path, *, image: str) 
         tty=True,
     )
     try:
-        container.exec(c, f"/opt/extract-vmlinux.sh /in/{image_path.name} /out/{out.name}")
+        container.exec(
+            c,
+            f"/opt/extract-vmlinux.sh {shlex.quote(f'/in/{image_path.name}')} {shlex.quote(f'/out/{out.name}')}",
+        )
     finally:
         container.stop(c)
     if not out.is_file() or out.stat().st_size == 0:
@@ -131,20 +135,21 @@ _MUSL_GCC = {"x86_64": "x86_64-linux-musl-gcc", "arm64": "aarch64-linux-musl-gcc
 
 
 def _repack_command(initramfs_name: str, exploit_name: str, arch: str, out_name: str) -> str:
+    if arch not in _MUSL_GCC:
+        raise ForeignError(f"unsupported foreign arch {arch!r}", remedy="use x86_64 or arm64")
+    in_q = shlex.quote(f"/in/{initramfs_name}")
+    src_q = shlex.quote(f"/src/{exploit_name}")
+    out_q = shlex.quote(f"/out/{out_name}")
     if exploit_name.endswith(".c"):
-        inject = f"{_MUSL_GCC[arch]} -static /src/{exploit_name} -o /work/rootfs/exploit"
+        inject = f"{_MUSL_GCC[arch]} -static {src_q} -o /work/rootfs/exploit"
     else:
-        inject = f"cp /src/{exploit_name} /work/rootfs/exploit && chmod +x /work/rootfs/exploit"
-    unpack = (
-        f"if gzip -t /in/{initramfs_name} 2>/dev/null; "
-        f"then gzip -dc /in/{initramfs_name} | cpio -idm; "
-        f"else cpio -idm < /in/{initramfs_name}; fi"
-    )
+        inject = f"cp {src_q} /work/rootfs/exploit && chmod +x /work/rootfs/exploit"
+    unpack = f"if gzip -t {in_q} 2>/dev/null; then gzip -dc {in_q} | cpio -idm; else cpio -idm < {in_q}; fi"
     repack = "find . -print0 | cpio --null --format=newc -o --owner=root"
     if out_name.endswith(".gz"):
-        repack += f" | gzip -9 > /out/{out_name}"
+        repack += f" | gzip -9 > {out_q}"
     else:
-        repack += f" > /out/{out_name}"
+        repack += f" > {out_q}"
     return " && ".join(["mkdir -p /work/rootfs", "cd /work/rootfs", unpack, inject, repack])
 
 
@@ -176,7 +181,7 @@ def repack_initramfs(
         container.exec(c, cmd)
     finally:
         container.stop(c)
-    if not out.is_file():
+    if not out.is_file() or out.stat().st_size == 0:
         raise ForeignError(
             f"initramfs repack produced no output at {out}",
             remedy="check the exploit compiles and the cpio format round-trips",

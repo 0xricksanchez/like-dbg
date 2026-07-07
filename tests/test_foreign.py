@@ -240,3 +240,37 @@ def test_repack_initramfs_copies_prebuilt_binary(tmp_path: Path) -> None:
     repack_initramfs(c, initramfs=initramfs, exploit=exploit, arch="x86_64", out=out, image="like_musl:latest")
     cmd = " ".join(c.execs)
     assert "cp /src/exploit" in cmd and "musl-gcc" not in cmd
+
+
+def test_repack_initramfs_quotes_filename_with_space(tmp_path: Path) -> None:
+    from likedbg.foreign import repack_initramfs
+
+    initramfs = tmp_path / "in" / "odd name.cpio.gz"
+    initramfs.parent.mkdir()
+    initramfs.write_bytes(b"\x1f\x8b")
+    exploit = tmp_path / "src" / "exploit.c"
+    exploit.parent.mkdir()
+    exploit.write_text("int main(){return 0;}\n")
+    out = tmp_path / "out" / "initramfs.repacked.cpio.gz"
+    c = _FakeContainer(make_out=out, out_bytes=b"\x1f\x8b")
+
+    repack_initramfs(c, initramfs=initramfs, exploit=exploit, arch="x86_64", out=out, image="like_musl:latest")
+    cmd = " ".join(c.execs)
+    assert "'/in/odd name.cpio.gz'" in cmd
+    # unquoted form must not appear as a standalone shell token
+    assert "/in/odd name.cpio.gz " not in cmd.replace("'/in/odd name.cpio.gz'", "")
+
+
+def test_extract_vmlinux_quotes_filename_with_space(tmp_path: Path) -> None:
+    from likedbg.foreign import extract_vmlinux
+
+    image_path = tmp_path / "in" / "my image.bzImage"
+    image_path.parent.mkdir()
+    image_path.write_bytes(b"MZfake-bzImage")
+    out = tmp_path / "out" / "vmlinux"
+    c = _FakeContainer(make_out=out)
+
+    extract_vmlinux(c, image_path, out, image="like_musl:latest")
+
+    cmd = " ".join(c.execs)
+    assert "'/in/my image.bzImage'" in cmd
