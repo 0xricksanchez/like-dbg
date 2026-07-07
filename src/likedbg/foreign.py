@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 from typing import Literal
 
 from likedbg.errors import LikeDbgError
@@ -48,3 +49,32 @@ def detect_arch(vmlinux: Path) -> str:
             remedy="set [foreign].arch to x86_64 or arm64",
         )
     return arch
+
+
+def extract_vmlinux(container: Any, image_path: Path, out: Path, *, image: str) -> Path:
+    """Carve an uncompressed vmlinux ELF from a boot image inside the like_musl container.
+
+    Returns `out` on success. Note: a vmlinux carved from a bzImage is fully stripped
+    (kallsyms only, no ELF .symtab) — good for arch-detect, but gdb gets no function symbols
+    (see ADR-0010). Raises ForeignError if extraction produces no file.
+    """
+    out.parent.mkdir(parents=True, exist_ok=True)
+    c = container.run_detached(
+        image,
+        volumes={
+            str(image_path.parent): {"bind": "/in", "mode": "ro"},
+            str(out.parent): {"bind": "/out", "mode": "rw"},
+        },
+        detach=True,
+        tty=True,
+    )
+    try:
+        container.exec(c, f"/opt/extract-vmlinux.sh /in/{image_path.name} /out/{out.name}")
+    finally:
+        container.stop(c)
+    if not out.is_file() or out.stat().st_size == 0:
+        raise ForeignError(
+            f"could not extract vmlinux from {image_path}",
+            remedy="provide [foreign].vmlinux explicitly (arm64 Image / unknown compression)",
+        )
+    return out

@@ -63,3 +63,57 @@ def test_foreign_kernel_is_frozen(tmp_path: Path) -> None:
     )
     with pytest.raises(FrozenInstanceError):
         fk.arch = "arm64"  # type: ignore[misc]
+
+
+class _FakeContainer:
+    def __init__(self, *, make_out: Path | None = None, out_bytes: bytes = b"\x7fELF") -> None:
+        self.run_kwargs: dict | None = None
+        self.execs: list[str] = []
+        self.stopped = False
+        self._make_out = make_out
+        self._out_bytes = out_bytes
+
+    def run_detached(self, image, **kwargs):
+        self.run_kwargs = {"image": image, **kwargs}
+        return "CID"
+
+    def exec(self, container, cmd, *, workdir=None):
+        self.execs.append(cmd)
+        if self._make_out is not None:  # simulate the container writing the output file
+            self._make_out.write_bytes(self._out_bytes)
+        return type("R", (), {"exit_code": 0, "output": ""})()
+
+    def stop(self, container):
+        self.stopped = True
+
+
+def test_extract_vmlinux_runs_script_and_returns_out(tmp_path: Path) -> None:
+    from likedbg.foreign import extract_vmlinux
+
+    image_path = tmp_path / "in" / "bzImage"
+    image_path.parent.mkdir()
+    image_path.write_bytes(b"MZfake-bzImage")
+    out = tmp_path / "out" / "vmlinux"
+    c = _FakeContainer(make_out=out)
+
+    result = extract_vmlinux(c, image_path, out, image="like_musl:latest")
+
+    assert result == out and out.is_file()
+    assert c.run_kwargs["image"] == "like_musl:latest"
+    vols = c.run_kwargs["volumes"]
+    assert vols[str(image_path.parent)] == {"bind": "/in", "mode": "ro"}
+    assert vols[str(out.parent)] == {"bind": "/out", "mode": "rw"}
+    assert "/opt/extract-vmlinux.sh /in/bzImage /out/vmlinux" in " ".join(c.execs)
+    assert c.stopped is True
+
+
+def test_extract_vmlinux_missing_output_raises(tmp_path: Path) -> None:
+    from likedbg.foreign import extract_vmlinux
+
+    image_path = tmp_path / "in" / "Image"
+    image_path.parent.mkdir()
+    image_path.write_bytes(b"arm64-Image")
+    out = tmp_path / "out" / "vmlinux"
+    c = _FakeContainer(make_out=None)  # container "produces" nothing
+    with pytest.raises(ForeignError, match="could not extract vmlinux"):
+        extract_vmlinux(c, image_path, out, image="like_musl:latest")
