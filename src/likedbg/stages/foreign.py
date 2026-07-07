@@ -4,9 +4,11 @@ repack its initramfs with an exploit. See ADR-0010."""
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from likedbg.constants import VOLUME_MOUNT
 from likedbg.foreign import ForeignKernel
+from likedbg.foreign import repack_initramfs
 from likedbg.pipeline import PipelineContext
 
 
@@ -38,4 +40,41 @@ class ForeignAdoptStage:
                 vmlinux=str(fk.vmlinux),
                 image=str(fk.image),
             )
+        return ctx
+
+
+class ForeignRepackStage:
+    """Repack the foreign initramfs with the exploit at /exploit; runs only when exploit is set."""
+
+    name = "foreign-repack"
+
+    def __init__(
+        self,
+        container: Any,
+        *,
+        foreign: ForeignKernel,
+        exploit: Path | None,
+        image: str,
+        out_dir: Path,
+    ) -> None:
+        self._c = container
+        self._foreign = foreign
+        self._exploit = exploit
+        self._image = image
+        self._out_dir = out_dir
+
+    def should_skip(self, ctx: PipelineContext) -> bool:
+        return self._exploit is None or self._foreign.initramfs is None
+
+    def run(self, ctx: PipelineContext) -> PipelineContext:
+        assert self._exploit is not None and self._foreign.initramfs is not None
+        repacked = repack_initramfs(
+            self._c,
+            initramfs=self._foreign.initramfs,
+            exploit=self._exploit,
+            arch=ctx.host.target_arch,
+            out=self._out_dir / "initramfs.repacked.cpio.gz",
+            image=self._image,
+        )
+        ctx.rootfs_image = repacked
         return ctx

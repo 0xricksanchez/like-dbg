@@ -4,6 +4,7 @@ from likedbg.config import Settings
 from likedbg.foreign import ForeignKernel
 from likedbg.pipeline import PipelineContext
 from likedbg.stages.foreign import ForeignAdoptStage
+from likedbg.stages.foreign import ForeignRepackStage
 
 
 class _Rec:
@@ -61,3 +62,52 @@ def test_foreign_adopt_records_kernel_paths_config_none(tmp_path):
 def test_foreign_adopt_does_not_skip(tmp_path):
     ctx = PipelineContext(settings=Settings(), host=_host())
     assert ForeignAdoptStage(foreign=_fk(tmp_path), qemu_extra=()).should_skip(ctx) is False
+
+
+class _RepackFakeContainer:
+    def __init__(self, out: Path):
+        self.execs = []
+        self.run_kwargs = None
+        self._out = out
+
+    def run_detached(self, image, **kwargs):
+        self.run_kwargs = {"image": image, **kwargs}
+        return "CID"
+
+    def exec(self, container, cmd, *, workdir=None):
+        self.execs.append(cmd)
+        self._out.parent.mkdir(parents=True, exist_ok=True)
+        self._out.write_bytes(b"\x1f\x8b")
+        return type("R", (), {"exit_code": 0, "output": ""})()
+
+    def stop(self, container):
+        pass
+
+
+def test_foreign_repack_skips_without_exploit(tmp_path):
+    ctx = PipelineContext(settings=Settings(), host=_host())
+    stage = ForeignRepackStage(
+        _RepackFakeContainer(tmp_path / "x"),
+        foreign=_fk(tmp_path),
+        exploit=None,
+        image="like_musl:latest",
+        out_dir=tmp_path / "stage",
+    )
+    assert stage.should_skip(ctx) is True
+
+
+def test_foreign_repack_repoints_rootfs(tmp_path):
+    (tmp_path / "initramfs.cpio.gz").write_bytes(b"\x1f\x8b")
+    exploit = tmp_path / "exploit.c"
+    exploit.write_text("int main(){}\n")
+    out = tmp_path / "stage" / "initramfs.repacked.cpio.gz"
+    c = _RepackFakeContainer(out)
+    ctx = PipelineContext(settings=Settings(), host=_host())
+    ForeignAdoptStage(foreign=_fk(tmp_path), qemu_extra=()).run(ctx)  # sets rootfs to the raw initramfs
+    stage = ForeignRepackStage(
+        c, foreign=_fk(tmp_path), exploit=exploit, image="like_musl:latest", out_dir=tmp_path / "stage"
+    )
+    assert stage.should_skip(ctx) is False
+    stage.run(ctx)
+    assert ctx.rootfs_image == out
+    assert "x86_64-linux-musl-gcc -static" in " ".join(c.execs)
