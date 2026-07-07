@@ -41,8 +41,10 @@ into its foreign initramfs.
 - **B — exploit delivery into the foreign initramfs** (no SSH/9p available):
   - **Repack-before-boot** (reliable): unpack the `initramfs.cpio(.gz)`, compile the exploit **static**
     (musl, from source) or copy a **prebuilt static binary**, inject at `/exploit`, repack → boot with it.
-  - **Console-upload** (optional, live): base64 the file over the serial into the guest shell, decode to
-    `/tmp` — no reboot, when the guest has `base64` + a writable tmpfs.
+  - **Console-upload** (optional, live, **scoped**): chunked base64 over the serial into the guest shell,
+    decode to `/tmp` — no reboot. Best-effort for **small** static exploits; **probe-gated** (guest must have
+    `base64` + a writable `/tmp`, else a clear "use repack" error) and **verified** (byte-count + hash echoed
+    back must match). Repack is the reliable fallback.
   - **The exploit is ALWAYS run manually** from the console — never auto-run (CTF is exploration; you
     `continue`, set breakpoints, then run `/exploit` yourself).
 
@@ -50,9 +52,12 @@ into its foreign initramfs.
 - **Building** a foreign kernel or its modules — a foreign kernel has no source tree/headers (2b's
   `ModuleBuildStage` is inert without `custom_modules` and can't build against a foreign kernel).
 - **Auto-running** the exploit / an in-guest agent — deliberately excluded (ADR-0010).
-- **Recovering full DWARF** from a stripped release kernel — the extracted/provided `vmlinux` gives whatever
-  symbols it has (symbol table + base for gadget work; full source-line debugging only if the `vmlinux` has
-  DWARF).
+- **Symbols from an *extracted* vmlinux** — CONFIRMED (2026-07-07): a `vmlinux` carved from a `bzImage` is
+  **fully stripped** (no ELF `.symtab`, `nm` = 0; only embedded kallsyms data + code). So auto-extraction
+  gives arch-detect + a base for raw gadget scanning, but **gdb has no function symbols**. For symbolized gdb,
+  the challenge must supply `[foreign].vmlinux` (CTF challenges usually ship one for exactly this reason);
+  extraction is the fallback that at least boots + attaches. A *provided* `vmlinux` gives whatever symbols it
+  ships (symbol table; full source-line debugging only if it has DWARF).
 - **Auto-detecting the challenge's QEMU args from its `run.sh`** — the user transcribes `cmdline`/`qemu_extra`
   into the scenario (a `run.sh` parser is a possible later nicety).
 - 2a's SSH/9p transport for foreign guests — structurally impossible (no sshd/9p in a foreign initramfs);
@@ -72,9 +77,10 @@ into its foreign initramfs.
    added; `extra_boot_args` layers for testing.
 6. **Exploit delivery = repack (reliable core) + console-upload (optional live)**, **always manual run**.
 7. **Repack/musl-compile run in a dedicated standalone container image** (`like_musl`, `.dockerfile_musl`:
-   `cpio` + `musl-tools`), NOT on the host and NOT in the kbuilder image. `cpio -idm` needs root + device
-   nodes (broken on macOS/colima); a Linux container sidesteps host root/deps and is unit-testable. The legacy
-   standalone `ctf/misc/cpio.sh` stays as a manual helper for non-integrated use.
+   `cpio` + decompressors + **cross-musl toolchains for both arches**, §4.6), NOT on the host and NOT in the
+   kbuilder image. `cpio -idm` needs root + device nodes (broken on macOS/colima); a Linux container sidesteps
+   host root/deps and is unit-testable, and the cross-musl toolchains compile the exploit to the FOREIGN arch
+   without emulation. The legacy standalone `ctf/misc/cpio.sh` stays as a manual helper for non-integrated use.
 8. **Manifest-free foreign path.** A foreign run has no build/rootfs cache Manifest; `ForeignAdoptStage` sets
    the `ctx` fields directly (like a lightweight `--use`) and **skips ProfileVerification** (no `.config`).
    `run.json` records the foreign kernel/vmlinux/initramfs paths + a synthesized `foreign-<name>` label.
@@ -83,7 +89,7 @@ into its foreign initramfs.
 
 ### 4.1 Config — `ForeignCfg` (new `[foreign]` section)
 `config.py` gains `ForeignCfg(_Base)` (frozen, extra=forbid), added to `Settings` + `_SECTION_MODELS`:
-- `image: str = ""` (workspace-relative path to the boot image; presence selects the foreign path),
+- `image: str = ""` (path to the boot image, abs or workspace-relative; **presence selects the foreign path**),
   `vmlinux: str = ""` (optional), `initramfs: str = ""` (optional), `cmdline: str = ""` (the append),
   `arch: str = ""` (optional override; else auto-detect), `qemu_extra: tuple[str, ...] = ()`,
   `exploit: str = ""` (optional, B — a source `.c` or a prebuilt static binary).
@@ -101,25 +107,44 @@ into its foreign initramfs.
   carve (gzip/xz/zstd/… → uncompressed ELF) in the `like_musl` container; returns the vmlinux path.
 - `resolve_foreign(container, cfg: ForeignCfg, workspace: Path, *, out_dir: Path) -> ForeignKernel` —
   resolves paths, extracts vmlinux if absent, detects arch (override via `cfg.arch`), returns the
-  `ForeignKernel`.
-- `repack_initramfs(container, *, initramfs: Path, exploit: Path, out: Path, image) -> Path` — in the
-  `like_musl` container: unpack `initramfs.cpio(.gz)`; if `exploit` is a `.c`, `musl-gcc -static` it, else
-  copy the prebuilt static binary; inject at `/exploit`; repack (`find | cpio --format=newc -o [| gzip]`) to
-  `out`; return it.
-- `upload_argv(pane, file: Path) -> list[str]` / the send-keys sequence for the console-upload path.
+  `ForeignKernel`. **Called in `cmd_foreign` BEFORE `resolve_for_run`/host-profile/pipeline construction**
+  (verified against `cmd_use`): the detected arch must be injected as `cli_overrides={"general": {"arch":
+  <arch>}}` into `resolve_for_run` so `HostProfile.detect` (and therefore the QEMU binary / console / gdb
+  arch) sees it — exactly as `cmd_use` injects `bm.arch`. So arch-detect + vmlinux-extract happen pre-pipeline,
+  not inside `ForeignAdoptStage`.
+- `repack_initramfs(container, *, initramfs: Path, exploit: Path, arch: str, out: Path, image) -> Path` —
+  in the `like_musl` container: unpack `initramfs.cpio(.gz)`; if `exploit` is a `.c`, compile it static with
+  the **arch-matched cross-musl** gcc (`{x86_64,aarch64}-linux-musl-gcc -static`), else copy the prebuilt
+  static binary; inject at `/exploit`; repack (`find | cpio --format=newc -o [| gzip]`) to `out`; return it.
+  (Compiling to the FOREIGN arch is why `arch` is threaded in.)
+- `console_upload(session, pane, file: Path) -> None` — the scoped best-effort live path: first probe the
+  guest (`command -v base64` + a writable `/tmp` write test) → clear `ForeignError` "use repack" if either
+  fails; then send the payload as **chunked** base64 via `tmux send-keys` into a here-doc/`base64 -d >
+  /tmp/<name>`, end-marked, and **verify** by echoing back a byte count + `sha256sum` (or `md5sum`) that must
+  match the host's. Scoped to **small** static exploits (a few KB); repack is the reliable fallback for larger
+  or when the probe fails.
 - `ForeignError(LikeDbgError)`.
 
 ### 4.3 Stages
-- **`ForeignAdoptStage`** (new): calls `resolve_foreign(...)`; sets `ctx.kernel_image` = image,
-  `ctx.vmlinux` = the host vmlinux, `ctx.rootfs_image` = the initramfs, `ctx.host.target_arch` = the detected
-  arch (and the derived console/qemu binary), and stashes `cfg.cmdline`/`qemu_extra` for the argv builder
-  (e.g. `ctx.foreign_cmdline`). No Manifest, no `.config`.
+- **`ForeignAdoptStage`** (new): receives the pre-resolved `ForeignKernel` (from `cmd_foreign`) and sets
+  `ctx.kernel_image` = image, `ctx.vmlinux` = the host vmlinux, `ctx.rootfs_image` = the initramfs, and
+  stashes `cmdline`/`qemu_extra` for the argv builder (e.g. `ctx.foreign_cmdline`). It does NOT detect arch or
+  extract vmlinux (those ran pre-pipeline in `cmd_foreign`, §4.2); `ctx.host.target_arch` is already the
+  detected arch (via the `resolve_for_run` cli-override). No Manifest, no `.config`. It calls
+  `recorder.record_kernel_paths(config=None, system_map="", vmlinux=<foreign vmlinux>, image=<foreign
+  image>)` (verified: that method is a nicety — copies `.config` if present + writes pointer files — safe with
+  `config=None` and no System.map), so `run.json`'s kernel pointers reflect the foreign artifacts without a
+  synthesized Manifest.
 - **`ForeignRepackStage`** (new, runs only when `cfg.exploit` set): `repack_initramfs(...)` → repoints
   `ctx.rootfs_image` at the repacked cpio (staged in the run dir).
 - **`build_foreign_pipeline`** (new, mirrors `build_use_pipeline`): `ForeignAdoptStage → [ForeignRepackStage]
   → DebuggeeStage → DebuggerStage`. No Download/Unpack/Build, no ProfileVerification/Rootfs/ModuleBuild.
-- `cli.main` dispatches the foreign pipeline when `settings.foreign.image` is set (before the normal/`--use`
-  flow); a `cmd_foreign(...)` sets it up like `cmd_use` (host profile from the detected arch, recorder, session).
+- `cli.main` dispatches `cmd_foreign` when `settings.foreign.image` is set (before the normal/`--use` flow).
+  `cmd_foreign` mirrors `cmd_use`'s prelude: (1) `load_config` to read `settings.foreign`; (2) `resolve_foreign`
+  (extract vmlinux if needed + `detect_arch`) → the `ForeignKernel`; (3) `resolve_for_run(scenario=…,
+  cli_overrides={"general": {"arch": fk.arch}})` → host profile with the right `target_arch`; (4)
+  `_ensure_images` (incl. `like_musl`), `RunRecorder.start`, `Session`; (5) `build_foreign_pipeline(...,
+  foreign=fk, ...)`.
 
 ### 4.4 QEMU argv (`build_qemu_argv` — a foreign branch)
 When a foreign cmdline is present, `build_qemu_argv` uses it VERBATIM as the `-append` base (skipping the
@@ -136,9 +161,13 @@ in-container path). gdb loads any vmlinux ELF for symbols — no source tree nee
 architecture`.
 
 ### 4.6 New image — `like_musl` (`.dockerfile_musl`)
-Small Linux image: `FROM like_dbg_base` (or debian-slim) + `apt-get install cpio gzip xz-utils zstd
-musl-tools`. Built by `images.build_images` / `--build-images` (added to the image registry). Carries the
-initramfs unpack/repack + `musl-gcc -static` toolchain for `ForeignRepackStage` + `extract_vmlinux`.
+Small Linux image: `FROM like_dbg_base` (or debian-slim) + `apt-get install cpio gzip xz-utils zstd lz4
+lzop` (for unpack/repack + vmlinux carving) + **cross-musl toolchains for BOTH arches** —
+`x86_64-linux-musl-gcc` and `aarch64-linux-musl-gcc` — so the exploit compiles to the FOREIGN arch
+natively (no qemu emulation). Toolchains from pinned prebuilt tarballs (musl.cc) or `musl-cross-make`
+(the plan pins an exact source; see §9 for the availability risk). Built by `images.build_images` /
+`--build-images` (added to the image registry). `ForeignRepackStage` picks the cross-`gcc` matching the
+foreign arch; `extract_vmlinux` uses the decompressors here.
 
 ## 5. Data flow (adopt → boot → debug → exploit)
 
@@ -163,8 +192,8 @@ initramfs unpack/repack + `musl-gcc -static` toolchain for `ForeignRepackStage` 
 - `initramfs` missing when required for boot → error (a kernel with a built-in initramfs may boot without
   one; document the `root=` implications).
 - cpio unpack/repack failure or musl compile failure → `ForeignError` with the container log tail.
-- `--upload` when the guest lacks `base64`/a writable tmpfs → the decode fails visibly in the console;
-  document the repack fallback.
+- `--upload` — the guest probe (no `base64` / no writable `/tmp`) → `ForeignError` "use repack"; a
+  post-transfer byte-count/hash mismatch → `ForeignError` (chunking corrupted it) → retry or use repack.
 - A foreign run has no `guest` block / no `ssh_key` → `--run`/`--insmod`/`--rmmod` (2a/2b) refuse with a
   remedy pointing at the foreign repack/upload flow (they already error on a missing guest block).
 
@@ -197,6 +226,11 @@ initramfs unpack/repack + `musl-gcc -static` toolchain for `ForeignRepackStage` 
   the guest's format; verify the repacked cpio boots.
 - **musl-static vs the guest** — a busybox/musl initramfs runs a musl-static exploit; a glibc initramfs may
   need glibc-static (document; the `[foreign].exploit` prebuilt-binary path is the escape hatch).
+- **cross-musl toolchain source** — Debian's `musl-tools` is native-only, so `like_musl` pulls cross toolchains
+  (`{x86_64,aarch64}-linux-musl-gcc`) from musl.cc (a third-party host that is occasionally down → a
+  build-reproducibility risk) or builds them via `musl-cross-make` (reproducible but ~10min/arch). The plan
+  pins the exact source; the live gate builds the image once. Verify a cross-compiled static exploit runs on
+  the foreign guest of each arch.
 - **vmlinux extraction** across compression formats + stripped kernels (symbol table present?).
 - **cmdline fidelity** — a missing/extra flag changes the challenge's behavior; `[foreign].cmdline` verbatim
   + only-console/gdbstub-added must not perturb it (verify the effective `-append`).
