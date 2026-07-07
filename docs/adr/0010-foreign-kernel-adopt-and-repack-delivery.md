@@ -53,3 +53,14 @@ is **always run manually** from the console.
   ModuleBuild/Rootfs stages are absent from `build_foreign_pipeline`.
 - A stripped release `vmlinux` yields only the symbols it carries (symbol table + base for gadget work); full
   source-line debugging needs a `vmlinux` with DWARF.
+- **Foreign runs are serial-console-only.** `cmd_foreign` forces `guest_net=False` and `share=False` on the
+  foreign `effective_debuggee`, so QEMU adds no virtio-net (SSH hostfwd) or 9p device the challenge never
+  specified, and `run.json` carries no `guest` block. This is why `--run`/`--insmod`/`--rmmod` cleanly refuse
+  on a foreign run (no guest endpoint) rather than trying to SSH to a nonexistent sshd; delivery is
+  repack/console-upload, not the 2a SSH/9p transport.
+- **`like_musl` toolchain platform (Apple Silicon caveat).** The musl.cc cross toolchains are x86-host
+  binaries, so on an Apple-Silicon mac the exploit *compile* (`repack_initramfs`'s `.c` branch) needs Docker
+  to have x86 emulation — Docker Desktop provides it by default; colima needs `--vz-rosetta`. Without it, use
+  the prebuilt-static-binary delivery (`[foreign].exploit = <binary>`, the `cp` branch — no toolchain needed)
+  or rebuild `.dockerfile_musl` against `musl-cross-make` (arm64-host, no emulation). Verified on 2026-07-07;
+  see `docs/superpowers/notes/2026-07-07-foreign-kernel-live-gate.md`.
