@@ -33,13 +33,14 @@ is **always run manually** from the console.
 - **Shell out to `ctf/misc/cpio.sh` for repack/musl-compile.** Rejected: it runs on the host, needs **root**
   (`cpio -idm` device nodes) + host `cpio`/`musl-gcc`, and is fragile/broken on macOS/colima; it isn't
   unit-testable and its exit codes don't compose. Instead the unpack/repack + static compile run in a
-  dedicated standalone `like_musl` container (`.dockerfile_musl`: `cpio` + decompressors + **cross-musl
-  toolchains for both arches** — `x86_64-linux-musl-gcc` and `aarch64-linux-musl-gcc`, pulled prebuilt from
-  musl.cc — so the exploit compiles to the *foreign* arch with no QEMU emulation; Debian's `musl-tools`
-  package is native-only and cannot cross-compile to the foreign arch, so it does not fit here. musl.cc is a
-  third-party host (occasional downtime is a build-reproducibility risk); `musl-cross-make` is the fallback
-  if a prebuilt toolchain becomes unavailable. This sidesteps host root/deps and stays unit-testable.
-  `cpio.sh` remains a manual helper for non-integrated use.
+  dedicated standalone `like_musl` container (`.dockerfile_musl`: `cpio` + decompressors + **`zig cc`** as the
+  cross toolchain). `zig cc` is one host-native binary that cross-compiles static musl to BOTH `x86_64` and
+  `aarch64` from ANY host arch with no emulation, so the feature works on {mac, linux} × {x86_64, arm64}; the
+  image ships thin `x86_64-linux-musl-gcc`/`aarch64-linux-musl-gcc` wrappers over `zig cc -target …-linux-musl`
+  so the repack code is toolchain-agnostic. (**Rejected:** musl.cc prebuilt toolchains — they are x86-host
+  binaries and cannot run on an arm64 host without x86 emulation, breaking the compile path on Apple Silicon;
+  and Debian's `musl-tools` is native-only, so it cannot cross-compile to a foreign arch at all.) This
+  sidesteps host root/deps and stays unit-testable. `cpio.sh` remains a manual helper for non-integrated use.
 - **Require the operator to declare the arch.** Rejected as a footgun (a wrong/`native` arch silently boots
   the wrong emulator). The `vmlinux` ELF `e_machine` is authoritative and a ~4-byte read; `[foreign].arch` is
   kept only as an override/fallback (bzImage-only, pre-extraction).
@@ -58,9 +59,9 @@ is **always run manually** from the console.
   specified, and `run.json` carries no `guest` block. This is why `--run`/`--insmod`/`--rmmod` cleanly refuse
   on a foreign run (no guest endpoint) rather than trying to SSH to a nonexistent sshd; delivery is
   repack/console-upload, not the 2a SSH/9p transport.
-- **`like_musl` toolchain platform (Apple Silicon caveat).** The musl.cc cross toolchains are x86-host
-  binaries, so on an Apple-Silicon mac the exploit *compile* (`repack_initramfs`'s `.c` branch) needs Docker
-  to have x86 emulation — Docker Desktop provides it by default; colima needs `--vz-rosetta`. Without it, use
-  the prebuilt-static-binary delivery (`[foreign].exploit = <binary>`, the `cp` branch — no toolchain needed)
-  or rebuild `.dockerfile_musl` against `musl-cross-make` (arm64-host, no emulation). Verified on 2026-07-07;
-  see `docs/superpowers/notes/2026-07-07-foreign-kernel-live-gate.md`.
+- **`like_musl` cross-compiles from any host, no emulation.** `.dockerfile_musl` uses `zig cc` (pinned zig,
+  arch-matched at build time), so the exploit *compile* (`repack_initramfs`'s `.c` branch) runs host-native and
+  targets both `x86_64` and `aarch64` on {mac, linux} × {x86_64, arm64}. Verified 2026-07-08: on an arm64 mac,
+  `zig cc` cross-compiles static musl to both targets with no x86 emulation. The prebuilt-static-binary path
+  (`[foreign].exploit = <binary>`, the `cp` branch) remains available for a glibc initramfs or a pre-built
+  exploit. See `docs/superpowers/notes/2026-07-07-foreign-kernel-live-gate.md`.
