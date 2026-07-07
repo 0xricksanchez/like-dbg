@@ -118,7 +118,7 @@ def test_cmd_foreign_runs_pipeline(tmp_path, monkeypatch):
     ran = {}
 
     monkeypatch.setattr(cli, "_ensure_images", lambda container, workspace, *, specs: None)
-    monkeypatch.setattr(cli.HostProfile, "detect", staticmethod(lambda s, workspace: _host()))
+    monkeypatch.setattr(cli.HostProfile, "detect", staticmethod(lambda s, workspace: _host(target_arch=s.general.arch)))
     monkeypatch.setattr(cli.logsetup, "add_run_logfile", lambda workspace, **kw: None)
     monkeypatch.setattr(
         cli.RunRecorder,
