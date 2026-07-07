@@ -37,6 +37,10 @@ class BuildError(LikeDbgError):
     """Failure during kernel build."""
 
 
+class ModuleError(LikeDbgError):
+    """Failure building or (un)loading an out-of-tree kernel module."""
+
+
 class RootfsError(LikeDbgError):
     """Failure building the root filesystem."""
 

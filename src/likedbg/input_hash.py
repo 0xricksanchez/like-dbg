@@ -10,7 +10,7 @@ from pathlib import Path
 
 _IGNORE_DIRS = frozenset({".git", "__pycache__", ".tmp_versions"})
 _IGNORE_NAMES = frozenset({".DS_Store", "Module.symvers", "modules.order"})
-_IGNORE_SUFFIXES = frozenset({".o", ".ko", ".mod", ".mod.c"})
+_IGNORE_SUFFIXES = frozenset({".o", ".ko", ".mod", ".mod.c", ".cmd"})
 
 
 @dataclass(frozen=True)
