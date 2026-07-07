@@ -18,4 +18,9 @@ DEBUGGER_IMAGE = "like_debugger:latest"
 # to avoid confusion with the like_debugger image; built from .dockerfile_dbge.
 DEBUGGEE_IMAGE = "like_debuggee:latest"
 
+# Standalone musl image: cpio + decompressors + cross-musl toolchains for BOTH arches.
+# Runs as root (cpio -idm needs device nodes). Repacks the foreign initramfs, cross-compiles
+# the exploit to the foreign arch, and carves vmlinux from a bzImage.
+MUSL_IMAGE = "like_musl:latest"
+
 CRASH_DROP_MOUNT = "/likedbg-crash"

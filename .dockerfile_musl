@@ -1,0 +1,25 @@
+FROM like_dbg_base:latest
+LABEL maintainer="Christopher Krah <mail@0x434b.dev>"
+ENV DEBIAN_FRONTEND=noninteractive
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+# cpio + decompressors for unpack/repack + vmlinux carving. binutils gives readelf.
+RUN apt-get update && apt-get install -yq --no-install-recommends \
+        cpio gzip xz-utils zstd lz4 lzop bzip2 binutils && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Cross-musl toolchains for BOTH arches, so the exploit compiles to the FOREIGN arch
+# with no qemu emulation. Debian's musl-tools is native-only, so we pull prebuilt
+# cross toolchains. musl.cc is a third-party host (occasional downtime = a build-repro
+# risk, see plan §Risks); musl-cross-make is the reproducible fallback.
+RUN for a in x86_64 aarch64; do \
+        curl -fsSL "https://musl.cc/${a}-linux-musl-cross.tgz" -o "/tmp/${a}.tgz" && \
+        tar -xzf "/tmp/${a}.tgz" -C /opt && rm "/tmp/${a}.tgz"; \
+    done
+ENV PATH="/opt/x86_64-linux-musl-cross/bin:/opt/aarch64-linux-musl-cross/bin:${PATH}"
+
+COPY io/scripts/extract-vmlinux.sh /opt/extract-vmlinux.sh
+RUN chmod +x /opt/extract-vmlinux.sh
+
+# NOTE: no `USER user` — cpio -idm needs root to create device nodes.
+WORKDIR /io
