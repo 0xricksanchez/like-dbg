@@ -100,6 +100,23 @@ vermagic/ABI match. Runs as a boot-time stage over all `custom_modules` and on d
 `--insmod`. Does **not** rebuild or invalidate the Kernel Build.
 _Avoid_: recompiling the kernel; "module compile" (say Module build).
 
+**Foreign kernel**:
+A kernel like-dbg did **not** build — a provided (CTF/triage) `bzImage`/`Image` + `vmlinux` + `initramfs`,
+declared in a `[foreign]` scenario config with the challenge's authoritative boot `cmdline`. `start_kgdb -c
+<challenge>` adopts it Manifest-free: bypasses Download/Unpack/Build, skips profile verification (no
+`.config`), auto-detects the arch from the `vmlinux` ELF, and boots it under gdb with the provided `vmlinux`
+for symbols and an interactive serial console. Has no `/ksrc` tree and no like-dbg rootfs, so 2a's SSH/9p
+transport and `--run`/`--insmod` do not apply.
+_Avoid_: adopted kernel, imported kernel; conflating with `--adopt` (which migrates a source tree).
+
+**Initramfs repack**:
+The exploit-delivery path for a Foreign kernel: unpack the provided `initramfs.cpio(.gz)`, compile the
+exploit static (musl) or drop a prebuilt static binary at `/exploit`, and repack — done in the standalone
+`like_musl` container (no host root/`cpio`/`musl`). A live **console-upload** (base64 over the serial) is the
+optional no-reboot alternative when the guest supports it. The exploit is **always run manually** from the
+guest console — never auto-run.
+_Avoid_: cpio rebuild, "repack the rootfs" (a Foreign kernel has an initramfs, not the Debian rootfs).
+
 **Effective settings**:
 The runtime Debuggee toggles LIKE-DBG actually uses after the 6-layer precedence merge — built-in <
 project default < profile runtime defaults < local < scenario < CLI. Held as
