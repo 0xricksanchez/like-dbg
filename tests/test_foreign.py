@@ -184,3 +184,59 @@ def test_resolve_foreign_missing_image_raises(tmp_path: Path) -> None:
     c = _FakeContainer(make_out=None)
     with pytest.raises(ForeignError, match="image"):
         resolve_foreign(c, cfg, tmp_path, out_dir=tmp_path / "stage", image="like_musl:latest")
+
+
+def test_repack_initramfs_compiles_c_with_cross_musl(tmp_path: Path) -> None:
+    from likedbg.foreign import repack_initramfs
+
+    initramfs = tmp_path / "in" / "initramfs.cpio.gz"
+    initramfs.parent.mkdir()
+    initramfs.write_bytes(b"\x1f\x8b")
+    exploit = tmp_path / "src" / "exploit.c"
+    exploit.parent.mkdir()
+    exploit.write_text("int main(){return 0;}\n")
+    out = tmp_path / "out" / "initramfs.repacked.cpio.gz"
+    c = _FakeContainer(make_out=out, out_bytes=b"\x1f\x8b")
+
+    result = repack_initramfs(c, initramfs=initramfs, exploit=exploit, arch="x86_64", out=out, image="like_musl:latest")
+
+    assert result == out
+    cmd = " ".join(c.execs)
+    assert "x86_64-linux-musl-gcc -static /src/exploit.c -o" in cmd
+    assert "cpio --null --format=newc -o" in cmd and "gzip" in cmd
+    vols = c.run_kwargs["volumes"]
+    assert vols[str(initramfs.parent)]["mode"] == "ro"
+    assert vols[str(out.parent)]["mode"] == "rw"
+
+
+def test_repack_initramfs_arm64_uses_aarch64_gcc(tmp_path: Path) -> None:
+    from likedbg.foreign import repack_initramfs
+
+    initramfs = tmp_path / "in" / "rootfs.cpio"
+    initramfs.parent.mkdir()
+    initramfs.write_bytes(b"07070100")  # newc magic
+    exploit = tmp_path / "src" / "pwn.c"
+    exploit.parent.mkdir()
+    exploit.write_text("int main(){}\n")
+    out = tmp_path / "out" / "repacked.cpio"
+    c = _FakeContainer(make_out=out, out_bytes=b"07070100")
+
+    repack_initramfs(c, initramfs=initramfs, exploit=exploit, arch="arm64", out=out, image="like_musl:latest")
+    assert "aarch64-linux-musl-gcc -static" in " ".join(c.execs)
+
+
+def test_repack_initramfs_copies_prebuilt_binary(tmp_path: Path) -> None:
+    from likedbg.foreign import repack_initramfs
+
+    initramfs = tmp_path / "in" / "initramfs.cpio.gz"
+    initramfs.parent.mkdir()
+    initramfs.write_bytes(b"\x1f\x8b")
+    exploit = tmp_path / "src" / "exploit"  # no .c suffix = prebuilt static binary
+    exploit.parent.mkdir()
+    exploit.write_bytes(b"\x7fELFstatic")
+    out = tmp_path / "out" / "initramfs.repacked.cpio.gz"
+    c = _FakeContainer(make_out=out, out_bytes=b"\x1f\x8b")
+
+    repack_initramfs(c, initramfs=initramfs, exploit=exploit, arch="x86_64", out=out, image="like_musl:latest")
+    cmd = " ".join(c.execs)
+    assert "cp /src/exploit" in cmd and "musl-gcc" not in cmd

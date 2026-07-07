@@ -125,3 +125,60 @@ def resolve_foreign(
         raise ForeignError(f"invalid [foreign].arch {arch!r}", remedy="use x86_64 or arm64")
 
     return ForeignKernel(image=image_path, vmlinux=vmlinux, initramfs=initramfs, arch=arch, cmdline=cfg.cmdline)
+
+
+_MUSL_GCC = {"x86_64": "x86_64-linux-musl-gcc", "arm64": "aarch64-linux-musl-gcc"}
+
+
+def _repack_command(initramfs_name: str, exploit_name: str, arch: str, out_name: str) -> str:
+    if exploit_name.endswith(".c"):
+        inject = f"{_MUSL_GCC[arch]} -static /src/{exploit_name} -o /work/rootfs/exploit"
+    else:
+        inject = f"cp /src/{exploit_name} /work/rootfs/exploit && chmod +x /work/rootfs/exploit"
+    unpack = (
+        f"if gzip -t /in/{initramfs_name} 2>/dev/null; "
+        f"then gzip -dc /in/{initramfs_name} | cpio -idm; "
+        f"else cpio -idm < /in/{initramfs_name}; fi"
+    )
+    repack = "find . -print0 | cpio --null --format=newc -o --owner=root"
+    if out_name.endswith(".gz"):
+        repack += f" | gzip -9 > /out/{out_name}"
+    else:
+        repack += f" > /out/{out_name}"
+    return " && ".join(["mkdir -p /work/rootfs", "cd /work/rootfs", unpack, inject, repack])
+
+
+def repack_initramfs(
+    container: Any,
+    *,
+    initramfs: Path,
+    exploit: Path,
+    arch: str,
+    out: Path,
+    image: str,
+) -> Path:
+    """Unpack the foreign initramfs, inject the exploit at /exploit (musl-static compile of a
+    .c, else copy a prebuilt static binary), repack (newc [+gzip]) to `out` in the like_musl
+    container. Compiling to the FOREIGN arch is why `arch` is threaded in."""
+    out.parent.mkdir(parents=True, exist_ok=True)
+    cmd = _repack_command(initramfs.name, exploit.name, arch, out.name)
+    c = container.run_detached(
+        image,
+        volumes={
+            str(initramfs.parent): {"bind": "/in", "mode": "ro"},
+            str(exploit.parent): {"bind": "/src", "mode": "ro"},
+            str(out.parent): {"bind": "/out", "mode": "rw"},
+        },
+        detach=True,
+        tty=True,
+    )
+    try:
+        container.exec(c, cmd)
+    finally:
+        container.stop(c)
+    if not out.is_file():
+        raise ForeignError(
+            f"initramfs repack produced no output at {out}",
+            remedy="check the exploit compiles and the cpio format round-trips",
+        )
+    return out
