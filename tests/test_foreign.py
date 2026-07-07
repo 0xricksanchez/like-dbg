@@ -42,6 +42,13 @@ def test_detect_arch_unknown_machine_raises(tmp_path: Path) -> None:
         detect_arch(v)
 
 
+def test_detect_arch_truncated_header_raises(tmp_path: Path) -> None:
+    v = tmp_path / "vmlinux"
+    v.write_bytes(b"\x7fELF")  # magic only, header cut off before e_machine
+    with pytest.raises(ForeignError, match="(?i)truncated|too short"):
+        detect_arch(v)
+
+
 def test_foreign_error_is_likedbg_error() -> None:
     assert issubclass(ForeignError, LikeDbgError)
 

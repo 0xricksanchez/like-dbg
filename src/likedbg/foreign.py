@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 from likedbg.errors import LikeDbgError
 
@@ -26,14 +27,20 @@ class ForeignKernel:
 
 def detect_arch(vmlinux: Path) -> str:
     """Return 'x86_64'/'arm64' from the ELF e_machine, else raise ForeignError."""
-    head = vmlinux.read_bytes()[:20]
+    with vmlinux.open("rb") as f:
+        head = f.read(20)
     if head[:4] != b"\x7fELF":
         raise ForeignError(
             f"{vmlinux} is not an ELF file (cannot detect arch)",
             remedy="provide a real [foreign].vmlinux, or set [foreign].arch",
         )
-    endian = "little" if head[5] == 1 else "big"
-    e_machine = int.from_bytes(head[18:20], endian)  # type: ignore[arg-type]
+    if len(head) < 20:
+        raise ForeignError(
+            f"{vmlinux} is too short to be a valid ELF (truncated header)",
+            remedy="provide a real [foreign].vmlinux, or set [foreign].arch",
+        )
+    endian: Literal["little", "big"] = "little" if head[5] == 1 else "big"
+    e_machine = int.from_bytes(head[18:20], endian)
     arch = _EM_TO_ARCH.get(e_machine)
     if arch is None:
         raise ForeignError(
