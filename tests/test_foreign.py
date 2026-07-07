@@ -261,6 +261,59 @@ def test_repack_initramfs_quotes_filename_with_space(tmp_path: Path) -> None:
     assert "/in/odd name.cpio.gz " not in cmd.replace("'/in/odd name.cpio.gz'", "")
 
 
+def test_repack_initramfs_same_dir_initramfs_and_exploit_shares_one_mount(tmp_path: Path) -> None:
+    """Regression: a CTF challenge commonly ships initramfs + exploit.c in the SAME dir.
+    Pre-fix, the volumes dict was keyed by parent dir, so the duplicate key collapsed to 2
+    mounts and dropped the /in bind entirely (gzip -dc /in/... then fails)."""
+    from likedbg.foreign import repack_initramfs
+
+    challenge_dir = tmp_path / "ctf" / "lk01"
+    challenge_dir.mkdir(parents=True)
+    initramfs = challenge_dir / "initramfs.cpio.gz"
+    initramfs.write_bytes(b"\x1f\x8b")
+    exploit = challenge_dir / "exploit.c"
+    exploit.write_text("int main(){return 0;}\n")
+    out = tmp_path / "out" / "initramfs.repacked.cpio.gz"
+    c = _FakeContainer(make_out=out, out_bytes=b"\x1f\x8b")
+
+    repack_initramfs(c, initramfs=initramfs, exploit=exploit, arch="x86_64", out=out, image="like_musl:latest")
+
+    vols = c.run_kwargs["volumes"]
+    binds = {v["bind"] for v in vols.values()}
+    assert "/in" in binds  # the /in bind must not be dropped
+    assert vols[str(challenge_dir)]["bind"] == "/in"
+    assert vols[str(out.parent)] == {"bind": "/out", "mode": "rw"}
+    assert len(vols) == 2  # challenge dir shares one mount, out gets its own
+
+    cmd = " ".join(c.execs)
+    assert "/in/initramfs.cpio.gz" in cmd  # both files referenced under the shared /in mount
+    assert "/in/exploit.c" in cmd
+
+
+def test_extract_vmlinux_same_dir_image_and_out_shares_one_rw_mount(tmp_path: Path) -> None:
+    """Regression: image + out sharing a dir must not drop a mount, and since /out needs rw,
+    the single shared mount must be upgraded to rw (not left ro)."""
+    from likedbg.foreign import extract_vmlinux
+
+    shared_dir = tmp_path / "shared"
+    shared_dir.mkdir()
+    image_path = shared_dir / "bzImage"
+    image_path.write_bytes(b"MZfake-bzImage")
+    out = shared_dir / "vmlinux"
+    c = _FakeContainer(make_out=out)
+
+    extract_vmlinux(c, image_path, out, image="like_musl:latest")
+
+    vols = c.run_kwargs["volumes"]
+    assert len(vols) == 1  # single shared mount, no dropped mount
+    mount = vols[str(shared_dir)]
+    assert mount["mode"] == "rw"  # upgraded because /out needs write access
+
+    cmd = " ".join(c.execs)
+    assert f"{mount['bind']}/bzImage" in cmd
+    assert f"{mount['bind']}/vmlinux" in cmd
+
+
 def test_console_upload_probe_failure_says_use_repack(tmp_path):
     from likedbg.foreign import console_upload
 

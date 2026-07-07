@@ -18,6 +18,31 @@ from likedbg.errors import LikeDbgError
 _EM_TO_ARCH = {62: "x86_64", 183: "arm64"}  # EM_X86_64, EM_AARCH64
 
 
+def _dedup_mounts(specs: list[tuple[str, Path, str, str]]) -> tuple[dict[str, dict[str, str]], list[str]]:
+    """Build a docker `volumes` dict deduplicated by host directory, plus the in-container
+    path for each spec. `specs` is a list of (bind_pref, host_dir, mode, name) tuples.
+
+    A CTF challenge commonly ships multiple inputs (e.g. initramfs + exploit.c) in the SAME
+    host directory. Keying `volumes` naively by host dir (as separate dict literal entries)
+    silently collapses duplicate keys and drops a mount. This dedups explicitly: the dir is
+    mounted once under the first-seen bind_pref, upgraded to rw if any role sharing it needs
+    rw, and every spec's container path is rebased onto whichever bind its dir landed on.
+    """
+    volumes: dict[str, dict[str, str]] = {}
+    cpaths: list[str] = []
+    for bind_pref, host_dir, mode, name in specs:
+        hd = str(host_dir)
+        if hd in volumes:
+            if mode == "rw":
+                volumes[hd]["mode"] = "rw"
+            bind = volumes[hd]["bind"]
+        else:
+            volumes[hd] = {"bind": bind_pref, "mode": mode}
+            bind = bind_pref
+        cpaths.append(f"{bind}/{name}")
+    return volumes, cpaths
+
+
 class ForeignError(LikeDbgError):
     """A foreign-kernel adopt/boot/exploit-delivery operation could not be set up."""
 
@@ -64,20 +89,15 @@ def extract_vmlinux(container: Any, image_path: Path, out: Path, *, image: str) 
     (see ADR-0010). Raises ForeignError if extraction produces no file.
     """
     out.parent.mkdir(parents=True, exist_ok=True)
-    c = container.run_detached(
-        image,
-        volumes={
-            str(image_path.parent): {"bind": "/in", "mode": "ro"},
-            str(out.parent): {"bind": "/out", "mode": "rw"},
-        },
-        detach=True,
-        tty=True,
+    volumes, (in_path, out_path) = _dedup_mounts(
+        [
+            ("/in", image_path.parent, "ro", image_path.name),
+            ("/out", out.parent, "rw", out.name),
+        ]
     )
+    c = container.run_detached(image, volumes=volumes, detach=True, tty=True)
     try:
-        container.exec(
-            c,
-            f"/opt/extract-vmlinux.sh {shlex.quote(f'/in/{image_path.name}')} {shlex.quote(f'/out/{out.name}')}",
-        )
+        container.exec(c, f"/opt/extract-vmlinux.sh {shlex.quote(in_path)} {shlex.quote(out_path)}")
     finally:
         container.stop(c)
     if not out.is_file() or out.stat().st_size == 0:
@@ -137,19 +157,19 @@ def resolve_foreign(
 _MUSL_GCC = {"x86_64": "x86_64-linux-musl-gcc", "arm64": "aarch64-linux-musl-gcc"}
 
 
-def _repack_command(initramfs_name: str, exploit_name: str, arch: str, out_name: str) -> str:
+def _repack_command(in_path: str, src_path: str, arch: str, out_path: str) -> str:
     if arch not in _MUSL_GCC:
         raise ForeignError(f"unsupported foreign arch {arch!r}", remedy="use x86_64 or arm64")
-    in_q = shlex.quote(f"/in/{initramfs_name}")
-    src_q = shlex.quote(f"/src/{exploit_name}")
-    out_q = shlex.quote(f"/out/{out_name}")
-    if exploit_name.endswith(".c"):
+    in_q = shlex.quote(in_path)
+    src_q = shlex.quote(src_path)
+    out_q = shlex.quote(out_path)
+    if src_path.endswith(".c"):
         inject = f"{_MUSL_GCC[arch]} -static {src_q} -o /work/rootfs/exploit"
     else:
         inject = f"cp {src_q} /work/rootfs/exploit && chmod +x /work/rootfs/exploit"
     unpack = f"if gzip -t {in_q} 2>/dev/null; then gzip -dc {in_q} | cpio -idm; else cpio -idm < {in_q}; fi"
     repack = "find . -print0 | cpio --null --format=newc -o --owner=root"
-    if out_name.endswith(".gz"):
+    if out_path.endswith(".gz"):
         repack += f" | gzip -9 > {out_q}"
     else:
         repack += f" > {out_q}"
@@ -169,17 +189,15 @@ def repack_initramfs(
     .c, else copy a prebuilt static binary), repack (newc [+gzip]) to `out` in the like_musl
     container. Compiling to the FOREIGN arch is why `arch` is threaded in."""
     out.parent.mkdir(parents=True, exist_ok=True)
-    cmd = _repack_command(initramfs.name, exploit.name, arch, out.name)
-    c = container.run_detached(
-        image,
-        volumes={
-            str(initramfs.parent): {"bind": "/in", "mode": "ro"},
-            str(exploit.parent): {"bind": "/src", "mode": "ro"},
-            str(out.parent): {"bind": "/out", "mode": "rw"},
-        },
-        detach=True,
-        tty=True,
+    volumes, (in_path, src_path, out_path) = _dedup_mounts(
+        [
+            ("/in", initramfs.parent, "ro", initramfs.name),
+            ("/src", exploit.parent, "ro", exploit.name),
+            ("/out", out.parent, "rw", out.name),
+        ]
     )
+    cmd = _repack_command(in_path, src_path, arch, out_path)
+    c = container.run_detached(image, volumes=volumes, detach=True, tty=True)
     try:
         container.exec(c, cmd)
     finally:
