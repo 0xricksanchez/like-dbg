@@ -47,6 +47,7 @@ from likedbg.errors import LikeDbgError
 from likedbg.errors import ModuleError
 from likedbg.errors import SessionError
 from likedbg.exploit import run_exploit
+from likedbg.foreign import ForeignKernel
 from likedbg.host_profile import HostProfile
 from likedbg.launchers import gdb_pane_command
 from likedbg.modules import stage_module
@@ -60,6 +61,8 @@ from likedbg.stages.debugger import DebuggerStage
 from likedbg.stages.download import DownloadStage
 from likedbg.stages.download import resolve_version
 from likedbg.stages.export import ArtifactExporter
+from likedbg.stages.foreign import ForeignAdoptStage
+from likedbg.stages.foreign import ForeignRepackStage
 from likedbg.stages.module_build import ModuleBuildStage
 from likedbg.stages.profile_verification import ProfileVerificationStage
 from likedbg.stages.rootfs import RootfsStage
@@ -384,6 +387,85 @@ def build_use_pipeline(
                 arch=host.target_arch,
                 volume=kernel_volume,
             ),
+            DebuggeeStage(launch=launch_debuggee, debuggee_image=debuggee_image, workspace=workspace),
+            DebuggerStage(
+                ext=ext,
+                run_gdb=run_gdb,
+                breakpoint="start_kernel",
+                break_on_crash=break_on_crash,
+                crash_breakpoints=crash_breakpoints,
+            ),
+        ]
+    )
+
+
+def build_foreign_pipeline(
+    container: ContainerService,
+    session: Session,
+    *,
+    host: HostProfile,
+    workspace: Path,
+    foreign: ForeignKernel,
+    exploit: Path | None,
+    qemu_extra: tuple[str, ...],
+    gdb_mount_source: str,
+    out_dir: Path,
+    debugger_image: str,
+    debuggee_image: str,
+    ext: str,
+    musl_image: str,
+    recorder: RunRecorder | None = None,
+    break_on_crash: bool = False,
+    crash_breakpoints: tuple[str, ...] = (),
+) -> Pipeline:
+    base_pane = session.current_pane_id()
+    debuggee_pane: str | None = None
+
+    for opt in _SESSION_STATE_OPTIONS:
+        session.unset_option(opt)
+    session.set_option("@likedbg_workspace", str(workspace))
+    session.set_option("@likedbg_base_pane_id", base_pane)
+
+    def launch_debuggee(cmd: str) -> None:
+        nonlocal debuggee_pane
+        session.set_option("@likedbg_debuggee_cmd", cmd)
+        debuggee_pane = session.run_in_new_pane(target=base_pane, direction="h", percent=66, cmd=cmd)
+        session.set_option("@likedbg_debuggee_pane", debuggee_pane)
+        if recorder is not None:
+            session.set_option("@likedbg_debuggee_pane_log", str(recorder.debuggee_pane_log))
+            try:
+                session.pipe_pane(pane=debuggee_pane, output=recorder.debuggee_pane_log)
+            except LikeDbgError as exc:
+                recorder.add_warning("transcript-capture-failed", f"pipe-pane failed for Debuggee: {exc}")
+
+    def run_gdb(args: list[str]) -> None:
+        if debuggee_pane is None:
+            raise RuntimeError("debuggee pane has not been launched")
+        cmd = gdb_pane_command(
+            args,
+            image=debugger_image,
+            mount_source=gdb_mount_source,
+            network_mode=host.network_mode,
+            crash_drop=recorder.crash_dir if recorder is not None else None,
+        )
+        session.set_option("@likedbg_debugger_cmd", cmd)
+        debugger_pane = session.run_in_new_pane(
+            target=debuggee_pane,
+            direction="v",
+            percent=50,
+            cmd=cmd,
+        )
+        session.set_option("@likedbg_debugger_pane", debugger_pane)
+        if recorder is not None:
+            try:
+                session.pipe_pane(pane=debugger_pane, output=recorder.debugger_pane_log)
+            except LikeDbgError as exc:
+                recorder.add_warning("transcript-capture-failed", f"pipe-pane failed for Debugger: {exc}")
+
+    return Pipeline(
+        [
+            ForeignAdoptStage(foreign=foreign, qemu_extra=qemu_extra),
+            ForeignRepackStage(container, foreign=foreign, exploit=exploit, image=musl_image, out_dir=out_dir),
             DebuggeeStage(launch=launch_debuggee, debuggee_image=debuggee_image, workspace=workspace),
             DebuggerStage(
                 ext=ext,
