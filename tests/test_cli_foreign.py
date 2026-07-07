@@ -1,3 +1,4 @@
+from likedbg import cli
 from likedbg.cli import build_foreign_pipeline
 from likedbg.container_service import ContainerService
 from likedbg.foreign import ForeignKernel
@@ -78,3 +79,76 @@ def test_build_foreign_pipeline_stage_order(tmp_path):
         "debuggee",
         "debugger",
     ]
+
+
+class _FakeRecorder:
+    def __init__(self, workspace):
+        self.likedbg_log = workspace / "log"
+        self.debuggee_pane_log = workspace / "d.log"
+        self.debugger_pane_log = workspace / "g.log"
+        self.crash_dir = workspace / "crash"
+
+    def record_kernel_paths(self, **kw):
+        pass
+
+
+def _write_project(tmp_path):
+    (tmp_path / "configs").mkdir()
+    (tmp_path / "configs" / "profiles").mkdir()
+    (tmp_path / "configs" / "profiles" / "exploit-dev.toml").write_text(
+        'name="exploit-dev"\nkind="base"\ndescription="d"\n'
+    )
+    (tmp_path / "configs" / "default.toml").write_text('[general]\narch = "native"\n')
+    (tmp_path / "bzImage").write_bytes(b"MZ")
+    (tmp_path / "vmlinux").write_bytes(
+        b"\x7fELF\x02\x01\x01\x00" + b"\x00" * 8 + b"\x02\x00" + b"\x3e\x00" + b"\x00" * 20
+    )
+    (tmp_path / "initramfs.cpio.gz").write_bytes(b"\x1f\x8b")
+    sc = tmp_path / "configs" / "scenarios"
+    sc.mkdir()
+    (sc / "lk01.toml").write_text(
+        '[foreign]\nimage = "bzImage"\nvmlinux = "vmlinux"\n'
+        'initramfs = "initramfs.cpio.gz"\ncmdline = "quiet console=ttyS0"\n'
+    )
+    return sc / "lk01.toml"
+
+
+def test_cmd_foreign_runs_pipeline(tmp_path, monkeypatch):
+    scenario = _write_project(tmp_path)
+    ran = {}
+
+    monkeypatch.setattr(cli, "_ensure_images", lambda container, workspace, *, specs: None)
+    monkeypatch.setattr(cli.HostProfile, "detect", staticmethod(lambda s, workspace: _host()))
+    monkeypatch.setattr(cli.logsetup, "add_run_logfile", lambda workspace, **kw: None)
+    monkeypatch.setattr(
+        cli.RunRecorder,
+        "start",
+        staticmethod(
+            lambda *, workspace, requested_settings, run_resolution, host, build_label, rootfs_label, profiles: (
+                _FakeRecorder(workspace)
+            )
+        ),
+    )
+
+    class _Pipe:
+        def run(self, ctx):
+            ran["ctx"] = ctx
+
+    monkeypatch.setattr(cli, "build_foreign_pipeline", lambda *a, **k: _Pipe())
+
+    rc = cli.cmd_foreign(_FakeContainer(), _FakeSession(), tmp_path, scenario=scenario)
+    assert rc == 0
+    assert ran["ctx"].host.target_arch == "x86_64"  # arch injected from the vmlinux ELF
+
+
+def test_main_dispatches_to_cmd_foreign_when_image_set(tmp_path, monkeypatch):
+    _write_project(tmp_path)
+    called = {}
+    monkeypatch.setattr(cli, "cmd_foreign", lambda *a, **k: called.update(hit=True) or 0)
+    monkeypatch.setattr(cli.os, "getenv", lambda k, d=None: "1" if k == "TMUX" else d)
+    monkeypatch.setattr(cli.docker_env, "make_client", lambda host: object())
+    monkeypatch.setattr(cli, "ContainerService", lambda client: _FakeContainer())
+    monkeypatch.setattr(cli.Path, "cwd", staticmethod(lambda: tmp_path))
+    monkeypatch.setattr(cli.Session, "start", lambda self, name: None)
+    rc = cli.main(["-c", "lk01"])
+    assert called.get("hit") and rc == 0

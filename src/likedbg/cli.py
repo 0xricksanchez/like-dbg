@@ -35,6 +35,7 @@ from likedbg.constants import DEBUGGEE_IMAGE
 from likedbg.constants import DEBUGGER_IMAGE
 from likedbg.constants import KBUILDER_IMAGE
 from likedbg.constants import KERNEL_VOLUME
+from likedbg.constants import MUSL_IMAGE
 from likedbg.constants import ROOTFS_IMAGE
 from likedbg.constants import VOLUME_MOUNT
 from likedbg.container_service import ContainerService
@@ -48,7 +49,10 @@ from likedbg.errors import LikeDbgError
 from likedbg.errors import ModuleError
 from likedbg.errors import SessionError
 from likedbg.exploit import run_exploit
+from likedbg.foreign import ForeignError
 from likedbg.foreign import ForeignKernel
+from likedbg.foreign import resolve_foreign
+from likedbg.foreign import resolve_input_path
 from likedbg.host_profile import HostProfile
 from likedbg.launchers import gdb_pane_command
 from likedbg.modules import stage_module
@@ -514,6 +518,78 @@ def cmd_use(
     return 0
 
 
+def cmd_foreign(
+    container: ContainerService,
+    session: Session,
+    workspace: Path,
+    *,
+    scenario: Path | None,
+    profile_arg: str = "",
+) -> int:
+    cfg0 = load_config(workspace, scenario=scenario)
+    fcfg = cfg0.settings.foreign
+    if not fcfg.image:
+        raise ForeignError("no [foreign].image configured", remedy="set [foreign].image in your scenario")
+
+    name = scenario.stem if scenario is not None else "foreign"
+    out_dir = workspace / "artifacts" / "foreign" / name
+    # musl (+ base) must exist before we can extract vmlinux / repack.
+    _ensure_images(container, workspace, specs=images.foreign_prep_images())
+    fk = resolve_foreign(container, fcfg, workspace, out_dir=out_dir, image=MUSL_IMAGE)
+
+    # Inject the detected arch so HostProfile.detect / QEMU / gdb follow the foreign kernel.
+    cfg, host, rr = resolve_for_run(
+        workspace,
+        profile_arg=profile_arg,
+        scenario=scenario,
+        cli_overrides={"general": {"arch": fk.arch}},
+    )
+    _ensure_images(container, workspace, specs=images.required_for_foreign(host))
+
+    exploit = resolve_input_path(workspace, fcfg.exploit) if fcfg.exploit else None
+    if exploit is not None and not exploit.is_file():
+        raise ForeignError(f"[foreign].exploit not found: {exploit}", remedy="check the path")
+
+    recorder = RunRecorder.start(
+        workspace=workspace,
+        requested_settings=cfg.settings,
+        run_resolution=rr,
+        host=host,
+        build_label=f"foreign-{name}",
+        rootfs_label="",
+        profiles=rr.profiles,
+    )
+    logsetup.add_run_logfile(workspace, path=recorder.likedbg_log)
+
+    ctx = PipelineContext(
+        settings=cfg.settings,
+        host=host,
+        effective_debuggee=rr.effective_debuggee,
+        extra_boot_args=rr.extra_boot_args,
+        recorder=recorder,
+    )
+    pipeline = build_foreign_pipeline(
+        container,
+        session,
+        host=host,
+        workspace=workspace,
+        foreign=fk,
+        exploit=exploit,
+        qemu_extra=fcfg.qemu_extra,
+        gdb_mount_source=str(fk.vmlinux.parent),
+        out_dir=out_dir,
+        debugger_image=DEBUGGER_IMAGE,
+        debuggee_image=DEBUGGEE_IMAGE,
+        ext=cfg.settings.debugger.ext,
+        musl_image=MUSL_IMAGE,
+        recorder=recorder,
+        break_on_crash=cfg.settings.debugger.break_on_crash,
+        crash_breakpoints=cfg.settings.debugger.crash_breakpoints,
+    )
+    pipeline.run(ctx)
+    return 0
+
+
 def _require_volume_for_adopt(host: HostProfile) -> None:
     if host.storage_mode != "volume":
         raise HostCapabilityError(
@@ -849,6 +925,19 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.clean or args.clean_all:
             return cmd_clean(container, workspace, label=args.clean or None, clean_all=args.clean_all)
+        if cfg.settings.foreign.image:
+            if not os.getenv("TMUX"):
+                logger.error("Not running inside a TMUX session. Start tmux first.")
+                return 2
+            session = Session("LIKE-DBG")
+            session.start("LIKE-DBG")
+            return cmd_foreign(
+                container,
+                session,
+                workspace,
+                scenario=_scenario_path(workspace, args.config),
+                profile_arg=args.profile,
+            )
         if args.use:
             if not os.getenv("TMUX"):
                 logger.error("Not running inside a TMUX session. Start tmux first.")
