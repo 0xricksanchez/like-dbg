@@ -2,21 +2,34 @@ FROM like_dbg_base:latest
 LABEL maintainer="Christopher Krah <mail@0x434b.dev>"
 ENV DEBIAN_FRONTEND=noninteractive
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+ARG USER
 
-# cpio + decompressors for unpack/repack + vmlinux carving. binutils gives readelf.
+# cpio + decompressors for initramfs unpack/repack + vmlinux carving (binutils => readelf).
 RUN apt-get update && apt-get install -yq --no-install-recommends \
-        cpio gzip xz-utils zstd lz4 lzop bzip2 binutils && \
+        cpio gzip xz-utils zstd lz4 lzop bzip2 binutils ca-certificates curl && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Cross-musl toolchains for BOTH arches, so the exploit compiles to the FOREIGN arch
-# with no qemu emulation. Debian's musl-tools is native-only, so we pull prebuilt
-# cross toolchains. musl.cc is a third-party host (occasional downtime = a build-repro
-# risk, see plan §Risks); musl-cross-make is the reproducible fallback.
-RUN for a in x86_64 aarch64; do \
-        curl -fsSL "https://musl.cc/${a}-linux-musl-cross.tgz" -o "/tmp/${a}.tgz" && \
-        tar -xzf "/tmp/${a}.tgz" -C /opt && rm "/tmp/${a}.tgz"; \
+# Cross toolchain = `zig cc`. ONE host-native toolchain that cross-compiles static musl to BOTH
+# x86_64 and aarch64 targets, on ANY host arch, with NO emulation. The exploit compile runs in this
+# (host-arch) container, so we fetch the arch-matched zig (`uname -m` is x86_64/aarch64, matching
+# zig's tarball arch names). This makes the repack/compile path work on {mac,linux} x {x86_64,arm64}.
+# (Rejected musl.cc: its prebuilt toolchains are x86-host binaries that cannot run on arm64 without
+# x86 emulation — see ADR-0010.) Pinned; if ziglang.org is down, community mirrors are listed at
+# https://ziglang.org/download/community-mirrors/.
+ARG ZIG_VERSION=0.14.1
+RUN arch="$(uname -m)" && \
+    curl -fsSL "https://ziglang.org/download/${ZIG_VERSION}/zig-${arch}-linux-${ZIG_VERSION}.tar.xz" \
+        -o /tmp/zig.tar.xz && \
+    mkdir -p /opt/zig && tar -xJf /tmp/zig.tar.xz -C /opt/zig --strip-components=1 && rm /tmp/zig.tar.xz && \
+    /opt/zig/zig version
+
+# Keep the {x86_64,aarch64}-linux-musl-gcc interface the repack code (_MUSL_GCC) expects; each
+# wrapper delegates to `zig cc` for its target, producing a static musl binary.
+RUN for t in x86_64 aarch64; do \
+        printf '#!/bin/sh\nexec /opt/zig/zig cc -target %s-linux-musl "$@"\n' "$t" \
+            > "/usr/local/bin/${t}-linux-musl-gcc" && \
+        chmod +x "/usr/local/bin/${t}-linux-musl-gcc"; \
     done
-ENV PATH="/opt/x86_64-linux-musl-cross/bin:/opt/aarch64-linux-musl-cross/bin:${PATH}"
 
 COPY io/scripts/extract-vmlinux.sh /opt/extract-vmlinux.sh
 RUN chmod +x /opt/extract-vmlinux.sh
