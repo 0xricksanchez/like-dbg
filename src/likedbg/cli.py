@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import os
 import shlex
+import time
 import urllib.request
+from collections.abc import Callable
 from datetime import UTC
 from datetime import datetime
 from pathlib import Path
@@ -34,6 +37,7 @@ from likedbg.constants import DEBUGGEE_IMAGE
 from likedbg.constants import DEBUGGER_IMAGE
 from likedbg.constants import KBUILDER_IMAGE
 from likedbg.constants import KERNEL_VOLUME
+from likedbg.constants import MUSL_IMAGE
 from likedbg.constants import ROOTFS_IMAGE
 from likedbg.constants import VOLUME_MOUNT
 from likedbg.container_service import ContainerService
@@ -47,6 +51,11 @@ from likedbg.errors import LikeDbgError
 from likedbg.errors import ModuleError
 from likedbg.errors import SessionError
 from likedbg.exploit import run_exploit
+from likedbg.foreign import ForeignError
+from likedbg.foreign import ForeignKernel
+from likedbg.foreign import console_upload
+from likedbg.foreign import resolve_foreign
+from likedbg.foreign import resolve_input_path
 from likedbg.host_profile import HostProfile
 from likedbg.launchers import gdb_pane_command
 from likedbg.modules import stage_module
@@ -60,6 +69,8 @@ from likedbg.stages.debugger import DebuggerStage
 from likedbg.stages.download import DownloadStage
 from likedbg.stages.download import resolve_version
 from likedbg.stages.export import ArtifactExporter
+from likedbg.stages.foreign import ForeignAdoptStage
+from likedbg.stages.foreign import ForeignRepackStage
 from likedbg.stages.module_build import ModuleBuildStage
 from likedbg.stages.profile_verification import ProfileVerificationStage
 from likedbg.stages.rootfs import RootfsStage
@@ -194,25 +205,20 @@ def explain_config(
     return "\n".join(lines)
 
 
-def build_pipeline(
-    container: ContainerService,
+def _make_pane_launchers(
     session: Session,
-    *,
     host: HostProfile,
-    chown_to: tuple[int, int] | None = None,
+    *,
     workspace: Path,
-    kernel_volume: str,
-    dl_dir: Path,
     debugger_image: str,
-    debuggee_image: str,
-    ext: str,
-    build_recipe: BuildRecipe,
-    rootfs_recipe: RootfsRecipe,
-    patch_dirs: tuple[str, ...] = (),
-    recorder: RunRecorder | None = None,
-    break_on_crash: bool = False,
-    crash_breakpoints: tuple[str, ...] = (),
-) -> Pipeline:
+    gdb_mount_source: str,
+    recorder: RunRecorder | None,
+) -> tuple[Callable[[str], None], Callable[[list[str]], None]]:
+    """Wire the debuggee/debugger tmux panes + session-restart options for a pipeline run.
+
+    Shared by build_pipeline / build_use_pipeline / build_foreign_pipeline, which differ only
+    in how `gdb_mount_source` is sourced.
+    """
     base_pane = session.current_pane_id()
     debuggee_pane: str | None = None
 
@@ -236,17 +242,10 @@ def build_pipeline(
     def run_gdb(args: list[str]) -> None:
         if debuggee_pane is None:
             raise RuntimeError("debuggee pane has not been launched")
-        loc = cache.locations(
-            build_recipe.label,
-            arch=build_recipe.arch,
-            storage_mode=host.storage_mode,
-            workspace=workspace,
-            volume=kernel_volume,
-        )
         cmd = gdb_pane_command(
             args,
             image=debugger_image,
-            mount_source=loc.gdb_mount_source,
+            mount_source=gdb_mount_source,
             network_mode=host.network_mode,
             crash_drop=recorder.crash_dir if recorder is not None else None,
         )
@@ -263,6 +262,44 @@ def build_pipeline(
                 session.pipe_pane(pane=debugger_pane, output=recorder.debugger_pane_log)
             except LikeDbgError as exc:
                 recorder.add_warning("transcript-capture-failed", f"pipe-pane failed for Debugger: {exc}")
+
+    return launch_debuggee, run_gdb
+
+
+def build_pipeline(
+    container: ContainerService,
+    session: Session,
+    *,
+    host: HostProfile,
+    chown_to: tuple[int, int] | None = None,
+    workspace: Path,
+    kernel_volume: str,
+    dl_dir: Path,
+    debugger_image: str,
+    debuggee_image: str,
+    ext: str,
+    build_recipe: BuildRecipe,
+    rootfs_recipe: RootfsRecipe,
+    patch_dirs: tuple[str, ...] = (),
+    recorder: RunRecorder | None = None,
+    break_on_crash: bool = False,
+    crash_breakpoints: tuple[str, ...] = (),
+) -> Pipeline:
+    gdb_mount_source = cache.locations(
+        build_recipe.label,
+        arch=build_recipe.arch,
+        storage_mode=host.storage_mode,
+        workspace=workspace,
+        volume=kernel_volume,
+    ).gdb_mount_source
+    launch_debuggee, run_gdb = _make_pane_launchers(
+        session,
+        host,
+        workspace=workspace,
+        debugger_image=debugger_image,
+        gdb_mount_source=gdb_mount_source,
+        recorder=recorder,
+    )
 
     return Pipeline(
         [
@@ -322,49 +359,14 @@ def build_use_pipeline(
     break_on_crash: bool = False,
     crash_breakpoints: tuple[str, ...] = (),
 ) -> Pipeline:
-    base_pane = session.current_pane_id()
-    debuggee_pane: str | None = None
-
-    for opt in _SESSION_STATE_OPTIONS:
-        session.unset_option(opt)
-    session.set_option("@likedbg_workspace", str(workspace))
-    session.set_option("@likedbg_base_pane_id", base_pane)
-
-    def launch_debuggee(cmd: str) -> None:
-        nonlocal debuggee_pane
-        session.set_option("@likedbg_debuggee_cmd", cmd)
-        debuggee_pane = session.run_in_new_pane(target=base_pane, direction="h", percent=66, cmd=cmd)
-        session.set_option("@likedbg_debuggee_pane", debuggee_pane)
-        if recorder is not None:
-            session.set_option("@likedbg_debuggee_pane_log", str(recorder.debuggee_pane_log))
-            try:
-                session.pipe_pane(pane=debuggee_pane, output=recorder.debuggee_pane_log)
-            except LikeDbgError as exc:
-                recorder.add_warning("transcript-capture-failed", f"pipe-pane failed for Debuggee: {exc}")
-
-    def run_gdb(args: list[str]) -> None:
-        if debuggee_pane is None:
-            raise RuntimeError("debuggee pane has not been launched")
-        cmd = gdb_pane_command(
-            args,
-            image=debugger_image,
-            mount_source=gdb_mount_source,
-            network_mode=host.network_mode,
-            crash_drop=recorder.crash_dir if recorder is not None else None,
-        )
-        session.set_option("@likedbg_debugger_cmd", cmd)
-        debugger_pane = session.run_in_new_pane(
-            target=debuggee_pane,
-            direction="v",
-            percent=50,
-            cmd=cmd,
-        )
-        session.set_option("@likedbg_debugger_pane", debugger_pane)
-        if recorder is not None:
-            try:
-                session.pipe_pane(pane=debugger_pane, output=recorder.debugger_pane_log)
-            except LikeDbgError as exc:
-                recorder.add_warning("transcript-capture-failed", f"pipe-pane failed for Debugger: {exc}")
+    launch_debuggee, run_gdb = _make_pane_launchers(
+        session,
+        host,
+        workspace=workspace,
+        debugger_image=debugger_image,
+        gdb_mount_source=gdb_mount_source,
+        recorder=recorder,
+    )
 
     return Pipeline(
         [
@@ -384,6 +386,50 @@ def build_use_pipeline(
                 arch=host.target_arch,
                 volume=kernel_volume,
             ),
+            DebuggeeStage(launch=launch_debuggee, debuggee_image=debuggee_image, workspace=workspace),
+            DebuggerStage(
+                ext=ext,
+                run_gdb=run_gdb,
+                breakpoint="start_kernel",
+                break_on_crash=break_on_crash,
+                crash_breakpoints=crash_breakpoints,
+            ),
+        ]
+    )
+
+
+def build_foreign_pipeline(
+    container: ContainerService,
+    session: Session,
+    *,
+    host: HostProfile,
+    workspace: Path,
+    foreign: ForeignKernel,
+    exploit: Path | None,
+    qemu_extra: tuple[str, ...],
+    gdb_mount_source: str,
+    out_dir: Path,
+    debugger_image: str,
+    debuggee_image: str,
+    ext: str,
+    musl_image: str,
+    recorder: RunRecorder | None = None,
+    break_on_crash: bool = False,
+    crash_breakpoints: tuple[str, ...] = (),
+) -> Pipeline:
+    launch_debuggee, run_gdb = _make_pane_launchers(
+        session,
+        host,
+        workspace=workspace,
+        debugger_image=debugger_image,
+        gdb_mount_source=gdb_mount_source,
+        recorder=recorder,
+    )
+
+    return Pipeline(
+        [
+            ForeignAdoptStage(foreign=foreign, qemu_extra=qemu_extra),
+            ForeignRepackStage(container, foreign=foreign, exploit=exploit, image=musl_image, out_dir=out_dir),
             DebuggeeStage(launch=launch_debuggee, debuggee_image=debuggee_image, workspace=workspace),
             DebuggerStage(
                 ext=ext,
@@ -470,6 +516,85 @@ def cmd_use(
         recorder=recorder,
         break_on_crash=use_settings.debugger.break_on_crash,
         crash_breakpoints=use_settings.debugger.crash_breakpoints,
+    )
+    pipeline.run(ctx)
+    return 0
+
+
+def cmd_foreign(
+    container: ContainerService,
+    session: Session,
+    workspace: Path,
+    *,
+    scenario: Path | None,
+    profile_arg: str = "",
+) -> int:
+    cfg0 = load_config(workspace, scenario=scenario)
+    fcfg = cfg0.settings.foreign
+    if not fcfg.image:
+        raise ForeignError("no [foreign].image configured", remedy="set [foreign].image in your scenario")
+
+    name = scenario.stem if scenario is not None else "foreign"
+    out_dir = workspace / "artifacts" / "foreign" / name
+    # musl (+ base) must exist before we can extract vmlinux / repack.
+    _ensure_images(container, workspace, specs=images.foreign_prep_images())
+    fk = resolve_foreign(container, fcfg, workspace, out_dir=out_dir, image=MUSL_IMAGE)
+
+    # Inject the detected arch so HostProfile.detect / QEMU / gdb follow the foreign kernel.
+    cfg, host, rr = resolve_for_run(
+        workspace,
+        profile_arg=profile_arg,
+        scenario=scenario,
+        cli_overrides={"general": {"arch": fk.arch}},
+    )
+    # ADR-0010: a foreign guest exposes only the serial console — no virtio-net/9p devices the
+    # CTF challenge never specified, and no run.json `guest` block (which would otherwise make
+    # --run/--insmod/--rmmod try to SSH to a nonexistent sshd instead of refusing cleanly).
+    # Both RunRecorder.start (run.json `guest` block) and the pipeline's DebuggeeStage (QEMU argv)
+    # read effective_debuggee off the RunResolution, so overriding it here fixes both at once.
+    eff = rr.effective_debuggee.model_copy(update={"guest_net": False, "share": False})
+    rr = dataclasses.replace(rr, effective_debuggee=eff)
+    _ensure_images(container, workspace, specs=images.required_for_foreign(host))
+
+    exploit = resolve_input_path(workspace, fcfg.exploit) if fcfg.exploit else None
+    if exploit is not None and not exploit.is_file():
+        raise ForeignError(f"[foreign].exploit not found: {exploit}", remedy="check the path")
+
+    recorder = RunRecorder.start(
+        workspace=workspace,
+        requested_settings=cfg.settings,
+        run_resolution=rr,
+        host=host,
+        build_label=f"foreign-{name}",
+        rootfs_label="",
+        profiles=rr.profiles,
+    )
+    logsetup.add_run_logfile(workspace, path=recorder.likedbg_log)
+
+    ctx = PipelineContext(
+        settings=cfg.settings,
+        host=host,
+        effective_debuggee=rr.effective_debuggee,
+        extra_boot_args=rr.extra_boot_args,
+        recorder=recorder,
+    )
+    pipeline = build_foreign_pipeline(
+        container,
+        session,
+        host=host,
+        workspace=workspace,
+        foreign=fk,
+        exploit=exploit,
+        qemu_extra=fcfg.qemu_extra,
+        gdb_mount_source=str(fk.vmlinux.parent),
+        out_dir=out_dir,
+        debugger_image=DEBUGGER_IMAGE,
+        debuggee_image=DEBUGGEE_IMAGE,
+        ext=cfg.settings.debugger.ext,
+        musl_image=MUSL_IMAGE,
+        recorder=recorder,
+        break_on_crash=cfg.settings.debugger.break_on_crash,
+        crash_breakpoints=cfg.settings.debugger.crash_breakpoints,
     )
     pipeline.run(ctx)
     return 0
@@ -711,6 +836,53 @@ def cmd_insmod(workspace: Path, *, run_id: str, path: str, args: str, force_unlo
     return 0
 
 
+def _console_tail_reader(console_path: Path, *, timeout: float = 10.0, poll: float = 0.5) -> Callable[[], str]:
+    """Build a `read_console` callable for `foreign.console_upload`: each call blocks (up to
+    `timeout`) polling `console_path` for newly-appended bytes since the previous call, and
+    returns them CRLF-normalized (the serial console writes \\r\\n)."""
+    pos = 0
+
+    def read_console() -> str:
+        nonlocal pos
+        deadline = timeout
+        while True:
+            if console_path.is_file():
+                with console_path.open("rb") as f:
+                    f.seek(pos)
+                    chunk = f.read()
+                if chunk:
+                    pos += len(chunk)
+                    return chunk.decode(errors="replace").replace("\r\n", "\n")
+            if deadline <= 0:
+                return ""
+            time.sleep(poll)
+            deadline -= poll
+
+    return read_console
+
+
+def cmd_upload(workspace: Path, *, run_id: str, file: str) -> int:
+    """Live exploit delivery over the serial console — see foreign.console_upload. Optional
+    fallback to repack; NEVER runs the uploaded file (delivery only)."""
+    from likedbg.exploit import _resolve_run
+
+    run_dir = _resolve_run(workspace, run_id)
+    session = Session("LIKE-DBG")
+    pane = session.get_option("@likedbg_debuggee_pane")
+    if not pane:
+        raise ForeignError(
+            "no live Debuggee pane recorded for this tmux session",
+            remedy="boot a session first (`start_kgdb`), then retry --upload",
+        )
+    console_upload(
+        session,
+        pane,
+        Path(file),
+        read_console=_console_tail_reader(run_dir / "logs" / "console.raw"),
+    )
+    return 0
+
+
 def cmd_rmmod(workspace: Path, *, run_id: str, name: str, force_unload: bool) -> int:
     from likedbg.exploit import _resolve_run
 
@@ -744,6 +916,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--explain-config", nargs="?", const="text", default=None, choices=["text", "json"])
     parser.add_argument("--analyze-crash", nargs="?", const="latest", default=None, metavar="RUN-ID")
     parser.add_argument("--run", default="", metavar="EXPLOIT-PATH")
+    parser.add_argument("--upload", default="", metavar="EXPLOIT-PATH")
     parser.add_argument("--args", default="")
     parser.add_argument("--run-id", default="latest")
     parser.add_argument("--insmod", default="", metavar="MODULE")
@@ -767,6 +940,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_analyze_crash(workspace, run_id=args.analyze_crash)
         if args.run:
             return cmd_run(workspace, run_id=args.run_id, exploit=args.run, args=args.args)
+        if args.upload:
+            return cmd_upload(workspace, run_id=args.run_id, file=args.upload)
         if args.insmod:
             return cmd_insmod(
                 workspace, run_id=args.run_id, path=args.insmod, args=args.args, force_unload=args.force_unload
@@ -810,6 +985,19 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.clean or args.clean_all:
             return cmd_clean(container, workspace, label=args.clean or None, clean_all=args.clean_all)
+        if cfg.settings.foreign.image:
+            if not os.getenv("TMUX"):
+                logger.error("Not running inside a TMUX session. Start tmux first.")
+                return 2
+            session = Session("LIKE-DBG")
+            session.start("LIKE-DBG")
+            return cmd_foreign(
+                container,
+                session,
+                workspace,
+                scenario=_scenario_path(workspace, args.config),
+                profile_arg=args.profile,
+            )
         if args.use:
             if not os.getenv("TMUX"):
                 logger.error("Not running inside a TMUX session. Start tmux first.")

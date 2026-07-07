@@ -44,6 +44,8 @@ class DebuggeeStage:
             extra_boot_args=ctx.extra_boot_args,
             console_log=console_log,
             share_host_dir=share_host_dir,
+            foreign_cmdline=ctx.foreign_cmdline,
+            qemu_extra=ctx.qemu_extra,
         )
         if ctx.host.debuggee_mode == "in-container":
             # kernel Image read-only (QEMU only reads -kernel); rootfs disk read-write (QEMU's -drive).

@@ -20,6 +20,7 @@ from likedbg.constants import BASE_IMAGE
 from likedbg.constants import DEBUGGEE_IMAGE
 from likedbg.constants import DEBUGGER_IMAGE
 from likedbg.constants import KBUILDER_IMAGE
+from likedbg.constants import MUSL_IMAGE
 from likedbg.constants import ROOTFS_IMAGE
 from likedbg.container_service import ContainerService
 from likedbg.host_profile import HostProfile
@@ -38,6 +39,12 @@ class ImageSpec:
 # Dependency order: base first (the others are FROM like_dbg_base:latest).
 IMAGES: tuple[ImageSpec, ...] = (
     ImageSpec(BASE_IMAGE, ".dockerfile_base", (".dockerfile_base",), {"USER": "user"}),
+    ImageSpec(
+        MUSL_IMAGE,
+        ".dockerfile_musl",
+        (".dockerfile_musl", "io/scripts/extract-vmlinux.sh"),
+        {"USER": "user"},
+    ),
     ImageSpec(KBUILDER_IMAGE, ".dockerfile_kbuilder", (".dockerfile_kbuilder",), {"USER": "user"}),
     ImageSpec(ROOTFS_IMAGE, ".dockerfile_rootfs", (".dockerfile_rootfs", "io/scripts/rootfs.sh"), {"USER": "user"}),
     ImageSpec(DEBUGGER_IMAGE, ".dockerfile_dbg", (".dockerfile_dbg",), {"USER": "user"}),
@@ -122,10 +129,16 @@ def ensure_current(container: ContainerService, workspace: Path, specs: tuple[Im
 
 def required_for(host: HostProfile) -> tuple[ImageSpec, ...]:
     """Images a build+boot+debug run needs: the four base images always, plus the debuggee image
-    only for in-container runs (a native-host run launches QEMU on the host and never uses it)."""
+    only for in-container runs (a native-host run launches QEMU on the host and never uses it).
+
+    Explicit tag set (rather than "IMAGES minus debuggee") because IMAGES also carries images for
+    other flows (e.g. MUSL_IMAGE, used only by the foreign/CTF-adopt flow via required_for_foreign)
+    that a normal build+boot+debug run does not need.
+    """
+    tags = {BASE_IMAGE, KBUILDER_IMAGE, ROOTFS_IMAGE, DEBUGGER_IMAGE}
     if host.debuggee_mode == "in-container":
-        return IMAGES
-    return tuple(s for s in IMAGES if s.tag != DEBUGGEE_IMAGE)
+        tags.add(DEBUGGEE_IMAGE)
+    return tuple(s for s in IMAGES if s.tag in tags)
 
 
 def required_for_use(host: HostProfile) -> tuple[ImageSpec, ...]:
@@ -133,3 +146,16 @@ def required_for_use(host: HostProfile) -> tuple[ImageSpec, ...]:
     if host.debuggee_mode == "in-container":
         return USE_IMAGES
     return tuple(s for s in USE_IMAGES if s.tag != DEBUGGEE_IMAGE)
+
+
+def foreign_prep_images() -> tuple[ImageSpec, ...]:
+    """base + musl — needed before host/arch detection (extract vmlinux, repack)."""
+    return tuple(s for s in IMAGES if s.tag in (BASE_IMAGE, MUSL_IMAGE))
+
+
+def required_for_foreign(host: HostProfile) -> tuple[ImageSpec, ...]:
+    """Images a foreign (CTF-adopt) run needs; debuggee only for in-container QEMU."""
+    tags = {BASE_IMAGE, MUSL_IMAGE, DEBUGGER_IMAGE}
+    if host.debuggee_mode == "in-container":
+        tags.add(DEBUGGEE_IMAGE)
+    return tuple(s for s in IMAGES if s.tag in tags)

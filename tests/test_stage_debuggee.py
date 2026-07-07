@@ -160,3 +160,17 @@ def test_debuggee_threads_share_and_ssh_port(tmp_path, monkeypatch):
     stage.run(ctx)
     assert captured["share_host_dir"] == tmp_path / "exploit"
     assert (tmp_path / "exploit").is_dir()
+
+
+def test_debuggee_threads_foreign_cmdline_and_qemu_extra(tmp_path, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(
+        "likedbg.stages.debuggee.build_qemu_argv",
+        lambda *a, **k: captured.update(k) or ["qemu-system-x86_64"],
+    )
+    ctx = _ctx("native-host")
+    ctx.foreign_cmdline = "quiet console=ttyS0"
+    ctx.qemu_extra = ("-no-reboot",)
+    DebuggeeStage(launch=lambda cmd: None, debuggee_image="like_debuggee:latest", workspace=tmp_path).run(ctx)
+    assert captured["foreign_cmdline"] == "quiet console=ttyS0"
+    assert captured["qemu_extra"] == ("-no-reboot",)

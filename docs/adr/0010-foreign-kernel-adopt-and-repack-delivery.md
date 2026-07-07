@@ -32,9 +32,14 @@ is **always run manually** from the console.
   exploit is never auto-run.
 - **Shell out to `ctf/misc/cpio.sh` for repack/musl-compile.** Rejected: it runs on the host, needs **root**
   (`cpio -idm` device nodes) + host `cpio`/`musl-gcc`, and is fragile/broken on macOS/colima; it isn't
-  unit-testable and its exit codes don't compose. Instead the unpack/repack + `musl-gcc -static` run in a
-  dedicated standalone `like_musl` container (`.dockerfile_musl`: `cpio` + `musl-tools`), sidestepping host
-  root/deps and staying unit-testable. `cpio.sh` remains a manual helper for non-integrated use.
+  unit-testable and its exit codes don't compose. Instead the unpack/repack + static compile run in a
+  dedicated standalone `like_musl` container (`.dockerfile_musl`: `cpio` + decompressors + **cross-musl
+  toolchains for both arches** — `x86_64-linux-musl-gcc` and `aarch64-linux-musl-gcc`, pulled prebuilt from
+  musl.cc — so the exploit compiles to the *foreign* arch with no QEMU emulation; Debian's `musl-tools`
+  package is native-only and cannot cross-compile to the foreign arch, so it does not fit here. musl.cc is a
+  third-party host (occasional downtime is a build-reproducibility risk); `musl-cross-make` is the fallback
+  if a prebuilt toolchain becomes unavailable. This sidesteps host root/deps and stays unit-testable.
+  `cpio.sh` remains a manual helper for non-integrated use.
 - **Require the operator to declare the arch.** Rejected as a footgun (a wrong/`native` arch silently boots
   the wrong emulator). The `vmlinux` ELF `e_machine` is authoritative and a ~4-byte read; `[foreign].arch` is
   kept only as an override/fallback (bzImage-only, pre-extraction).
@@ -48,3 +53,14 @@ is **always run manually** from the console.
   ModuleBuild/Rootfs stages are absent from `build_foreign_pipeline`.
 - A stripped release `vmlinux` yields only the symbols it carries (symbol table + base for gadget work); full
   source-line debugging needs a `vmlinux` with DWARF.
+- **Foreign runs are serial-console-only.** `cmd_foreign` forces `guest_net=False` and `share=False` on the
+  foreign `effective_debuggee`, so QEMU adds no virtio-net (SSH hostfwd) or 9p device the challenge never
+  specified, and `run.json` carries no `guest` block. This is why `--run`/`--insmod`/`--rmmod` cleanly refuse
+  on a foreign run (no guest endpoint) rather than trying to SSH to a nonexistent sshd; delivery is
+  repack/console-upload, not the 2a SSH/9p transport.
+- **`like_musl` toolchain platform (Apple Silicon caveat).** The musl.cc cross toolchains are x86-host
+  binaries, so on an Apple-Silicon mac the exploit *compile* (`repack_initramfs`'s `.c` branch) needs Docker
+  to have x86 emulation — Docker Desktop provides it by default; colima needs `--vz-rosetta`. Without it, use
+  the prebuilt-static-binary delivery (`[foreign].exploit = <binary>`, the `cp` branch — no toolchain needed)
+  or rebuild `.dockerfile_musl` against `musl-cross-make` (arm64-host, no emulation). Verified on 2026-07-07;
+  see `docs/superpowers/notes/2026-07-07-foreign-kernel-live-gate.md`.

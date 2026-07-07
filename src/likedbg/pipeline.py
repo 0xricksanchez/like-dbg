@@ -36,6 +36,8 @@ class PipelineContext:
     run_resolution: RunResolution | None = None
     effective_debuggee: DebuggeeCfg | None = None
     extra_boot_args: tuple[str, ...] = field(default_factory=tuple)
+    foreign_cmdline: str | None = None
+    qemu_extra: tuple[str, ...] = field(default_factory=tuple)
     recorder: object | None = None  # TODO: type as RunRecorder once run_artifacts (Task 12) exists
     kernel_release: str | None = None
     config_host: Path | None = None

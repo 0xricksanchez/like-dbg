@@ -66,3 +66,14 @@ def test_cli_override_and_scenario(tmp_path: Path) -> None:
     assert cr.settings.debugger.ext == "gef"
     assert cr.provenance[("general", "arch")] == LAYER_SCENARIO
     assert cr.provenance[("debugger", "ext")] == LAYER_CLI
+
+
+def test_foreign_section_loads_through_scenario(tmp_path: Path) -> None:
+    _write(tmp_path / "configs" / "default.toml", '[general]\narch = "native"\n')
+    _write(
+        tmp_path / "configs" / "scenarios" / "lk01.toml",
+        '[foreign]\nimage = "ctf/lk01/bzImage"\ncmdline = "quiet"\n',
+    )
+    cr = load_config(tmp_path, scenario=tmp_path / "configs" / "scenarios" / "lk01.toml")
+    assert cr.settings.foreign.image == "ctf/lk01/bzImage"
+    assert cr.settings.foreign.cmdline == "quiet"

@@ -144,9 +144,20 @@ def test_display_message_calls_tmux_display_message():
 
 def test_session_has_no_shell_driving_layout_helpers():
     session = Session("LIKE-DBG")
-    assert not hasattr(session, "send_keys")
     assert not hasattr(session, "split")
     assert not hasattr(session, "open_debug_layout")
+
+
+def test_send_keys_issues_tmux_send_keys_with_enter():
+    rec = Recorder()
+    Session("LIKE-DBG", runner=rec).send_keys("%2", "echo hi")
+    assert rec.calls == [["tmux", "send-keys", "-t", "%2", "echo hi", "Enter"]]
+
+
+def test_send_keys_without_enter_omits_enter():
+    rec = Recorder()
+    Session("LIKE-DBG", runner=rec).send_keys("%2", "partial", enter=False)
+    assert rec.calls == [["tmux", "send-keys", "-t", "%2", "partial"]]
 
 
 def test_pane_base_index_falls_back_to_zero_when_unavailable():

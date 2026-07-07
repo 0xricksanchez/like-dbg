@@ -5,6 +5,7 @@ from likedbg.config import BuildCfg
 from likedbg.config import DebuggeeCfg
 from likedbg.config import DebuggerCfg
 from likedbg.config import DebuggingCfg
+from likedbg.config import ForeignCfg
 from likedbg.config import GeneralCfg
 from likedbg.config import Settings
 from likedbg.config import SourceCfg
@@ -118,3 +119,44 @@ def test_guest_loop_config_defaults() -> None:
     assert d.share_dir == "exploit"
     assert d.guest_net is True
     assert d.share is True
+
+
+# ---------------------------------------------------------------------------
+# ForeignCfg (Task 1)
+# ---------------------------------------------------------------------------
+
+
+def test_foreign_cfg_defaults_empty_and_presence_selects() -> None:
+    f = ForeignCfg()
+    assert f.image == "" and f.vmlinux == "" and f.initramfs == ""
+    assert f.cmdline == "" and f.arch == "" and f.exploit == ""
+    assert f.qemu_extra == ()
+    # presence of image is the selector the CLI keys on
+    assert ForeignCfg(image="ctf/lk01/bzImage").image == "ctf/lk01/bzImage"
+
+
+def test_foreign_cfg_accepts_absolute_paths() -> None:
+    """Foreign inputs are read-only external artifacts: absolute paths ARE allowed."""
+    f = ForeignCfg(
+        image="/home/ctf/lk01/bzImage",
+        vmlinux="/home/ctf/lk01/vmlinux",
+        initramfs="/home/ctf/lk01/initramfs.cpio.gz",
+        exploit="/home/ctf/lk01/exploit.c",
+    )
+    assert f.image == "/home/ctf/lk01/bzImage"
+    assert f.vmlinux == "/home/ctf/lk01/vmlinux"
+
+
+def test_foreign_cfg_rejects_dotdot_traversal() -> None:
+    with pytest.raises(ConfigError, match=r"\.\.|traversal"):
+        ForeignCfg(image="../../etc/passwd")
+
+
+def test_foreign_cfg_qemu_extra_is_tuple() -> None:
+    f = ForeignCfg(qemu_extra=["-cpu", "qemu64,+smep"])
+    assert f.qemu_extra == ("-cpu", "qemu64,+smep")
+
+
+def test_foreign_cfg_rejects_unknown_key() -> None:
+    with pytest.raises(ValidationError):
+        ForeignCfg(bogus=1)  # type: ignore[call-arg]

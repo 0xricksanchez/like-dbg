@@ -1,0 +1,249 @@
+import pytest
+
+from likedbg import cli
+from likedbg.cli import build_foreign_pipeline
+from likedbg.container_service import ContainerService
+from likedbg.errors import LikeDbgError
+from likedbg.foreign import ForeignError
+from likedbg.foreign import ForeignKernel
+from likedbg.host_profile import HostProfile
+
+
+def _host(mode="in-container", target_arch="x86_64"):
+    return HostProfile(
+        os="darwin",
+        host_arch="arm64",
+        target_arch=target_arch,
+        accel="tcg",
+        debuggee_mode=mode,
+        storage_mode="volume",
+        gdbstub_addr="host.docker.internal",
+    )
+
+
+class _FakeSession:
+    def __init__(self):
+        self.options = {}
+        self._panes = iter(["%2", "%3"])
+
+    def current_pane_id(self):
+        return "%1"
+
+    def unset_option(self, k):
+        pass
+
+    def set_option(self, k, v):
+        self.options[k] = v
+
+    def run_in_new_pane(self, *, target, direction, percent, cmd):
+        return next(self._panes)
+
+    def pipe_pane(self, *, pane, output):
+        pass
+
+
+class _FakeContainer(ContainerService):
+    def __init__(self):
+        pass
+
+
+def _fk(tmp_path):
+    (tmp_path / "bzImage").write_bytes(b"MZ")
+    (tmp_path / "vmlinux").write_bytes(b"\x7fELF")
+    (tmp_path / "initramfs.cpio.gz").write_bytes(b"\x1f\x8b")
+    return ForeignKernel(
+        image=tmp_path / "bzImage",
+        vmlinux=tmp_path / "vmlinux",
+        initramfs=tmp_path / "initramfs.cpio.gz",
+        arch="x86_64",
+        cmdline="quiet console=ttyS0",
+    )
+
+
+def test_build_foreign_pipeline_stage_order(tmp_path):
+    pipe = build_foreign_pipeline(
+        _FakeContainer(),
+        _FakeSession(),  # type: ignore[arg-type]
+        host=_host(),
+        workspace=tmp_path,
+        foreign=_fk(tmp_path),
+        exploit=None,
+        qemu_extra=(),
+        gdb_mount_source=str(tmp_path),
+        out_dir=tmp_path / "stage",
+        debugger_image="like_debugger:latest",
+        debuggee_image="like_debuggee:latest",
+        ext="pwndbg",
+        musl_image="like_musl:latest",
+        recorder=None,
+    )
+    assert [s.name for s in pipe._stages] == [  # type: ignore[attr-defined]
+        "foreign-adopt",
+        "foreign-repack",
+        "debuggee",
+        "debugger",
+    ]
+
+
+class _FakeRecorder:
+    def __init__(self, workspace):
+        self.likedbg_log = workspace / "log"
+        self.debuggee_pane_log = workspace / "d.log"
+        self.debugger_pane_log = workspace / "g.log"
+        self.crash_dir = workspace / "crash"
+
+    def record_kernel_paths(self, **kw):
+        pass
+
+
+def _write_project(tmp_path):
+    (tmp_path / "configs").mkdir()
+    (tmp_path / "configs" / "profiles").mkdir()
+    (tmp_path / "configs" / "profiles" / "exploit-dev.toml").write_text(
+        'name="exploit-dev"\nkind="base"\ndescription="d"\n'
+    )
+    (tmp_path / "configs" / "default.toml").write_text('[general]\narch = "native"\n')
+    (tmp_path / "bzImage").write_bytes(b"MZ")
+    (tmp_path / "vmlinux").write_bytes(
+        b"\x7fELF\x02\x01\x01\x00" + b"\x00" * 8 + b"\x02\x00" + b"\x3e\x00" + b"\x00" * 20
+    )
+    (tmp_path / "initramfs.cpio.gz").write_bytes(b"\x1f\x8b")
+    sc = tmp_path / "configs" / "scenarios"
+    sc.mkdir()
+    (sc / "lk01.toml").write_text(
+        '[foreign]\nimage = "bzImage"\nvmlinux = "vmlinux"\n'
+        'initramfs = "initramfs.cpio.gz"\ncmdline = "quiet console=ttyS0"\n'
+    )
+    return sc / "lk01.toml"
+
+
+def test_cmd_foreign_runs_pipeline(tmp_path, monkeypatch):
+    scenario = _write_project(tmp_path)
+    ran = {}
+
+    monkeypatch.setattr(cli, "_ensure_images", lambda container, workspace, *, specs: None)
+    monkeypatch.setattr(cli.HostProfile, "detect", staticmethod(lambda s, workspace: _host(target_arch=s.general.arch)))
+    monkeypatch.setattr(cli.logsetup, "add_run_logfile", lambda workspace, **kw: None)
+
+    def _fake_start(*, workspace, requested_settings, run_resolution, host, build_label, rootfs_label, profiles):
+        ran["run_resolution"] = run_resolution
+        return _FakeRecorder(workspace)
+
+    monkeypatch.setattr(cli.RunRecorder, "start", staticmethod(_fake_start))
+
+    class _Pipe:
+        def run(self, ctx):
+            ran["ctx"] = ctx
+
+    monkeypatch.setattr(cli, "build_foreign_pipeline", lambda *a, **k: _Pipe())
+
+    rc = cli.cmd_foreign(_FakeContainer(), _FakeSession(), tmp_path, scenario=scenario)
+    assert rc == 0
+    assert ran["ctx"].host.target_arch == "x86_64"  # arch injected from the vmlinux ELF
+
+
+def test_cmd_foreign_forces_serial_only_no_guest_net_or_share(tmp_path, monkeypatch):
+    """ADR-0010: a foreign guest exposes only the serial console. Regression test for the
+    finding that cmd_foreign left guest_net/share at their (True) defaults, which both
+    perturbed the QEMU device model (unsolicited -netdev/-virtfs) and made RunRecorder.start
+    write a run.json `guest` block that --run/--insmod/--rmmod would then try (and fail) to
+    SSH into, instead of refusing cleanly on a missing guest block."""
+    scenario = _write_project(tmp_path)
+    ran = {}
+
+    monkeypatch.setattr(cli, "_ensure_images", lambda container, workspace, *, specs: None)
+    monkeypatch.setattr(cli.HostProfile, "detect", staticmethod(lambda s, workspace: _host(target_arch=s.general.arch)))
+    monkeypatch.setattr(cli.logsetup, "add_run_logfile", lambda workspace, **kw: None)
+
+    def _fake_start(*, workspace, requested_settings, run_resolution, host, build_label, rootfs_label, profiles):
+        ran["run_resolution"] = run_resolution
+        return _FakeRecorder(workspace)
+
+    monkeypatch.setattr(cli.RunRecorder, "start", staticmethod(_fake_start))
+
+    class _Pipe:
+        def run(self, ctx):
+            ran["ctx"] = ctx
+
+    monkeypatch.setattr(cli, "build_foreign_pipeline", lambda *a, **k: _Pipe())
+
+    rc = cli.cmd_foreign(_FakeContainer(), _FakeSession(), tmp_path, scenario=scenario)
+    assert rc == 0
+
+    # Seam 1: the PipelineContext's effective_debuggee feeds build_qemu_argv in DebuggeeStage.
+    eff = ran["ctx"].effective_debuggee
+    assert eff is not None
+    assert eff.guest_net is False
+    assert eff.share is False
+
+    # Seam 2: RunRecorder.start reads run_resolution.effective_debuggee to decide whether to
+    # write a `guest` block into run.json — must be the same forced-off values.
+    rr_eff = ran["run_resolution"].effective_debuggee
+    assert rr_eff.guest_net is False
+    assert rr_eff.share is False
+
+
+def test_main_dispatches_to_cmd_foreign_when_image_set(tmp_path, monkeypatch):
+    _write_project(tmp_path)
+    called = {}
+    monkeypatch.setattr(cli, "cmd_foreign", lambda *a, **k: called.update(hit=True) or 0)
+    monkeypatch.setattr(cli.os, "getenv", lambda k, d=None: "1" if k == "TMUX" else d)
+    monkeypatch.setattr(cli.docker_env, "make_client", lambda host: object())
+    monkeypatch.setattr(cli, "ContainerService", lambda client: _FakeContainer())
+    monkeypatch.setattr(cli.Path, "cwd", staticmethod(lambda: tmp_path))
+    monkeypatch.setattr(cli.Session, "start", lambda self, name: None)
+    rc = cli.main(["-c", "lk01"])
+    assert called.get("hit") and rc == 0
+
+
+class _FakeUploadSession:
+    def __init__(self, name):
+        self.name = name
+
+    def get_option(self, key):
+        assert key == "@likedbg_debuggee_pane"
+        return "%7"
+
+
+def test_cmd_upload_run_not_found_raises(tmp_path):
+    with pytest.raises(LikeDbgError):
+        cli.cmd_upload(tmp_path, run_id="latest", file="expl")
+
+
+def test_cmd_upload_calls_console_upload_with_resolved_pane(tmp_path, monkeypatch):
+    run_dir = tmp_path / "artifacts" / "runs" / "r1"
+    (run_dir / "logs").mkdir(parents=True)
+    (run_dir / "logs" / "console.raw").write_text("boot log\n")
+    exploit = tmp_path / "expl"
+    exploit.write_bytes(b"\x7fELF")
+
+    captured: dict = {}
+
+    def fake_console_upload(session, pane, file, *, read_console):
+        captured.update(session=session, pane=pane, file=file, read_console=read_console)
+
+    monkeypatch.setattr(cli, "Session", _FakeUploadSession)
+    monkeypatch.setattr(cli, "console_upload", fake_console_upload)
+
+    rc = cli.cmd_upload(tmp_path, run_id="r1", file=str(exploit))
+
+    assert rc == 0
+    assert captured["pane"] == "%7"
+    assert captured["file"] == exploit
+    assert callable(captured["read_console"])
+
+
+def test_cmd_upload_no_pane_raises_foreign_error(tmp_path, monkeypatch):
+    run_dir = tmp_path / "artifacts" / "runs" / "r1"
+    (run_dir / "logs").mkdir(parents=True)
+
+    class _NoPaneSession:
+        def __init__(self, name):
+            pass
+
+        def get_option(self, key):
+            return ""
+
+    monkeypatch.setattr(cli, "Session", _NoPaneSession)
+    with pytest.raises(ForeignError):
+        cli.cmd_upload(tmp_path, run_id="r1", file="expl")

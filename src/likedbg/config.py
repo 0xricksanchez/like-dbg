@@ -36,6 +36,19 @@ def _reject_unsafe_path(p: str) -> None:
         )
 
 
+def _reject_traversal(p: str) -> None:
+    """Raise ConfigError only on '..' traversal; absolute paths are allowed.
+
+    Foreign inputs are read-only external artifacts a CTF challenge ships anywhere
+    (e.g. ~/ctf/<name>/), so absolute paths are permitted here — unlike _reject_unsafe_path.
+    """
+    if ".." in Path(p).parts:
+        raise ConfigError(
+            f"unsafe path {p!r}: '..' traversal is not allowed",
+            remedy="use a forward-only path (absolute or workspace-relative)",
+        )
+
+
 Arch = Literal["x86_64", "arm64"]
 RequestedArch = Literal["native", "x86_64", "arm64"]
 Accel = Literal["auto", "kvm", "hvf", "tcg"]
@@ -94,6 +107,25 @@ class BuildCfg(_Base):
         return v
 
 
+class ForeignCfg(_Base):
+    # Presence of `image` selects the foreign (CTF-adopt) path. Path fields accept absolute
+    # OR workspace-relative (external read-only artifacts); only '..' traversal is rejected.
+    image: str = ""
+    vmlinux: str = ""
+    initramfs: str = ""
+    cmdline: str = ""
+    arch: str = ""  # optional override; else auto-detected from the vmlinux ELF
+    qemu_extra: tuple[str, ...] = ()
+    exploit: str = ""
+
+    @field_validator("image", "vmlinux", "initramfs", "exploit", mode="before")
+    @classmethod
+    def _validate_foreign_path(cls, v: object) -> object:
+        if v:
+            _reject_traversal(str(v))
+        return v
+
+
 class RootfsCfg(_Base):
     distribution: str = "bookworm"
     hostname: str = "LIKE-DBG"
@@ -136,6 +168,7 @@ class Settings(_Base):
     debuggee: DebuggeeCfg = DebuggeeCfg()
     debugger: DebuggerCfg = DebuggerCfg()
     debugging: DebuggingCfg = DebuggingCfg()
+    foreign: ForeignCfg = ForeignCfg()
 
 
 # ---------------------------------------------------------------------------
@@ -157,6 +190,7 @@ _SECTION_MODELS: dict[str, type[_Base]] = {
     "debuggee": DebuggeeCfg,
     "debugger": DebuggerCfg,
     "debugging": DebuggingCfg,
+    "foreign": ForeignCfg,
 }
 
 # Section→key→value layer dict.
