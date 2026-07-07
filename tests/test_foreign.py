@@ -117,3 +117,70 @@ def test_extract_vmlinux_missing_output_raises(tmp_path: Path) -> None:
     c = _FakeContainer(make_out=None)  # container "produces" nothing
     with pytest.raises(ForeignError, match="could not extract vmlinux"):
         extract_vmlinux(c, image_path, out, image="like_musl:latest")
+
+
+def test_resolve_input_path_absolute_and_relative(tmp_path: Path) -> None:
+    from likedbg.foreign import resolve_input_path
+
+    assert resolve_input_path(tmp_path, "/abs/x") == Path("/abs/x")
+    assert resolve_input_path(tmp_path, "ctf/lk01/bzImage") == tmp_path / "ctf/lk01/bzImage"
+
+
+def _mk_cfg(**kw):
+    from likedbg.config import ForeignCfg
+
+    return ForeignCfg(**kw)
+
+
+def test_resolve_foreign_uses_provided_vmlinux_and_detects_arch(tmp_path: Path) -> None:
+    from likedbg.foreign import resolve_foreign
+
+    (tmp_path / "bzImage").write_bytes(b"MZ")
+    (tmp_path / "vmlinux").write_bytes(_elf_header(b"\x3e\x00"))  # x86_64
+    (tmp_path / "initramfs.cpio.gz").write_bytes(b"\x1f\x8b")
+    cfg = _mk_cfg(image="bzImage", vmlinux="vmlinux", initramfs="initramfs.cpio.gz", cmdline="quiet")
+    c = _FakeContainer(make_out=None)
+
+    fk = resolve_foreign(c, cfg, tmp_path, out_dir=tmp_path / "stage", image="like_musl:latest")
+
+    assert fk.arch == "x86_64"
+    assert fk.image == tmp_path / "bzImage"
+    assert fk.vmlinux == tmp_path / "vmlinux"
+    assert fk.initramfs == tmp_path / "initramfs.cpio.gz"
+    assert fk.cmdline == "quiet"
+    assert c.run_kwargs is None  # no extraction when vmlinux provided
+
+
+def test_resolve_foreign_extracts_vmlinux_when_absent(tmp_path: Path) -> None:
+    from likedbg.foreign import resolve_foreign
+
+    (tmp_path / "bzImage").write_bytes(b"MZ")
+    staged = tmp_path / "stage" / "vmlinux"
+    c = _FakeContainer(make_out=staged, out_bytes=_elf_header(b"\x3e\x00"))
+    cfg = _mk_cfg(image="bzImage", cmdline="quiet")
+
+    fk = resolve_foreign(c, cfg, tmp_path, out_dir=tmp_path / "stage", image="like_musl:latest")
+
+    assert fk.vmlinux == staged and fk.arch == "x86_64"
+    assert c.run_kwargs is not None  # extraction ran
+
+
+def test_resolve_foreign_arch_override_skips_detection(tmp_path: Path) -> None:
+    from likedbg.foreign import resolve_foreign
+
+    (tmp_path / "Image").write_bytes(b"arm64-Image")
+    (tmp_path / "vmlinux").write_bytes(b"not-an-elf")  # would fail detect_arch
+    cfg = _mk_cfg(image="Image", vmlinux="vmlinux", arch="arm64", cmdline="")
+    c = _FakeContainer(make_out=None)
+
+    fk = resolve_foreign(c, cfg, tmp_path, out_dir=tmp_path / "stage", image="like_musl:latest")
+    assert fk.arch == "arm64"
+
+
+def test_resolve_foreign_missing_image_raises(tmp_path: Path) -> None:
+    from likedbg.foreign import resolve_foreign
+
+    cfg = _mk_cfg(image="nope/bzImage")
+    c = _FakeContainer(make_out=None)
+    with pytest.raises(ForeignError, match="image"):
+        resolve_foreign(c, cfg, tmp_path, out_dir=tmp_path / "stage", image="like_musl:latest")

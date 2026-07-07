@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 from typing import Literal
 
+from likedbg.config import ForeignCfg
 from likedbg.errors import LikeDbgError
 
 _EM_TO_ARCH = {62: "x86_64", 183: "arm64"}  # EM_X86_64, EM_AARCH64
@@ -78,3 +79,49 @@ def extract_vmlinux(container: Any, image_path: Path, out: Path, *, image: str) 
             remedy="provide [foreign].vmlinux explicitly (arm64 Image / unknown compression)",
         )
     return out
+
+
+def resolve_input_path(workspace: Path, raw: str) -> Path:
+    """Absolute paths pass through; relative paths resolve under the workspace."""
+    p = Path(raw)
+    return p if p.is_absolute() else (workspace / p)
+
+
+def resolve_foreign(
+    container: Any,
+    cfg: ForeignCfg,
+    workspace: Path,
+    *,
+    out_dir: Path,
+    image: str,
+) -> ForeignKernel:
+    """Resolve foreign inputs, extract vmlinux if absent, detect arch, return a ForeignKernel.
+
+    Called in cmd_foreign BEFORE resolve_for_run so the detected arch can be injected as a
+    cli_override into HostProfile.detect (matching how cmd_use injects the cached build's arch).
+    """
+    image_path = resolve_input_path(workspace, cfg.image)
+    if not image_path.is_file():
+        raise ForeignError(
+            f"[foreign].image not found: {image_path}",
+            remedy="check the path (absolute or workspace-relative)",
+        )
+
+    if cfg.vmlinux:
+        vmlinux = resolve_input_path(workspace, cfg.vmlinux)
+        if not vmlinux.is_file():
+            raise ForeignError(f"[foreign].vmlinux not found: {vmlinux}", remedy="check the path")
+    else:
+        vmlinux = extract_vmlinux(container, image_path, out_dir / "vmlinux", image=image)
+
+    initramfs: Path | None = None
+    if cfg.initramfs:
+        initramfs = resolve_input_path(workspace, cfg.initramfs)
+        if not initramfs.is_file():
+            raise ForeignError(f"[foreign].initramfs not found: {initramfs}", remedy="check the path")
+
+    arch = cfg.arch or detect_arch(vmlinux)
+    if arch not in ("x86_64", "arm64"):
+        raise ForeignError(f"invalid [foreign].arch {arch!r}", remedy="use x86_64 or arm64")
+
+    return ForeignKernel(image=image_path, vmlinux=vmlinux, initramfs=initramfs, arch=arch, cmdline=cfg.cmdline)
