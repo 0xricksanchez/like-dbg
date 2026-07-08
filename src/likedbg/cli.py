@@ -849,7 +849,7 @@ def cmd_insmod(workspace: Path, *, run_id: str, path: str, args: str, force_unlo
             reload=True,
             force_unload=force_unload,
         )
-        # A2: read runtime section addresses from the guest and log a lifecycle `load` event.
+        # read runtime section addresses from the guest and log a lifecycle `load` event.
         secs_raw = guest.run(
             ep,
             f"for s in /sys/module/{name}/sections/.*; do echo $(basename $s) $(cat $s); done",

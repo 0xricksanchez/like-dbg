@@ -259,17 +259,16 @@ def build_gdb_args(
     if breakpoint is not None:
         # Hardware breakpoint: a software `break` cannot be written to the kernel's
         # high-half virtual address before the MMU is enabled at early boot (e.g.
-        # start_kernel) — validated live during the Plan 3 PoC.
+        # start_kernel).
         args += ["-ex", f"hbreak {breakpoint}", "-ex", "continue"]
     if break_on_crash and crash_breakpoints:
         # The crash breakpoints are SOFTWARE breakpoints on high-half kernel VAs
-        # (panic/die/oops_enter). gdb inserts breakpoints on RESUME, so these must
-        # be *created* only after the guest has reached start_kernel (kernel VA
-        # space now mapped) — creating them before the initial `continue` makes
-        # gdb try to insert them from CPU reset (MMU off) and abort the command,
-        # so the guest never boots (arm64 live gate). Deferring their creation to
-        # here means insertion happens on the user's next `continue`, when the VA
-        # is up — exactly like a runtime `break schedule`.
+        # (panic/die/oops_enter). gdb inserts breakpoints on resume, so they must be
+        # *created* only after the guest reaches start_kernel (kernel VA space now
+        # mapped): creating them before the initial `continue` makes gdb try to insert
+        # them from CPU reset (MMU off) and abort the command, so the guest never boots.
+        # Deferring creation to here means insertion happens on the user's next
+        # `continue`, when the VA is up, like a runtime `break schedule`.
         args += ["-ex", _crash_capture_source(crash_breakpoints, f"{crash_drop_path}/crash.gdb.json")]
     if modules_gdb is not None:
         # Stop-driven reconcile: fires on every gdb stop (breakpoints, signals, manual interrupt),

@@ -2,8 +2,8 @@
 Kernel Build / rootfs is), key + Label derivation, the host-side Manifest registry, and
 storage-mode-aware location resolution.
 
-See docs/superpowers/specs/2026-06-23-build-reuse-cache-design.md and ADR-0003: a Kernel
-Build is identified by its requested configuration, not by toolchain/image identity.
+A Kernel Build is identified by its requested configuration, not by toolchain/image
+identity (ADR-0003).
 """
 
 from __future__ import annotations

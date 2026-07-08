@@ -32,7 +32,7 @@ class PipelineContext:
     kernel_image: Path | None = None
     build_label: str | None = None
     rootfs_label: str | None = None
-    # B1/B2 debug-profile fields (all optional, defaulted)
+    # debug-profile fields (all optional, defaulted)
     run_resolution: RunResolution | None = None
     effective_debuggee: DebuggeeCfg | None = None
     extra_boot_args: tuple[str, ...] = field(default_factory=tuple)
