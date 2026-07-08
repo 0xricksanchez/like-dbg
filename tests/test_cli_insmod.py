@@ -119,3 +119,14 @@ def test_cmd_insmod_appends_load_event_from_sysfs(tmp_path, monkeypatch):
     mg = (tp / "exploit" / "modules.gdb").read_text()
     assert mg.startswith("load lk01 /exploit/modules/") and "0xffffffffc0001000" in mg
     assert ".data 0xffffffffc0003000" in mg
+
+
+def test_cmd_rmmod_appends_unload_event(tmp_path, monkeypatch):
+    tp, ko = _mkrun(tmp_path)
+    (tp / "exploit").mkdir(exist_ok=True)
+    (tp / "exploit" / "modules.gdb").write_text("load lk01 /exploit/modules/lk01.ko 0x1000\n")
+    _patch_docker(monkeypatch)
+    monkeypatch.setattr(cli.guest, "wait_ready", lambda ep, **kw: True)
+    monkeypatch.setattr(cli.modules, "unload", lambda *a, **k: types.SimpleNamespace(rc=0))
+    assert cli.cmd_rmmod(tp, run_id="latest", name="lk01", force_unload=False) == 0
+    assert (tp / "exploit" / "modules.gdb").read_text().splitlines()[-1] == "unload lk01"

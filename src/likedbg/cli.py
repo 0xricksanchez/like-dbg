@@ -939,7 +939,13 @@ def cmd_rmmod(workspace: Path, *, run_id: str, name: str, force_unload: bool) ->
     if not guest.wait_ready(ep):
         raise ModuleError(f"guest not reachable at {ep.host}:{ep.port}", remedy="boot + continue the session")
     res = modules.unload(ep, name, force=force_unload)
-    print(f"[likedbg] rmmod {name} (rc={res.rc})")
+    share_dir = (workspace / g["share_dir"]).resolve()
+    modules_gdb = share_dir / "modules.gdb"
+    if modules_gdb.exists() or share_dir.exists():
+        modules_gdb.parent.mkdir(parents=True, exist_ok=True)
+        with modules_gdb.open("a") as fh:
+            fh.write(f"unload {name}\n")
+    print(f"[likedbg] rmmod {name} (rc={res.rc}); symbols removed at your next gdb stop")
     return 0
 
 
