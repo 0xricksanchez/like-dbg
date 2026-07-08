@@ -53,6 +53,7 @@ from likedbg.errors import SessionError
 from likedbg.exploit import run_exploit
 from likedbg.foreign import ForeignError
 from likedbg.foreign import ForeignKernel
+from likedbg.foreign import compile_exploit
 from likedbg.foreign import console_upload
 from likedbg.foreign import resolve_foreign
 from likedbg.foreign import resolve_input_path
@@ -879,10 +880,18 @@ def cmd_upload(workspace: Path, *, run_id: str, file: str) -> int:
             "no live Debuggee pane recorded for this tmux session",
             remedy="boot a session first (`start_kgdb`), then retry --upload",
         )
+    f = Path(file)
+    if f.suffix == ".c":
+        host_json = json.loads((run_dir / "host.json").read_text())
+        container = ContainerService(docker_env.make_client(host=docker_env.resolve_docker_host(env=os.environ)))
+        _ensure_images(container, workspace, specs=images.foreign_prep_images())
+        f = compile_exploit(
+            container, src=f, arch=host_json["target_arch"], out=run_dir / "exploit" / f.stem, image=MUSL_IMAGE
+        )
     console_upload(
         session,
         pane,
-        Path(file),
+        f,
         read_console=_console_tail_reader(run_dir / "logs" / "console.raw"),
     )
     return 0
