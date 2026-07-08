@@ -9,6 +9,7 @@ import shlex
 from pathlib import Path
 
 from likedbg.constants import CRASH_DROP_MOUNT
+from likedbg.constants import EXPLOIT_MOUNT
 from likedbg.constants import VOLUME_MOUNT
 
 
@@ -26,12 +27,15 @@ def gdb_pane_command(
     mount_source: str,
     network_mode: str = "published",
     crash_drop: Path | None = None,
+    exploit_share: Path | None = None,
 ) -> str:
     # Host net (Linux): gdb reaches QEMU on localhost. Published (macOS): the host-gateway alias
     # resolves host.docker.internal to the published gdbstub port.
     net = "--network host" if network_mode == "host" else "--add-host=host.docker.internal:host-gateway"
     crash = f"-v {shlex.quote(str(crash_drop))}:{CRASH_DROP_MOUNT}:rw " if crash_drop is not None else ""
-    docker = f"docker run --rm -it {net} -v {mount_source}:{VOLUME_MOUNT}:ro {crash}{image} "
+    # ro: gdb only needs to read the delivered .ko files + modules.gdb from the exploit share.
+    expl = f"-v {shlex.quote(str(exploit_share))}:{EXPLOIT_MOUNT}:ro " if exploit_share is not None else ""
+    docker = f"docker run --rm -it {net} -v {mount_source}:{VOLUME_MOUNT}:ro {crash}{expl}{image} "
     # Quote the gdb argv too: `-ex "hbreak start_kernel"` must reach gdb as one arg.
     return docker + shlex.join(gdb_args)
 

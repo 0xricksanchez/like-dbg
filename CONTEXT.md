@@ -34,7 +34,10 @@ _Avoid_: naming the concept after the `network` field; conflating it with Debugg
 (*where* QEMU runs) — Network mode is *how the Debugger connects*, a separate axis.
 
 **Debugger**:
-The interactive GDB session (driven by GEF or pwndbg) attached to the debuggee's stub.
+The interactive GDB session (driven by GEF or pwndbg) attached to the debuggee's stub. Kernel runs
+default to `debugger.ext = pwndbg` for its kernel command set (KASLR base, slab, `current`, task/module
+walking, symbol lookup); like-dbg *feeds* it artifacts and symbols — auto-compiled exploits, a module's
+`add-symbol-file` — rather than reimplementing that introspection (ADR-0011).
 _Avoid_: gdb session, client.
 
 **Debug profile**:

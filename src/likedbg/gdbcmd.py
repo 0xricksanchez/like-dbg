@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import inspect
+import textwrap
 from pathlib import Path
 
 from likedbg.constants import CRASH_DROP_MOUNT
@@ -142,6 +144,92 @@ for _s in _SYMS:
     return f"python exec({source!r})"
 
 
+def _reconcile_modules(
+    log_text: str, applied: dict[str, tuple[str, str, tuple[tuple[str, str], ...]]]
+) -> tuple[list[tuple[str, str, str, list[tuple[str, str]]]], list[tuple[str, str]]]:
+    """Compute (adds, removes) to bring `applied` (name->(ko,text,secs)) in line with the lifecycle log.
+
+    Pure python so it is unit-testable outside gdb. Events: 'load <name> <ko> <text> [<sec> <addr>...]'
+    and 'unload <name>'. Returns (adds, removes); mutates `applied` to the post-apply state.
+
+    The identity used for change-detection is the FULL (ko, text, secs) tuple, not just (ko, text):
+    a reload at the same base address with a changed section list (e.g. new .data/.bss addresses
+    after a rebuild, plausible under no-KASLR) must still trigger a remove+add, not a silent no-op.
+
+    NOTE: this function's source is inlined verbatim into the gdb-python stop-hook payload built by
+    `_module_symbols_source` (via `inspect.getsource`), so it and the in-gdb reconcile logic never
+    drift apart. Keep it self-contained (module-level names only: no closures over gdbcmd internals).
+    """
+    desired: dict[str, tuple[str, str, list[tuple[str, str]]]] = {}
+    for line in log_text.splitlines():
+        parts = line.split()
+        if not parts:
+            continue
+        if parts[0] == "load" and len(parts) >= 4:
+            name, ko, text = parts[1], parts[2], parts[3]
+            secs = list(zip(parts[4::2], parts[5::2], strict=False))
+            desired[name] = (ko, text, secs)
+        elif parts[0] == "unload" and len(parts) >= 2:
+            desired.pop(parts[1], None)
+    adds: list[tuple[str, str, str, list[tuple[str, str]]]] = []
+    removes: list[tuple[str, str]] = []
+    for name, (ko, text, secs) in desired.items():
+        if applied.get(name) != (ko, text, tuple(secs)):
+            if name in applied:
+                removes.append((name, applied[name][0]))
+            adds.append((name, ko, text, secs))
+    removes.extend((name, applied[name][0]) for name in applied if name not in desired)
+    applied.clear()
+    applied.update({n: (ko, text, tuple(secs)) for n, (ko, text, secs) in desired.items()})
+    return adds, removes
+
+
+def _module_symbols_source(modules_gdb_path: str) -> str:
+    # Inline the pure `_reconcile_modules` source (dedented, renamed to `_reconcile`) so the payload's
+    # reconcile logic and the unit-tested pure function are literally the same code — no drift between
+    # what pytest exercises and what gdb executes. Placeholder substitution (not f-string/%-formatting),
+    # same rationale as `_crash_capture_source`: the inlined body's own `%s`/`{}` must survive unescaped.
+    reconcile_def = textwrap.dedent(inspect.getsource(_reconcile_modules)).replace("_reconcile_modules", "_reconcile")
+    source = """
+import gdb
+
+_LOG = __LOG__
+_APPLIED = {}
+
+__RECONCILE_DEF__
+
+def _sync(evt=None):
+    try:
+        try:
+            with open(_LOG) as fh:
+                text = fh.read()
+        except OSError:
+            return
+        adds, removes = _reconcile(text, _APPLIED)
+        for name, ko in removes:
+            try:
+                gdb.execute("remove-symbol-file " + ko, to_string=True)
+            except Exception:
+                pass
+        for name, ko, text_addr, secs in adds:
+            cmd = "add-symbol-file " + ko + " " + text_addr
+            for sec, addr in secs:
+                cmd += " -s " + sec + " " + addr
+            try:
+                gdb.execute(cmd, to_string=True)
+                gdb.write("[likedbg] symbols: %s\\n" % name)
+            except Exception as exc:
+                gdb.write("[likedbg] add-symbol-file failed for %s: %s\\n" % (name, exc))
+    except Exception as exc:
+        gdb.write("[likedbg] module-sync error: %s\\n" % exc)
+
+
+gdb.events.stop.connect(_sync)
+"""
+    source = source.replace("__LOG__", repr(modules_gdb_path)).replace("__RECONCILE_DEF__", reconcile_def)
+    return f"python exec({source!r})"
+
+
 def build_gdb_args(
     host: HostProfile,
     *,
@@ -153,6 +241,7 @@ def build_gdb_args(
     break_on_crash: bool = False,
     crash_breakpoints: tuple[str, ...] = (),
     crash_drop_path: str = CRASH_DROP_MOUNT,
+    modules_gdb: str | None = None,
 ) -> list[str]:
     addr = host.gdbstub_addr
     gdb_arch = _GDB_ARCH.get(arch)
@@ -182,4 +271,9 @@ def build_gdb_args(
         # here means insertion happens on the user's next `continue`, when the VA
         # is up — exactly like a runtime `break schedule`.
         args += ["-ex", _crash_capture_source(crash_breakpoints, f"{crash_drop_path}/crash.gdb.json")]
+    if modules_gdb is not None:
+        # Stop-driven reconcile: fires on every gdb stop (breakpoints, signals, manual interrupt),
+        # never on its own — loads/reloads/unloads module symbols non-disruptively at the operator's
+        # next stop instead of interrupting a running target.
+        args += ["-ex", _module_symbols_source(modules_gdb)]
     return args

@@ -90,3 +90,30 @@ def test_debugger_records_launch_failed_on_exception():
         pass
     assert "launch-failed" in rec.statuses
     assert "launched" not in rec.statuses
+
+
+def test_debugger_stage_threads_modules_gdb_to_build_gdb_args(monkeypatch):
+    captured = {}
+
+    def fake_build(*a, **k):
+        captured.update(k)
+        return ["gdb-multiarch"]
+
+    monkeypatch.setattr("likedbg.stages.debugger.build_gdb_args", fake_build)
+    stage = DebuggerStage(
+        ext="pwndbg", run_gdb=lambda args: None, breakpoint="start_kernel", modules_gdb="/exploit/modules.gdb"
+    )
+    stage.run(_ctx())
+    assert captured["modules_gdb"] == "/exploit/modules.gdb"
+
+
+def test_debugger_stage_modules_gdb_defaults_to_none(monkeypatch):
+    captured = {}
+
+    def fake_build(*a, **k):
+        captured.update(k)
+        return ["gdb-multiarch"]
+
+    monkeypatch.setattr("likedbg.stages.debugger.build_gdb_args", fake_build)
+    DebuggerStage(ext="pwndbg", run_gdb=lambda args: None, breakpoint=None).run(_ctx())
+    assert captured["modules_gdb"] is None

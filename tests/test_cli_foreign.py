@@ -247,3 +247,71 @@ def test_cmd_upload_no_pane_raises_foreign_error(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "Session", _NoPaneSession)
     with pytest.raises(ForeignError):
         cli.cmd_upload(tmp_path, run_id="r1", file="expl")
+
+
+def test_cmd_upload_compiles_c_before_console_upload(tmp_path, monkeypatch):
+    run_dir = tmp_path / "artifacts" / "runs" / "r1"
+    (run_dir / "logs").mkdir(parents=True)
+    (run_dir / "run.json").write_text('{"status":"launched"}')
+    (run_dir / "host.json").write_text('{"target_arch":"x86_64","storage_mode":"volume"}')
+    (tmp_path / "artifacts" / "runs" / "latest").symlink_to(run_dir)
+    src = tmp_path / "expl.c"
+    src.write_text("int main(void){}\n")
+
+    seen = {}
+    monkeypatch.setattr(cli, "_ensure_images", lambda *a, **k: None)
+    monkeypatch.setattr(cli, "ContainerService", lambda *a, **k: object())
+    monkeypatch.setattr(cli.docker_env, "make_client", lambda **k: object())
+
+    def fake_compile(container, *, src, arch, out, image):
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(b"\x7fELF")
+        seen.update(arch=arch)
+        return out
+
+    monkeypatch.setattr(cli, "compile_exploit", fake_compile)
+    monkeypatch.setattr(cli, "console_upload", lambda session, pane, f, *, read_console: seen.update(uploaded=f))
+    monkeypatch.setattr(cli.Session, "get_option", lambda self, k: "%2")
+
+    assert cli.cmd_upload(tmp_path, run_id="latest", file=str(src)) == 0
+    assert seen["arch"] == "x86_64"
+    assert seen["uploaded"].read_bytes() == b"\x7fELF"  # the compiled binary, not the .c
+
+
+def _forbid_docker(monkeypatch):
+    """Make any Docker construction fail loudly, regardless of whether a real Docker daemon is
+    reachable on the test host. Mirrors tests/test_cli_run.py::_forbid_docker, applied here to
+    the equivalent `--upload` lazy-container guarantee: cli.cmd_upload must construct a Docker
+    ContainerService ONLY when the uploaded file is a `.c` source needing an in-container
+    compile. A prebuilt-binary `--upload ./expl` must touch no Docker at all."""
+
+    def _boom(what):
+        def _raise(*_a, **_k):
+            raise AssertionError(f"binary --upload must NOT {what}")
+
+        return _raise
+
+    monkeypatch.setattr(cli, "ContainerService", _boom("construct a container"))
+    monkeypatch.setattr(cli.docker_env, "make_client", _boom("touch Docker (make_client)"))
+    monkeypatch.setattr(cli.docker_env, "resolve_docker_host", _boom("touch Docker (resolve_docker_host)"))
+
+
+def test_cmd_upload_binary_path_never_touches_docker(tmp_path, monkeypatch):
+    run_dir = tmp_path / "artifacts" / "runs" / "r1"
+    (run_dir / "logs").mkdir(parents=True)
+    (run_dir / "run.json").write_text('{"status":"launched"}')
+    (tmp_path / "artifacts" / "runs" / "latest").symlink_to(run_dir)
+
+    _forbid_docker(monkeypatch)
+
+    expl = tmp_path / "expl"
+    expl.write_bytes(b"\x7fELF")
+
+    seen: dict = {}
+    monkeypatch.setattr(cli.Session, "get_option", lambda self, k: "%2")
+    monkeypatch.setattr(cli, "console_upload", lambda session, pane, f, *, read_console: seen.update(uploaded=f))
+
+    rc = cli.cmd_upload(tmp_path, run_id="latest", file=str(expl))
+
+    assert rc == 0
+    assert seen["uploaded"] == expl

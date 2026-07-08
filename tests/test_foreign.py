@@ -87,6 +87,76 @@ class _FakeContainer:
         self.stopped = True
 
 
+def test_compile_exploit_builds_musl_static_command_x86(tmp_path):
+    from likedbg.foreign import compile_exploit
+
+    src = tmp_path / "src" / "e.c"
+    src.parent.mkdir()
+    src.write_text("int main(void){return 0;}\n")
+    out = tmp_path / "out" / "e"
+    c = _FakeContainer(make_out=out, out_bytes=b"\x7fELFbin")
+
+    result = compile_exploit(c, src=src, arch="x86_64", out=out, image="like_musl:latest")
+
+    assert result == out and out.is_file()
+    cmd = " ".join(c.execs)
+    assert "x86_64-linux-musl-gcc -static" in cmd and "/src/e.c" in cmd and "/out/e" in cmd
+    vols = c.run_kwargs["volumes"]
+    assert vols[str(src.parent)]["mode"] == "ro" and vols[str(out.parent)]["mode"] == "rw"
+
+
+def test_compile_exploit_arm64_uses_aarch64(tmp_path):
+    from likedbg.foreign import compile_exploit
+
+    src = tmp_path / "s" / "e.c"
+    src.parent.mkdir()
+    src.write_text("int main(void){}\n")
+    out = tmp_path / "o" / "e"
+    c = _FakeContainer(make_out=out, out_bytes=b"\x7fELF")
+    compile_exploit(c, src=src, arch="arm64", out=out, image="like_musl:latest")
+    assert "aarch64-linux-musl-gcc -static" in " ".join(c.execs)
+
+
+def test_compile_exploit_missing_output_raises(tmp_path):
+    from likedbg.foreign import ForeignError
+    from likedbg.foreign import compile_exploit
+
+    src = tmp_path / "s" / "e.c"
+    src.parent.mkdir()
+    src.write_text("boom\n")
+    out = tmp_path / "o" / "e"
+    c = _FakeContainer(make_out=None)  # container produces nothing
+    with pytest.raises(ForeignError, match="compile"):
+        compile_exploit(c, src=src, arch="x86_64", out=out, image="like_musl:latest")
+
+
+def test_compile_exploit_invalid_arch_raises(tmp_path):
+    from likedbg.foreign import ForeignError
+    from likedbg.foreign import compile_exploit
+
+    src = tmp_path / "s" / "e.c"
+    src.parent.mkdir()
+    src.write_text("x\n")
+    with pytest.raises(ForeignError, match="arch"):
+        compile_exploit(_FakeContainer(make_out=None), src=src, arch="mips", out=tmp_path / "o" / "e", image="m")
+
+
+def test_compile_exploit_resolves_relative_src_to_absolute_mount(tmp_path, monkeypatch):
+    """A relative src path must be resolved to an absolute bind-mount host path — a relative path
+    becomes a docker NAMED VOLUME, so /src/<file> would not exist (x86 live-gate bug)."""
+    from likedbg.foreign import compile_exploit
+
+    (tmp_path / "exploit").mkdir()
+    (tmp_path / "exploit" / "e.c").write_text("int main(void){}\n")
+    monkeypatch.chdir(tmp_path)
+    out = tmp_path / "run" / "e"
+    c = _FakeContainer(make_out=out, out_bytes=b"\x7fELF")
+    compile_exploit(c, src=Path("exploit/e.c"), arch="x86_64", out=out, image="like_musl:latest")
+    for host_path in c.run_kwargs["volumes"]:
+        assert host_path.startswith("/"), f"non-absolute mount host path: {host_path}"
+    assert str((tmp_path / "exploit").resolve()) in c.run_kwargs["volumes"]
+
+
 def test_extract_vmlinux_runs_script_and_returns_out(tmp_path: Path) -> None:
     from likedbg.foreign import extract_vmlinux
 

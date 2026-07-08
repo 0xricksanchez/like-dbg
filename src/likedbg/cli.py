@@ -35,6 +35,7 @@ from likedbg.config import load_config
 from likedbg.constants import BASE_IMAGE
 from likedbg.constants import DEBUGGEE_IMAGE
 from likedbg.constants import DEBUGGER_IMAGE
+from likedbg.constants import EXPLOIT_MOUNT
 from likedbg.constants import KBUILDER_IMAGE
 from likedbg.constants import KERNEL_VOLUME
 from likedbg.constants import MUSL_IMAGE
@@ -53,6 +54,7 @@ from likedbg.errors import SessionError
 from likedbg.exploit import run_exploit
 from likedbg.foreign import ForeignError
 from likedbg.foreign import ForeignKernel
+from likedbg.foreign import compile_exploit
 from likedbg.foreign import console_upload
 from likedbg.foreign import resolve_foreign
 from likedbg.foreign import resolve_input_path
@@ -213,6 +215,7 @@ def _make_pane_launchers(
     debugger_image: str,
     gdb_mount_source: str,
     recorder: RunRecorder | None,
+    exploit_share: Path | None = None,
 ) -> tuple[Callable[[str], None], Callable[[list[str]], None]]:
     """Wire the debuggee/debugger tmux panes + session-restart options for a pipeline run.
 
@@ -248,6 +251,7 @@ def _make_pane_launchers(
             mount_source=gdb_mount_source,
             network_mode=host.network_mode,
             crash_drop=recorder.crash_dir if recorder is not None else None,
+            exploit_share=exploit_share,
         )
         session.set_option("@likedbg_debugger_cmd", cmd)
         debugger_pane = session.run_in_new_pane(
@@ -284,6 +288,7 @@ def build_pipeline(
     recorder: RunRecorder | None = None,
     break_on_crash: bool = False,
     crash_breakpoints: tuple[str, ...] = (),
+    exploit_share: Path | None = None,
 ) -> Pipeline:
     gdb_mount_source = cache.locations(
         build_recipe.label,
@@ -299,6 +304,7 @@ def build_pipeline(
         debugger_image=debugger_image,
         gdb_mount_source=gdb_mount_source,
         recorder=recorder,
+        exploit_share=exploit_share,
     )
 
     return Pipeline(
@@ -337,6 +343,7 @@ def build_pipeline(
                 breakpoint="start_kernel",
                 break_on_crash=break_on_crash,
                 crash_breakpoints=crash_breakpoints,
+                modules_gdb=(f"{EXPLOIT_MOUNT}/modules.gdb" if exploit_share is not None else None),
             ),
         ]
     )
@@ -358,6 +365,7 @@ def build_use_pipeline(
     recorder: RunRecorder | None = None,
     break_on_crash: bool = False,
     crash_breakpoints: tuple[str, ...] = (),
+    exploit_share: Path | None = None,
 ) -> Pipeline:
     launch_debuggee, run_gdb = _make_pane_launchers(
         session,
@@ -366,6 +374,7 @@ def build_use_pipeline(
         debugger_image=debugger_image,
         gdb_mount_source=gdb_mount_source,
         recorder=recorder,
+        exploit_share=exploit_share,
     )
 
     return Pipeline(
@@ -393,6 +402,7 @@ def build_use_pipeline(
                 breakpoint="start_kernel",
                 break_on_crash=break_on_crash,
                 crash_breakpoints=crash_breakpoints,
+                modules_gdb=(f"{EXPLOIT_MOUNT}/modules.gdb" if exploit_share is not None else None),
             ),
         ]
     )
@@ -417,6 +427,8 @@ def build_foreign_pipeline(
     break_on_crash: bool = False,
     crash_breakpoints: tuple[str, ...] = (),
 ) -> Pipeline:
+    # ADR-0010: a foreign guest has no exploit share (no guest-side delivery path) — never mount one,
+    # and DebuggerStage below is left at its modules_gdb=None default (no modules.gdb to watch).
     launch_debuggee, run_gdb = _make_pane_launchers(
         session,
         host,
@@ -424,6 +436,7 @@ def build_foreign_pipeline(
         debugger_image=debugger_image,
         gdb_mount_source=gdb_mount_source,
         recorder=recorder,
+        exploit_share=None,
     )
 
     return Pipeline(
@@ -501,6 +514,7 @@ def cmd_use(
         extra_boot_args=rr.extra_boot_args,
         recorder=recorder,
     )
+    exploit_share = (workspace / rr.effective_debuggee.share_dir) if rr.effective_debuggee.share else None
     pipeline = build_use_pipeline(
         container,
         session,
@@ -516,6 +530,7 @@ def cmd_use(
         recorder=recorder,
         break_on_crash=use_settings.debugger.break_on_crash,
         crash_breakpoints=use_settings.debugger.crash_breakpoints,
+        exploit_share=exploit_share,
     )
     pipeline.run(ctx)
     return 0
@@ -756,7 +771,12 @@ def cmd_analyze_crash(workspace: Path, *, run_id: str) -> int:
 
 
 def cmd_run(workspace: Path, *, run_id: str, exploit: str, args: str) -> int:
-    return run_exploit(workspace, run_id, Path(exploit), args)
+    p = Path(exploit)
+    container = None
+    if p.suffix == ".c":
+        container = ContainerService(docker_env.make_client(host=docker_env.resolve_docker_host(env=os.environ)))
+        _ensure_images(container, workspace, specs=images.foreign_prep_images())
+    return run_exploit(workspace, run_id, p, args, container=container)
 
 
 def _guest_endpoint(workspace: Path, run_dir: Path, g: dict[str, Any]) -> guest.GuestEndpoint:
@@ -829,10 +849,27 @@ def cmd_insmod(workspace: Path, *, run_id: str, path: str, args: str, force_unlo
             reload=True,
             force_unload=force_unload,
         )
-        print(
-            f"[likedbg] loaded {name} (rc={res.rc}) — {g['share_mount']}/modules/{ko.name} "
-            f"(add-symbol-file this .ko in gdb)"
-        )
+        # A2: read runtime section addresses from the guest and log a lifecycle `load` event.
+        secs_raw = guest.run(
+            ep,
+            f"for s in /sys/module/{name}/sections/.*; do echo $(basename $s) $(cat $s); done",
+        ).stdout
+        secs = []
+        for ln in secs_raw.replace("\r\n", "\n").split("\n"):
+            f = ln.split()
+            if len(f) == 2 and f[0].startswith("."):
+                secs.append((f[0], f[1]))
+        text = dict(secs).get(".text")
+        modules_gdb = share_dir / "modules.gdb"
+        if text and int(text, 16):
+            others = " ".join(f"{s} {a}" for s, a in secs if s != ".text")
+            modules_gdb.parent.mkdir(parents=True, exist_ok=True)
+            with modules_gdb.open("a") as fh:
+                fh.write(f"load {name} {EXPLOIT_MOUNT}/modules/{ko.name} {text} {others}\n".rstrip() + "\n")
+            note = f"symbols will load at your next gdb stop (or `source {EXPLOIT_MOUNT}/modules.gdb`)"
+        else:
+            note = f"no .text section read; add-symbol-file {g['share_mount']}/modules/{ko.name} manually"
+        print(f"[likedbg] loaded {name} (rc={res.rc}) — {g['share_mount']}/modules/{ko.name}; {note}")
     return 0
 
 
@@ -874,10 +911,18 @@ def cmd_upload(workspace: Path, *, run_id: str, file: str) -> int:
             "no live Debuggee pane recorded for this tmux session",
             remedy="boot a session first (`start_kgdb`), then retry --upload",
         )
+    f = Path(file)
+    if f.suffix == ".c":
+        host_json = json.loads((run_dir / "host.json").read_text())
+        container = ContainerService(docker_env.make_client(host=docker_env.resolve_docker_host(env=os.environ)))
+        _ensure_images(container, workspace, specs=images.foreign_prep_images())
+        f = compile_exploit(
+            container, src=f, arch=host_json["target_arch"], out=run_dir / "exploit" / f.stem, image=MUSL_IMAGE
+        )
     console_upload(
         session,
         pane,
-        Path(file),
+        f,
         read_console=_console_tail_reader(run_dir / "logs" / "console.raw"),
     )
     return 0
@@ -894,7 +939,14 @@ def cmd_rmmod(workspace: Path, *, run_id: str, name: str, force_unload: bool) ->
     if not guest.wait_ready(ep):
         raise ModuleError(f"guest not reachable at {ep.host}:{ep.port}", remedy="boot + continue the session")
     res = modules.unload(ep, name, force=force_unload)
-    print(f"[likedbg] rmmod {name} (rc={res.rc})")
+    if res.rc == 0:
+        share_dir = (workspace / g["share_dir"]).resolve()
+        modules_gdb = share_dir / "modules.gdb"
+        if modules_gdb.exists() or share_dir.exists():
+            modules_gdb.parent.mkdir(parents=True, exist_ok=True)
+            with modules_gdb.open("a") as fh:
+                fh.write(f"unload {name}\n")
+    print(f"[likedbg] rmmod {name} (rc={res.rc}); symbols removed at your next gdb stop")
     return 0
 
 
@@ -1065,6 +1117,7 @@ def main(argv: list[str] | None = None) -> int:
             extra_boot_args=run_res.extra_boot_args,
             recorder=recorder,
         )
+        exploit_share = (workspace / run_res.effective_debuggee.share_dir) if run_res.effective_debuggee.share else None
         pipeline = build_pipeline(
             container,
             session,
@@ -1082,6 +1135,7 @@ def main(argv: list[str] | None = None) -> int:
             recorder=recorder,
             break_on_crash=cfg.settings.debugger.break_on_crash,
             crash_breakpoints=cfg.settings.debugger.crash_breakpoints,
+            exploit_share=exploit_share,
         )
         pipeline.run(ctx)
         return 0

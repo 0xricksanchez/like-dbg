@@ -43,6 +43,7 @@ def _mkrun(tmp_path):
     (tmp_path / "exploit" / "modules").mkdir(parents=True)
     ko = tmp_path / "exploit" / "modules" / "lk01.ko"
     ko.write_bytes(b"K")
+    (runs.parent / "latest").symlink_to(runs)
     return tmp_path, ko
 
 
@@ -97,3 +98,74 @@ def test_cmd_insmod_stages_and_loads_prebuilt_ko(tmp_path, monkeypatch):
 def test_cmd_insmod_no_run_raises(tmp_path):
     with pytest.raises(LikeDbgError):
         cli.cmd_insmod(tmp_path, run_id="latest", path="", args="", force_unload=False)
+
+
+def test_cmd_insmod_appends_load_event_from_sysfs(tmp_path, monkeypatch):
+    tp, ko = _mkrun(tmp_path)
+    _patch_docker(monkeypatch)
+    monkeypatch.setattr(cli.guest, "wait_ready", lambda ep, **kw: True)
+    monkeypatch.setattr(cli.modules, "module_name", lambda *a, **k: "lk01")
+    monkeypatch.setattr(cli.modules, "load", lambda *a, **k: types.SimpleNamespace(rc=0))
+    monkeypatch.setattr(cli, "stage_module", lambda *a, **k: ko)
+    # fake guest /sys read: .text + .data
+    monkeypatch.setattr(
+        cli.guest,
+        "run",
+        lambda ep, cmd, **k: types.SimpleNamespace(
+            rc=0, stdout=".text 0xffffffffc0001000\n.data 0xffffffffc0003000\n", stderr=""
+        ),
+    )
+    assert cli.cmd_insmod(tp, run_id="latest", path=str(ko.relative_to(tp)), args="", force_unload=False) == 0
+    mg = (tp / "exploit" / "modules.gdb").read_text()
+    assert mg.startswith("load lk01 /exploit/modules/") and "0xffffffffc0001000" in mg
+    assert ".data 0xffffffffc0003000" in mg
+
+
+def test_cmd_insmod_zeroed_text_falls_back_no_load_event(tmp_path, monkeypatch, capsys):
+    """Regression: a kptr_restrict-hidden or non-root /sys/module/<n>/sections/.text read
+    returns the literal string "0x0000000000000000", which is truthy — so pre-fix this wrote a
+    `load ... 0x0000000000000000` event and gdb would add-symbol-file at address 0 (actively
+    wrong symbols) instead of taking the graceful fallback."""
+    tp, ko = _mkrun(tmp_path)
+    _patch_docker(monkeypatch)
+    monkeypatch.setattr(cli.guest, "wait_ready", lambda ep, **kw: True)
+    monkeypatch.setattr(cli.modules, "module_name", lambda *a, **k: "lk01")
+    monkeypatch.setattr(cli.modules, "load", lambda *a, **k: types.SimpleNamespace(rc=0))
+    monkeypatch.setattr(cli, "stage_module", lambda *a, **k: ko)
+    # fake guest /sys read: all-zero .text (kptr_restrict-hidden / non-root)
+    monkeypatch.setattr(
+        cli.guest,
+        "run",
+        lambda ep, cmd, **k: types.SimpleNamespace(rc=0, stdout=".text 0x0000000000000000\n.data 0x0\n", stderr=""),
+    )
+    assert cli.cmd_insmod(tp, run_id="latest", path=str(ko.relative_to(tp)), args="", force_unload=False) == 0
+    modules_gdb = tp / "exploit" / "modules.gdb"
+    assert not modules_gdb.exists() or "load lk01" not in modules_gdb.read_text()
+    out = capsys.readouterr().out
+    assert "no .text section read" in out
+
+
+def test_cmd_rmmod_appends_unload_event(tmp_path, monkeypatch):
+    tp, ko = _mkrun(tmp_path)
+    (tp / "exploit").mkdir(exist_ok=True)
+    (tp / "exploit" / "modules.gdb").write_text("load lk01 /exploit/modules/lk01.ko 0x1000\n")
+    _patch_docker(monkeypatch)
+    monkeypatch.setattr(cli.guest, "wait_ready", lambda ep, **kw: True)
+    monkeypatch.setattr(cli.modules, "unload", lambda *a, **k: types.SimpleNamespace(rc=0))
+    assert cli.cmd_rmmod(tp, run_id="latest", name="lk01", force_unload=False) == 0
+    assert (tp / "exploit" / "modules.gdb").read_text().splitlines()[-1] == "unload lk01"
+
+
+def test_cmd_rmmod_failed_rc_does_not_append_unload_event(tmp_path, monkeypatch):
+    """Regression: a FAILED rmmod (module busy, rc!=0) must not append an `unload` event —
+    doing so would make the gdb hook drop symbols for a module that is still loaded."""
+    tp, ko = _mkrun(tmp_path)
+    (tp / "exploit").mkdir(exist_ok=True)
+    (tp / "exploit" / "modules.gdb").write_text("load lk01 /exploit/modules/lk01.ko 0x1000\n")
+    _patch_docker(monkeypatch)
+    monkeypatch.setattr(cli.guest, "wait_ready", lambda ep, **kw: True)
+    monkeypatch.setattr(cli.modules, "unload", lambda *a, **k: types.SimpleNamespace(rc=1))
+    assert cli.cmd_rmmod(tp, run_id="latest", name="lk01", force_unload=False) == 0
+    text = (tp / "exploit" / "modules.gdb").read_text()
+    assert "unload lk01" not in text
+    assert text.splitlines()[-1] == "load lk01 /exploit/modules/lk01.ko 0x1000"
