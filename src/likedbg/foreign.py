@@ -159,19 +159,23 @@ _MUSL_GCC = {"x86_64": "x86_64-linux-musl-gcc", "arm64": "aarch64-linux-musl-gcc
 
 def _musl_compile(arch: str, src_q: str, out_q: str) -> str:
     """The musl-static cross-compile command fragment (shared by repack + compile_exploit).
-    Pins zig's cache to an explicit writable dir: the low-level container exec does not set HOME,
-    so zig's default ~/.cache global-cache resolution fails ("CacheCheckFailed") — validated on the
-    x86 live gate 2026-07-08."""
+    Relies on the like_musl image pre-warming zig's global cache (a cold cache build races under
+    concurrent load -> zig 'CacheCheckFailed'; see .dockerfile_musl and the x86 live gate)."""
     if arch not in _MUSL_GCC:
         raise ForeignError(f"unsupported arch {arch!r}", remedy="use x86_64 or arm64")
-    cache = "ZIG_GLOBAL_CACHE_DIR=/tmp/zig-cache ZIG_LOCAL_CACHE_DIR=/tmp/zig-cache"
-    return f"{cache} {_MUSL_GCC[arch]} -static {src_q} -o {out_q}"
+    return f"{_MUSL_GCC[arch]} -static {src_q} -o {out_q}"
 
 
 def compile_exploit(container: Any, *, src: Path, arch: str, out: Path, image: str) -> Path:
     """Cross-compile a single `.c` to a static musl binary for `arch` in the like_musl container.
-    Raises ForeignError on an unknown arch or if no output is produced."""
+    Raises ForeignError on an unknown arch or if no output is produced.
+
+    Paths are resolved to ABSOLUTE before mounting: a relative host path (e.g. `--run exploit/x.c`)
+    would be treated by Docker as a NAMED VOLUME, not a bind mount, so `/src/<file>` would not exist
+    and the compile fails opaquely (the x86 live gate surfaced this as zig 'CacheCheckFailed')."""
+    src = src.resolve()
     out.parent.mkdir(parents=True, exist_ok=True)
+    out = out.resolve()
     volumes, (src_path, out_path) = _dedup_mounts(
         [("/src", src.parent, "ro", src.name), ("/out", out.parent, "rw", out.name)]
     )

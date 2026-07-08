@@ -141,6 +141,22 @@ def test_compile_exploit_invalid_arch_raises(tmp_path):
         compile_exploit(_FakeContainer(make_out=None), src=src, arch="mips", out=tmp_path / "o" / "e", image="m")
 
 
+def test_compile_exploit_resolves_relative_src_to_absolute_mount(tmp_path, monkeypatch):
+    """A relative src path must be resolved to an absolute bind-mount host path — a relative path
+    becomes a docker NAMED VOLUME, so /src/<file> would not exist (x86 live-gate bug)."""
+    from likedbg.foreign import compile_exploit
+
+    (tmp_path / "exploit").mkdir()
+    (tmp_path / "exploit" / "e.c").write_text("int main(void){}\n")
+    monkeypatch.chdir(tmp_path)
+    out = tmp_path / "run" / "e"
+    c = _FakeContainer(make_out=out, out_bytes=b"\x7fELF")
+    compile_exploit(c, src=Path("exploit/e.c"), arch="x86_64", out=out, image="like_musl:latest")
+    for host_path in c.run_kwargs["volumes"]:
+        assert host_path.startswith("/"), f"non-absolute mount host path: {host_path}"
+    assert str((tmp_path / "exploit").resolve()) in c.run_kwargs["volumes"]
+
+
 def test_extract_vmlinux_runs_script_and_returns_out(tmp_path: Path) -> None:
     from likedbg.foreign import extract_vmlinux
 
@@ -238,18 +254,6 @@ def test_resolve_foreign_missing_image_raises(tmp_path: Path) -> None:
     c = _FakeContainer(make_out=None)
     with pytest.raises(ForeignError, match="image"):
         resolve_foreign(c, cfg, tmp_path, out_dir=tmp_path / "stage", image="like_musl:latest")
-
-
-def test_musl_compile_pins_zig_cache_dir() -> None:
-    """Regression: the low-level container exec (ContainerService.exec, used by compile_exploit)
-    does not set HOME, so zig's default ~/.cache global-cache resolution fails with
-    CacheCheckFailed on the live x86 gate. The cross-compile command must pin an explicit,
-    HOME-independent, writable cache dir."""
-    from likedbg.foreign import _musl_compile
-
-    cmd = _musl_compile("x86_64", "/src/e.c", "/out/e")
-    assert "ZIG_GLOBAL_CACHE_DIR=" in cmd
-    assert "x86_64-linux-musl-gcc -static /src/e.c -o /out/e" in cmd
 
 
 def test_repack_initramfs_compiles_c_with_cross_musl(tmp_path: Path) -> None:
