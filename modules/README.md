@@ -56,6 +56,31 @@ uv run ./start_kgdb --rmmod lk01 --force-unload
 the Guest share (`<share_dir>/modules/` -> guest `/mnt/exploit/modules/`), and its path is printed
 so you can `add-symbol-file` it in gdb.
 
+## Module symbols auto-load in gdb — no manual `add-symbol-file`
+
+`--insmod` reads the module's runtime section addresses off the guest (`/sys/module/<name>/sections/*`
+— KASLR-adjusted for this boot) and records a `load` event for it; `--rmmod` records an `unload` event.
+A gdb-python **stop-hook**, installed when the Debugger launches, reconciles gdb's loaded symbols against
+that record **at your next gdb stop** (a breakpoint, `continue`, `next`, …) — so:
+
+- `--insmod ./modules/lk01` → breakpoint `lk01`'s functions the next time you stop in gdb, no
+  `add-symbol-file` needed.
+- `--rmmod lk01` → its symbols are removed at your next stop.
+- Re-`--insmod lk01` after an edit (a new KASLR-influenced load address) → the stop-hook replaces the old
+  symbols with the new ones — the `insmod → rmmod → edit → insmod` loop stays symbolized automatically.
+
+This never interrupts a running target — nothing is sent to gdb until *you* cause a stop. If you don't
+want to wait for one, apply the pending symbols immediately from the gdb pane:
+
+```gdb
+source /exploit/modules.gdb
+```
+
+The lifecycle record lives at `<share_dir>/modules.gdb` on the host (mounted read-only into the
+debugger container at `/exploit/modules.gdb`) — one file, both sides. This only applies to modules
+loaded via `--insmod`; a module `insmod`'d manually inside the guest is invisible to like-dbg and gets
+no auto-symbols (fall back to pwndbg's `kmod`). See `docs/adr/0011-exploit-dev-seams.md` for the design.
+
 **Compiler match matters:** `--use` / `--insmod` build the module with the compiler from your
 *current* config (`build.compiler`) — it must still match the compiler the reused kernel was built
 with (clang vs. gcc), or `insmod` will reject the `.ko` on a vermagic/ABI mismatch. If you switch

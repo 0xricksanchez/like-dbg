@@ -254,6 +254,30 @@ uv run ./start_kgdb --force-rebuild
 uv run ./start_kgdb --restart-debuggee
 ```
 
+### Exploit-dev loop
+
+```sh
+# Run/upload an exploit against the live session. A single flag-less `.c` is
+# auto-compiled (static musl, target arch) before delivery; any other file is
+# delivered as-is — the escape hatch for C++, multi-file, custom flags, assembly,
+# or a glibc-semantics exploit (pass a prebuilt static binary for those).
+uv run ./start_kgdb --run ./exploit/poc.c        # compiled, then run
+uv run ./start_kgdb --run ./exploit/poc          # prebuilt binary, delivered as-is
+uv run ./start_kgdb --upload ./exploit/poc.c     # compiled, delivered over the serial console
+
+# Build (if stale) + load an out-of-tree module; symbols auto-load in gdb at
+# your next stop (or `source /exploit/modules.gdb` in the gdb pane to apply now).
+uv run ./start_kgdb --insmod ./modules/lk01
+uv run ./start_kgdb --rmmod lk01
+```
+
+Kernel runs default to `pwndbg` for in-gdb introspection (KASLR base, slab, `current`, task/module
+walking, symbol lookup — `kbase`/`slab`/`kcurrent`/`ktask`/`klookup`/`kmod`/`kallsyms`); like-dbg's job
+is compiling to the target arch, delivering host↔guest, and feeding gdb the right artifact/symbols, not
+reimplementing that introspection. See `exploit/README.md` for the compile boundary + escape hatch,
+`modules/README.md` for the module-symbol auto-load lifecycle, and `docs/adr/0011-exploit-dev-seams.md`
+for the design rationale.
+
 ### Run artifacts
 
 Every interactive Debugging session creates a timestamped run directory:
