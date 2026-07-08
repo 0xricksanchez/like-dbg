@@ -240,6 +240,18 @@ def test_resolve_foreign_missing_image_raises(tmp_path: Path) -> None:
         resolve_foreign(c, cfg, tmp_path, out_dir=tmp_path / "stage", image="like_musl:latest")
 
 
+def test_musl_compile_pins_zig_cache_dir() -> None:
+    """Regression: the low-level container exec (ContainerService.exec, used by compile_exploit)
+    does not set HOME, so zig's default ~/.cache global-cache resolution fails with
+    CacheCheckFailed on the live x86 gate. The cross-compile command must pin an explicit,
+    HOME-independent, writable cache dir."""
+    from likedbg.foreign import _musl_compile
+
+    cmd = _musl_compile("x86_64", "/src/e.c", "/out/e")
+    assert "ZIG_GLOBAL_CACHE_DIR=" in cmd
+    assert "x86_64-linux-musl-gcc -static /src/e.c -o /out/e" in cmd
+
+
 def test_repack_initramfs_compiles_c_with_cross_musl(tmp_path: Path) -> None:
     from likedbg.foreign import repack_initramfs
 

@@ -158,10 +158,14 @@ _MUSL_GCC = {"x86_64": "x86_64-linux-musl-gcc", "arm64": "aarch64-linux-musl-gcc
 
 
 def _musl_compile(arch: str, src_q: str, out_q: str) -> str:
-    """The musl-static cross-compile command fragment (shared by repack + compile_exploit)."""
+    """The musl-static cross-compile command fragment (shared by repack + compile_exploit).
+    Pins zig's cache to an explicit writable dir: the low-level container exec does not set HOME,
+    so zig's default ~/.cache global-cache resolution fails ("CacheCheckFailed") — validated on the
+    x86 live gate 2026-07-08."""
     if arch not in _MUSL_GCC:
         raise ForeignError(f"unsupported arch {arch!r}", remedy="use x86_64 or arm64")
-    return f"{_MUSL_GCC[arch]} -static {src_q} -o {out_q}"
+    cache = "ZIG_GLOBAL_CACHE_DIR=/tmp/zig-cache ZIG_LOCAL_CACHE_DIR=/tmp/zig-cache"
+    return f"{cache} {_MUSL_GCC[arch]} -static {src_q} -o {out_q}"
 
 
 def compile_exploit(container: Any, *, src: Path, arch: str, out: Path, image: str) -> Path:
