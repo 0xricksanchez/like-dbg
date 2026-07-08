@@ -865,8 +865,8 @@ def cmd_insmod(workspace: Path, *, run_id: str, path: str, args: str, force_unlo
             others = " ".join(f"{s} {a}" for s, a in secs if s != ".text")
             modules_gdb.parent.mkdir(parents=True, exist_ok=True)
             with modules_gdb.open("a") as fh:
-                fh.write(f"load {name} /exploit/modules/{ko.name} {text} {others}\n".rstrip() + "\n")
-            note = "symbols will load at your next gdb stop (or `source /exploit/modules.gdb`)"
+                fh.write(f"load {name} {EXPLOIT_MOUNT}/modules/{ko.name} {text} {others}\n".rstrip() + "\n")
+            note = f"symbols will load at your next gdb stop (or `source {EXPLOIT_MOUNT}/modules.gdb`)"
         else:
             note = f"no .text section read; add-symbol-file {g['share_mount']}/modules/{ko.name} manually"
         print(f"[likedbg] loaded {name} (rc={res.rc}) — {g['share_mount']}/modules/{ko.name}; {note}")
