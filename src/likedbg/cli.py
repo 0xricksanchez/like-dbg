@@ -756,7 +756,12 @@ def cmd_analyze_crash(workspace: Path, *, run_id: str) -> int:
 
 
 def cmd_run(workspace: Path, *, run_id: str, exploit: str, args: str) -> int:
-    return run_exploit(workspace, run_id, Path(exploit), args)
+    p = Path(exploit)
+    container = None
+    if p.suffix == ".c":
+        container = ContainerService(docker_env.make_client(host=docker_env.resolve_docker_host(env=os.environ)))
+        _ensure_images(container, workspace, specs=images.foreign_prep_images())
+    return run_exploit(workspace, run_id, p, args, container=container)
 
 
 def _guest_endpoint(workspace: Path, run_dir: Path, g: dict[str, Any]) -> guest.GuestEndpoint:
