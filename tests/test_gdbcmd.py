@@ -1,4 +1,5 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -126,3 +127,137 @@ def test_reconnect_helper_reapplies_initial_breakpoint_and_continues():
     assert 'gdb.execute("continue", from_tty=from_tty)' in helper
     assert "hbreak start_kernel" in args
     assert "continue" in args
+
+
+# ---------------------------------------------------------------------------
+# Task 5: module-symbol stop-hook
+# ---------------------------------------------------------------------------
+
+
+def test_build_gdb_args_injects_module_hook_when_modules_gdb_set():
+    from likedbg.gdbcmd import build_gdb_args
+
+    args = build_gdb_args(
+        _host(),
+        arch="x86_64",
+        vmlinux=Path("/ksrc/vmlinux"),
+        ext="pwndbg",
+        breakpoint="start_kernel",
+        modules_gdb="/exploit/modules.gdb",
+    )
+    joined = " ".join(args)
+    assert "/exploit/modules.gdb" in joined
+    assert "events.stop" in joined or "hook" in joined  # a stop-driven reconcile
+
+
+def test_build_gdb_args_no_module_hook_by_default():
+    from likedbg.gdbcmd import build_gdb_args
+
+    args = build_gdb_args(_host(), arch="x86_64", vmlinux=Path("/ksrc/vmlinux"), ext="pwndbg", breakpoint=None)
+    assert "modules.gdb" not in " ".join(args)
+
+
+def test_module_symbols_payload_reconciles_load_reload_unload(tmp_path):
+    """Exercise the payload's reconcile logic directly (pure-python, no gdb): load -> reload (new
+    addr, replace) -> unload (remove)."""
+    from likedbg.gdbcmd import _reconcile_modules  # pure helper the payload calls
+
+    log = tmp_path / "modules.gdb"
+    log.write_text("load foo /exploit/modules/foo.ko 0x1000 .data 0x2000\n")
+    applied = {}
+    adds, removes = _reconcile_modules(log.read_text(), applied)
+    assert adds == [("foo", "/exploit/modules/foo.ko", "0x1000", [(".data", "0x2000")])] and removes == []
+    # reload at a new base
+    log.write_text("load foo /exploit/modules/foo.ko 0x1000 .data 0x2000\nload foo /exploit/modules/foo.ko 0x9000\n")
+    adds, removes = _reconcile_modules(log.read_text(), applied)
+    assert ("foo", "/exploit/modules/foo.ko") in [(r[0], r[1]) for r in removes]
+    assert any(a[2] == "0x9000" for a in adds)
+    # unload
+    log.write_text(log.read_text() + "unload foo\n")
+    adds, removes = _reconcile_modules(log.read_text(), applied)
+    assert removes and not adds and "foo" not in applied
+
+
+def test_module_symbols_payload_is_valid_python_and_uses_reconcile_source():
+    """The payload is `python exec(<source>)` — gdb only discovers a syntax error at launch time,
+    so validate it with compile() here. Also assert the in-gdb `_reconcile` body is the *same*
+    source as `_reconcile_modules` (inlined via inspect.getsource, not hand-duplicated)."""
+    import ast
+    import inspect
+
+    from likedbg.gdbcmd import _module_symbols_source
+    from likedbg.gdbcmd import _reconcile_modules
+
+    payload = _module_symbols_source("/exploit/modules.gdb")
+    assert payload.startswith("python exec(")
+    assert payload.endswith(")")
+    inner_repr = payload[len("python exec(") : -1]
+    source = ast.literal_eval(inner_repr)  # the exec()'d source, recovered from its repr()
+    compile(source, "<modules_gdb_payload>", "exec")  # raises SyntaxError if malformed
+    assert "def _reconcile(" in source
+    assert "def _reconcile_modules(" not in source  # renamed, not duplicated under both names
+    assert "gdb.events.stop.connect(_sync)" in source
+    # the pure function's body text (minus its def line) must appear verbatim in the payload
+    pure_lines = inspect.getsource(_reconcile_modules).splitlines()
+    body_lines = [line for line in pure_lines if not line.strip().startswith("def _reconcile_modules")]
+    for line in body_lines:
+        if line.strip() and not line.strip().startswith('"""') and '"""' not in line:
+            assert line in source
+
+
+class _FakeStopEvent:
+    def __init__(self):
+        self.callbacks = []
+
+    def connect(self, fn):
+        self.callbacks.append(fn)
+
+
+class _FakeGdb:
+    """Minimal stand-in for the real `gdb` module: just enough surface for the payload to
+    `import gdb`, register a stop hook, and call execute()/write() when it fires."""
+
+    def __init__(self):
+        self.events = SimpleNamespace(stop=_FakeStopEvent())
+        self.calls = []
+        self.writes = []
+
+    def execute(self, cmd, to_string=False):
+        self.calls.append(cmd)
+        return ""
+
+    def write(self, msg):
+        self.writes.append(msg)
+
+
+def test_module_symbols_payload_execs_and_reconciles_against_a_fake_gdb(tmp_path, monkeypatch):
+    """Beyond compile()-validity: actually exec() the extracted source against a stub `gdb` module
+    and fire a simulated stop event, so a runtime error in the inlined/annotated reconcile function
+    (not just a SyntaxError) would also be caught here."""
+    import ast
+    import sys
+
+    from likedbg.gdbcmd import _module_symbols_source
+
+    log = tmp_path / "modules.gdb"
+    log.write_text("load foo /exploit/modules/foo.ko 0x1000 .data 0x2000\n")
+
+    payload = _module_symbols_source(str(log))
+    inner_repr = payload[len("python exec(") : -1]
+    source = ast.literal_eval(inner_repr)
+
+    fake_gdb = _FakeGdb()
+    monkeypatch.setitem(sys.modules, "gdb", fake_gdb)
+    namespace: dict = {}
+    exec(compile(source, "<modules_gdb_payload>", "exec"), namespace)  # noqa: S102
+
+    assert fake_gdb.events.stop.callbacks  # gdb.events.stop.connect(_sync) ran
+    fake_gdb.events.stop.callbacks[0](None)  # simulate a stop event
+    assert any(c == "add-symbol-file /exploit/modules/foo.ko 0x1000 -s .data 0x2000" for c in fake_gdb.calls)
+    assert namespace["_APPLIED"] == {"foo": ("/exploit/modules/foo.ko", "0x1000")}
+
+    # unload: next stop must remove-symbol-file and drop it from _APPLIED
+    log.write_text(log.read_text() + "unload foo\n")
+    fake_gdb.events.stop.callbacks[0](None)
+    assert any(c == "remove-symbol-file /exploit/modules/foo.ko" for c in fake_gdb.calls)
+    assert namespace["_APPLIED"] == {}

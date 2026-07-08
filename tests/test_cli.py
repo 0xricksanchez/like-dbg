@@ -719,6 +719,28 @@ def test_build_use_pipeline_mounts_exploit_share_when_supplied(tmp_path):
     dbge._launch("qemu-cmd")  # type: ignore[attr-defined]
     dbg._run_gdb(["gdb"])  # type: ignore[attr-defined]
     assert f"-v {tmp_path / 'exploit'}:/exploit:ro" in session.pane_launches[1]["cmd"]
+    assert dbg._modules_gdb == "/exploit/modules.gdb"  # type: ignore[attr-defined]
+
+
+def test_build_use_pipeline_no_modules_gdb_without_exploit_share(tmp_path):
+    settings = Settings.model_validate({"general": {"arch": "arm64"}})
+    session = _FakeSession()
+    pipe = build_use_pipeline(
+        _FakeContainer(),
+        session,  # type: ignore[arg-type]
+        host=_host("volume"),
+        workspace=tmp_path,
+        kernel_volume="likedbg_ksrc",
+        debugger_image="like_debugger:latest",
+        debuggee_image="like_debuggee:latest",
+        ext="pwndbg",
+        gdb_mount_source="likedbg_ksrc",
+        rootfs_recipe=rootfs_recipe(settings),
+        module_env={},
+        recorder=None,
+    )
+    dbg = next(s for s in pipe._stages if s.name == "debugger")  # type: ignore[attr-defined]
+    assert dbg._modules_gdb is None  # type: ignore[attr-defined]
 
 
 def test_build_foreign_pipeline_never_mounts_exploit_share(tmp_path):
@@ -744,6 +766,7 @@ def test_build_foreign_pipeline_never_mounts_exploit_share(tmp_path):
     dbge._launch("qemu-cmd")  # type: ignore[attr-defined]
     dbg._run_gdb(["gdb"])  # type: ignore[attr-defined]
     assert ":/exploit:ro" not in session.pane_launches[1]["cmd"]
+    assert dbg._modules_gdb is None  # type: ignore[attr-defined]  # ADR-0010: no share, no hook
 
 
 # ---------------------------------------------------------------------------
@@ -1042,6 +1065,56 @@ def test_build_pipeline_passes_crash_config(tmp_path):
     dbg = pipe._stages[-1]  # type: ignore[attr-defined]
     assert dbg._break_on_crash is True  # type: ignore[attr-defined]
     assert dbg._crash_breakpoints == ("panic", "die")  # type: ignore[attr-defined]
+
+
+def test_build_pipeline_passes_modules_gdb_when_exploit_share_set(tmp_path):
+    """DebuggerStage inside the built pipeline gets the in-container modules.gdb path when the run
+    has a guest-backed exploit share (Task 5: A2 module-symbol stop-hook)."""
+    settings = Settings.model_validate({"general": {"arch": "arm64"}})
+    br = build_recipe(settings, version="6.6.30", arch="arm64", workspace=tmp_path, fragments=[])
+    rr = rootfs_recipe(settings)
+    session = _FakeSession()
+    pipe = build_pipeline(
+        ContainerService(SimpleNamespace()),
+        session,  # type: ignore[arg-type]
+        host=_host("volume"),
+        workspace=tmp_path,
+        kernel_volume="likedbg_ksrc",
+        dl_dir=tmp_path / "kernels",
+        debugger_image="like_debugger:latest",
+        debuggee_image="like_debuggee:latest",
+        ext="pwndbg",
+        build_recipe=br,
+        rootfs_recipe=rr,
+        recorder=None,
+        exploit_share=tmp_path / "exploit",
+    )
+    dbg = pipe._stages[-1]  # type: ignore[attr-defined]
+    assert dbg._modules_gdb == "/exploit/modules.gdb"  # type: ignore[attr-defined]
+
+
+def test_build_pipeline_no_modules_gdb_without_exploit_share(tmp_path):
+    """No exploit share -> no modules.gdb path -> build_gdb_args gets modules_gdb=None (no hook)."""
+    settings = Settings.model_validate({"general": {"arch": "arm64"}})
+    br = build_recipe(settings, version="6.6.30", arch="arm64", workspace=tmp_path, fragments=[])
+    rr = rootfs_recipe(settings)
+    session = _FakeSession()
+    pipe = build_pipeline(
+        ContainerService(SimpleNamespace()),
+        session,  # type: ignore[arg-type]
+        host=_host("volume"),
+        workspace=tmp_path,
+        kernel_volume="likedbg_ksrc",
+        dl_dir=tmp_path / "kernels",
+        debugger_image="like_debugger:latest",
+        debuggee_image="like_debuggee:latest",
+        ext="pwndbg",
+        build_recipe=br,
+        rootfs_recipe=rr,
+        recorder=None,
+    )
+    dbg = pipe._stages[-1]  # type: ignore[attr-defined]
+    assert dbg._modules_gdb is None  # type: ignore[attr-defined]
 
 
 def test_build_pipeline_defaults_patch_dirs_to_empty(tmp_path):

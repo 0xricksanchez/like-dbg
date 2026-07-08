@@ -35,6 +35,7 @@ from likedbg.config import load_config
 from likedbg.constants import BASE_IMAGE
 from likedbg.constants import DEBUGGEE_IMAGE
 from likedbg.constants import DEBUGGER_IMAGE
+from likedbg.constants import EXPLOIT_MOUNT
 from likedbg.constants import KBUILDER_IMAGE
 from likedbg.constants import KERNEL_VOLUME
 from likedbg.constants import MUSL_IMAGE
@@ -342,6 +343,7 @@ def build_pipeline(
                 breakpoint="start_kernel",
                 break_on_crash=break_on_crash,
                 crash_breakpoints=crash_breakpoints,
+                modules_gdb=(f"{EXPLOIT_MOUNT}/modules.gdb" if exploit_share is not None else None),
             ),
         ]
     )
@@ -400,6 +402,7 @@ def build_use_pipeline(
                 breakpoint="start_kernel",
                 break_on_crash=break_on_crash,
                 crash_breakpoints=crash_breakpoints,
+                modules_gdb=(f"{EXPLOIT_MOUNT}/modules.gdb" if exploit_share is not None else None),
             ),
         ]
     )
@@ -424,7 +427,8 @@ def build_foreign_pipeline(
     break_on_crash: bool = False,
     crash_breakpoints: tuple[str, ...] = (),
 ) -> Pipeline:
-    # ADR-0010: a foreign guest has no exploit share (no guest-side delivery path) — never mount one.
+    # ADR-0010: a foreign guest has no exploit share (no guest-side delivery path) — never mount one,
+    # and DebuggerStage below is left at its modules_gdb=None default (no modules.gdb to watch).
     launch_debuggee, run_gdb = _make_pane_launchers(
         session,
         host,

@@ -20,12 +20,14 @@ class DebuggerStage:
         breakpoint: str | None,
         break_on_crash: bool = False,
         crash_breakpoints: tuple[str, ...] = (),
+        modules_gdb: str | None = None,
     ) -> None:
         self._ext = ext
         self._run_gdb = run_gdb
         self._breakpoint = breakpoint
         self._break_on_crash = break_on_crash
         self._crash_breakpoints = crash_breakpoints
+        self._modules_gdb = modules_gdb
 
     def should_skip(self, ctx: PipelineContext) -> bool:
         return False
@@ -43,6 +45,7 @@ class DebuggerStage:
             port=eff.gdb_port,
             break_on_crash=self._break_on_crash,
             crash_breakpoints=self._crash_breakpoints,
+            modules_gdb=self._modules_gdb,
         )
         if ctx.recorder is not None:
             ctx.recorder.record_command("gdb", shell=" ".join(args), argv=args)  # type: ignore[attr-defined]
