@@ -24,3 +24,4 @@ DEBUGGEE_IMAGE = "like_debuggee:latest"
 MUSL_IMAGE = "like_musl:latest"
 
 CRASH_DROP_MOUNT = "/likedbg-crash"
+EXPLOIT_MOUNT = "/exploit"

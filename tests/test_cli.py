@@ -12,6 +12,7 @@ from likedbg.cache import build_recipe
 from likedbg.cache import rootfs_recipe
 from likedbg.cache import write_manifest
 from likedbg.cli import _require_volume_for_adopt
+from likedbg.cli import build_foreign_pipeline
 from likedbg.cli import build_pipeline
 from likedbg.cli import build_use_pipeline
 from likedbg.cli import cmd_clean
@@ -23,6 +24,7 @@ from likedbg.errors import CacheError
 from likedbg.errors import ConfigError
 from likedbg.errors import HostCapabilityError
 from likedbg.errors import SessionError
+from likedbg.foreign import ForeignKernel
 from likedbg.host_profile import HostProfile
 from likedbg.pipeline import PipelineContext
 from likedbg.stages.rootfs import rootfs_target
@@ -678,6 +680,70 @@ def test_pipeline_launches_process_panes_and_stores_session_options(tmp_path):
     assert options["@likedbg_debuggee_pane_log"] == str(recorder.debuggee_pane_log)
     assert any(c["pane"] == "%2" for c in session.pipe_pane_calls), "pipe_pane should have been called for debuggee"
     assert any(c["pane"] == "%3" for c in session.pipe_pane_calls), "pipe_pane should have been called for debugger"
+
+
+def _fk(tmp_path):
+    """Minimal ForeignKernel fixture — mirrors test_cli_foreign.py's helper."""
+    (tmp_path / "bzImage").write_bytes(b"MZ")
+    (tmp_path / "vmlinux").write_bytes(b"\x7fELF")
+    (tmp_path / "initramfs.cpio.gz").write_bytes(b"\x1f\x8b")
+    return ForeignKernel(
+        image=tmp_path / "bzImage",
+        vmlinux=tmp_path / "vmlinux",
+        initramfs=tmp_path / "initramfs.cpio.gz",
+        arch="x86_64",
+        cmdline="quiet console=ttyS0",
+    )
+
+
+def test_build_use_pipeline_mounts_exploit_share_when_supplied(tmp_path):
+    settings = Settings.model_validate({"general": {"arch": "arm64"}})
+    session = _FakeSession()
+    pipe = build_use_pipeline(
+        _FakeContainer(),
+        session,  # type: ignore[arg-type]
+        host=_host("volume"),
+        workspace=tmp_path,
+        kernel_volume="likedbg_ksrc",
+        debugger_image="like_debugger:latest",
+        debuggee_image="like_debuggee:latest",
+        ext="pwndbg",
+        gdb_mount_source="likedbg_ksrc",
+        rootfs_recipe=rootfs_recipe(settings),
+        module_env={},
+        recorder=None,
+        exploit_share=tmp_path / "exploit",
+    )
+    dbge = next(s for s in pipe._stages if s.name == "debuggee")  # type: ignore[attr-defined]
+    dbg = next(s for s in pipe._stages if s.name == "debugger")  # type: ignore[attr-defined]
+    dbge._launch("qemu-cmd")  # type: ignore[attr-defined]
+    dbg._run_gdb(["gdb"])  # type: ignore[attr-defined]
+    assert f"-v {tmp_path / 'exploit'}:/exploit:ro" in session.pane_launches[1]["cmd"]
+
+
+def test_build_foreign_pipeline_never_mounts_exploit_share(tmp_path):
+    session = _FakeSession()
+    pipe = build_foreign_pipeline(
+        _FakeContainer(),
+        session,  # type: ignore[arg-type]
+        host=_host("volume"),
+        workspace=tmp_path,
+        foreign=_fk(tmp_path),
+        exploit=None,
+        qemu_extra=(),
+        gdb_mount_source=str(tmp_path),
+        out_dir=tmp_path / "stage",
+        debugger_image="like_debugger:latest",
+        debuggee_image="like_debuggee:latest",
+        ext="pwndbg",
+        musl_image="like_musl:latest",
+        recorder=None,
+    )
+    dbge = next(s for s in pipe._stages if s.name == "debuggee")  # type: ignore[attr-defined]
+    dbg = next(s for s in pipe._stages if s.name == "debugger")  # type: ignore[attr-defined]
+    dbge._launch("qemu-cmd")  # type: ignore[attr-defined]
+    dbg._run_gdb(["gdb"])  # type: ignore[attr-defined]
+    assert ":/exploit:ro" not in session.pane_launches[1]["cmd"]
 
 
 # ---------------------------------------------------------------------------

@@ -99,3 +99,19 @@ def test_gdb_pane_host_network_uses_localhost_path_not_gateway():
     assert "--network host" in cmd
     assert "--add-host=host.docker.internal:host-gateway" not in cmd
     assert "-v /ws/artifacts/ksrc:/ksrc:ro" in cmd
+
+
+def test_gdb_pane_command_mounts_exploit_share_when_set(tmp_path):
+    from likedbg.launchers import gdb_pane_command
+
+    cmd = gdb_pane_command(
+        ["gdb"], image="like_debugger:latest", mount_source="likedbg_ksrc", exploit_share=tmp_path / "exploit"
+    )
+    assert f"-v {tmp_path / 'exploit'}:/exploit:ro" in cmd
+
+
+def test_gdb_pane_command_no_exploit_mount_by_default():
+    from likedbg.launchers import gdb_pane_command
+
+    cmd = gdb_pane_command(["gdb"], image="like_debugger:latest", mount_source="likedbg_ksrc")
+    assert ":/exploit:ro" not in cmd

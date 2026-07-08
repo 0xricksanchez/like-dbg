@@ -214,6 +214,7 @@ def _make_pane_launchers(
     debugger_image: str,
     gdb_mount_source: str,
     recorder: RunRecorder | None,
+    exploit_share: Path | None = None,
 ) -> tuple[Callable[[str], None], Callable[[list[str]], None]]:
     """Wire the debuggee/debugger tmux panes + session-restart options for a pipeline run.
 
@@ -249,6 +250,7 @@ def _make_pane_launchers(
             mount_source=gdb_mount_source,
             network_mode=host.network_mode,
             crash_drop=recorder.crash_dir if recorder is not None else None,
+            exploit_share=exploit_share,
         )
         session.set_option("@likedbg_debugger_cmd", cmd)
         debugger_pane = session.run_in_new_pane(
@@ -285,6 +287,7 @@ def build_pipeline(
     recorder: RunRecorder | None = None,
     break_on_crash: bool = False,
     crash_breakpoints: tuple[str, ...] = (),
+    exploit_share: Path | None = None,
 ) -> Pipeline:
     gdb_mount_source = cache.locations(
         build_recipe.label,
@@ -300,6 +303,7 @@ def build_pipeline(
         debugger_image=debugger_image,
         gdb_mount_source=gdb_mount_source,
         recorder=recorder,
+        exploit_share=exploit_share,
     )
 
     return Pipeline(
@@ -359,6 +363,7 @@ def build_use_pipeline(
     recorder: RunRecorder | None = None,
     break_on_crash: bool = False,
     crash_breakpoints: tuple[str, ...] = (),
+    exploit_share: Path | None = None,
 ) -> Pipeline:
     launch_debuggee, run_gdb = _make_pane_launchers(
         session,
@@ -367,6 +372,7 @@ def build_use_pipeline(
         debugger_image=debugger_image,
         gdb_mount_source=gdb_mount_source,
         recorder=recorder,
+        exploit_share=exploit_share,
     )
 
     return Pipeline(
@@ -418,6 +424,7 @@ def build_foreign_pipeline(
     break_on_crash: bool = False,
     crash_breakpoints: tuple[str, ...] = (),
 ) -> Pipeline:
+    # ADR-0010: a foreign guest has no exploit share (no guest-side delivery path) — never mount one.
     launch_debuggee, run_gdb = _make_pane_launchers(
         session,
         host,
@@ -425,6 +432,7 @@ def build_foreign_pipeline(
         debugger_image=debugger_image,
         gdb_mount_source=gdb_mount_source,
         recorder=recorder,
+        exploit_share=None,
     )
 
     return Pipeline(
@@ -502,6 +510,7 @@ def cmd_use(
         extra_boot_args=rr.extra_boot_args,
         recorder=recorder,
     )
+    exploit_share = (workspace / rr.effective_debuggee.share_dir) if rr.effective_debuggee.share else None
     pipeline = build_use_pipeline(
         container,
         session,
@@ -517,6 +526,7 @@ def cmd_use(
         recorder=recorder,
         break_on_crash=use_settings.debugger.break_on_crash,
         crash_breakpoints=use_settings.debugger.crash_breakpoints,
+        exploit_share=exploit_share,
     )
     pipeline.run(ctx)
     return 0
@@ -1079,6 +1089,7 @@ def main(argv: list[str] | None = None) -> int:
             extra_boot_args=run_res.extra_boot_args,
             recorder=recorder,
         )
+        exploit_share = (workspace / run_res.effective_debuggee.share_dir) if run_res.effective_debuggee.share else None
         pipeline = build_pipeline(
             container,
             session,
@@ -1096,6 +1107,7 @@ def main(argv: list[str] | None = None) -> int:
             recorder=recorder,
             break_on_crash=cfg.settings.debugger.break_on_crash,
             crash_breakpoints=cfg.settings.debugger.crash_breakpoints,
+            exploit_share=exploit_share,
         )
         pipeline.run(ctx)
         return 0
