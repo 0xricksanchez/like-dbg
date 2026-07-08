@@ -43,6 +43,7 @@ def _mkrun(tmp_path):
     (tmp_path / "exploit" / "modules").mkdir(parents=True)
     ko = tmp_path / "exploit" / "modules" / "lk01.ko"
     ko.write_bytes(b"K")
+    (runs.parent / "latest").symlink_to(runs)
     return tmp_path, ko
 
 
@@ -97,3 +98,24 @@ def test_cmd_insmod_stages_and_loads_prebuilt_ko(tmp_path, monkeypatch):
 def test_cmd_insmod_no_run_raises(tmp_path):
     with pytest.raises(LikeDbgError):
         cli.cmd_insmod(tmp_path, run_id="latest", path="", args="", force_unload=False)
+
+
+def test_cmd_insmod_appends_load_event_from_sysfs(tmp_path, monkeypatch):
+    tp, ko = _mkrun(tmp_path)
+    _patch_docker(monkeypatch)
+    monkeypatch.setattr(cli.guest, "wait_ready", lambda ep, **kw: True)
+    monkeypatch.setattr(cli.modules, "module_name", lambda *a, **k: "lk01")
+    monkeypatch.setattr(cli.modules, "load", lambda *a, **k: types.SimpleNamespace(rc=0))
+    monkeypatch.setattr(cli, "stage_module", lambda *a, **k: ko)
+    # fake guest /sys read: .text + .data
+    monkeypatch.setattr(
+        cli.guest,
+        "run",
+        lambda ep, cmd, **k: types.SimpleNamespace(
+            rc=0, stdout=".text 0xffffffffc0001000\n.data 0xffffffffc0003000\n", stderr=""
+        ),
+    )
+    assert cli.cmd_insmod(tp, run_id="latest", path=str(ko.relative_to(tp)), args="", force_unload=False) == 0
+    mg = (tp / "exploit" / "modules.gdb").read_text()
+    assert mg.startswith("load lk01 /exploit/modules/") and "0xffffffffc0001000" in mg
+    assert ".data 0xffffffffc0003000" in mg

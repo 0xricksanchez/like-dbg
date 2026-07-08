@@ -849,10 +849,27 @@ def cmd_insmod(workspace: Path, *, run_id: str, path: str, args: str, force_unlo
             reload=True,
             force_unload=force_unload,
         )
-        print(
-            f"[likedbg] loaded {name} (rc={res.rc}) — {g['share_mount']}/modules/{ko.name} "
-            f"(add-symbol-file this .ko in gdb)"
-        )
+        # A2: read runtime section addresses from the guest and log a lifecycle `load` event.
+        secs_raw = guest.run(
+            ep,
+            f"for s in /sys/module/{name}/sections/.*; do echo $(basename $s) $(cat $s); done",
+        ).stdout
+        secs = []
+        for ln in secs_raw.replace("\r\n", "\n").split("\n"):
+            f = ln.split()
+            if len(f) == 2 and f[0].startswith("."):
+                secs.append((f[0], f[1]))
+        text = dict(secs).get(".text")
+        modules_gdb = share_dir / "modules.gdb"
+        if text:
+            others = " ".join(f"{s} {a}" for s, a in secs if s != ".text")
+            modules_gdb.parent.mkdir(parents=True, exist_ok=True)
+            with modules_gdb.open("a") as fh:
+                fh.write(f"load {name} /exploit/modules/{ko.name} {text} {others}\n".rstrip() + "\n")
+            note = "symbols will load at your next gdb stop (or `source /exploit/modules.gdb`)"
+        else:
+            note = f"no .text section read; add-symbol-file {g['share_mount']}/modules/{ko.name} manually"
+        print(f"[likedbg] loaded {name} (rc={res.rc}) — {g['share_mount']}/modules/{ko.name}; {note}")
     return 0
 
 
