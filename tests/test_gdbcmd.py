@@ -178,6 +178,25 @@ def test_module_symbols_payload_reconciles_load_reload_unload(tmp_path):
     assert removes and not adds and "foo" not in applied
 
 
+def test_module_symbols_payload_reconciles_same_base_different_sections(tmp_path):
+    """Regression: a reload at the SAME (ko, text) base but DIFFERENT sections (e.g. rebuild puts
+    .data/.bss at new addresses while .text stays put — plausible under no-KASLR) must NOT be a
+    silent no-op. The old entry must be removed and the new one (with the new sections) added."""
+    from likedbg.gdbcmd import _reconcile_modules
+
+    log = tmp_path / "modules.gdb"
+    log.write_text("load foo /exploit/modules/foo.ko 0x1000\n")
+    applied = {}
+    adds, removes = _reconcile_modules(log.read_text(), applied)
+    assert adds == [("foo", "/exploit/modules/foo.ko", "0x1000", [])] and removes == []
+
+    # same (ko, text) base, but a new .data section appears — must not be a no-op
+    log.write_text(log.read_text() + "load foo /exploit/modules/foo.ko 0x1000 .data 0x5000\n")
+    adds, removes = _reconcile_modules(log.read_text(), applied)
+    assert removes == [("foo", "/exploit/modules/foo.ko")]
+    assert adds == [("foo", "/exploit/modules/foo.ko", "0x1000", [(".data", "0x5000")])]
+
+
 def test_module_symbols_payload_is_valid_python_and_uses_reconcile_source():
     """The payload is `python exec(<source>)` — gdb only discovers a syntax error at launch time,
     so validate it with compile() here. Also assert the in-gdb `_reconcile` body is the *same*
@@ -254,7 +273,7 @@ def test_module_symbols_payload_execs_and_reconciles_against_a_fake_gdb(tmp_path
     assert fake_gdb.events.stop.callbacks  # gdb.events.stop.connect(_sync) ran
     fake_gdb.events.stop.callbacks[0](None)  # simulate a stop event
     assert any(c == "add-symbol-file /exploit/modules/foo.ko 0x1000 -s .data 0x2000" for c in fake_gdb.calls)
-    assert namespace["_APPLIED"] == {"foo": ("/exploit/modules/foo.ko", "0x1000")}
+    assert namespace["_APPLIED"] == {"foo": ("/exploit/modules/foo.ko", "0x1000", ((".data", "0x2000"),))}
 
     # unload: next stop must remove-symbol-file and drop it from _APPLIED
     log.write_text(log.read_text() + "unload foo\n")

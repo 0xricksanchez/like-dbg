@@ -145,12 +145,16 @@ for _s in _SYMS:
 
 
 def _reconcile_modules(
-    log_text: str, applied: dict[str, tuple[str, str]]
+    log_text: str, applied: dict[str, tuple[str, str, tuple[tuple[str, str], ...]]]
 ) -> tuple[list[tuple[str, str, str, list[tuple[str, str]]]], list[tuple[str, str]]]:
-    """Compute (adds, removes) to bring `applied` (name->(ko,text)) in line with the lifecycle log.
+    """Compute (adds, removes) to bring `applied` (name->(ko,text,secs)) in line with the lifecycle log.
 
     Pure python so it is unit-testable outside gdb. Events: 'load <name> <ko> <text> [<sec> <addr>...]'
     and 'unload <name>'. Returns (adds, removes); mutates `applied` to the post-apply state.
+
+    The identity used for change-detection is the FULL (ko, text, secs) tuple, not just (ko, text):
+    a reload at the same base address with a changed section list (e.g. new .data/.bss addresses
+    after a rebuild, plausible under no-KASLR) must still trigger a remove+add, not a silent no-op.
 
     NOTE: this function's source is inlined verbatim into the gdb-python stop-hook payload built by
     `_module_symbols_source` (via `inspect.getsource`), so it and the in-gdb reconcile logic never
@@ -170,13 +174,13 @@ def _reconcile_modules(
     adds: list[tuple[str, str, str, list[tuple[str, str]]]] = []
     removes: list[tuple[str, str]] = []
     for name, (ko, text, secs) in desired.items():
-        if applied.get(name) != (ko, text):
+        if applied.get(name) != (ko, text, tuple(secs)):
             if name in applied:
                 removes.append((name, applied[name][0]))
             adds.append((name, ko, text, secs))
     removes.extend((name, applied[name][0]) for name in applied if name not in desired)
     applied.clear()
-    applied.update({n: (ko, text) for n, (ko, text, _s) in desired.items()})
+    applied.update({n: (ko, text, tuple(secs)) for n, (ko, text, secs) in desired.items()})
     return adds, removes
 
 
@@ -196,25 +200,28 @@ __RECONCILE_DEF__
 
 def _sync(evt=None):
     try:
-        with open(_LOG) as fh:
-            text = fh.read()
-    except OSError:
-        return
-    adds, removes = _reconcile(text, _APPLIED)
-    for name, ko in removes:
         try:
-            gdb.execute("remove-symbol-file " + ko, to_string=True)
-        except Exception:
-            pass
-    for name, ko, text_addr, secs in adds:
-        cmd = "add-symbol-file " + ko + " " + text_addr
-        for sec, addr in secs:
-            cmd += " -s " + sec + " " + addr
-        try:
-            gdb.execute(cmd, to_string=True)
-            gdb.write("[likedbg] symbols: %s\\n" % name)
-        except Exception as exc:
-            gdb.write("[likedbg] add-symbol-file failed for %s: %s\\n" % (name, exc))
+            with open(_LOG) as fh:
+                text = fh.read()
+        except OSError:
+            return
+        adds, removes = _reconcile(text, _APPLIED)
+        for name, ko in removes:
+            try:
+                gdb.execute("remove-symbol-file " + ko, to_string=True)
+            except Exception:
+                pass
+        for name, ko, text_addr, secs in adds:
+            cmd = "add-symbol-file " + ko + " " + text_addr
+            for sec, addr in secs:
+                cmd += " -s " + sec + " " + addr
+            try:
+                gdb.execute(cmd, to_string=True)
+                gdb.write("[likedbg] symbols: %s\\n" % name)
+            except Exception as exc:
+                gdb.write("[likedbg] add-symbol-file failed for %s: %s\\n" % (name, exc))
+    except Exception as exc:
+        gdb.write("[likedbg] module-sync error: %s\\n" % exc)
 
 
 gdb.events.stop.connect(_sync)
