@@ -157,14 +157,40 @@ def resolve_foreign(
 _MUSL_GCC = {"x86_64": "x86_64-linux-musl-gcc", "arm64": "aarch64-linux-musl-gcc"}
 
 
-def _repack_command(in_path: str, src_path: str, arch: str, out_path: str) -> str:
+def _musl_compile(arch: str, src_q: str, out_q: str) -> str:
+    """The musl-static cross-compile command fragment (shared by repack + compile_exploit)."""
     if arch not in _MUSL_GCC:
-        raise ForeignError(f"unsupported foreign arch {arch!r}", remedy="use x86_64 or arm64")
+        raise ForeignError(f"unsupported arch {arch!r}", remedy="use x86_64 or arm64")
+    return f"{_MUSL_GCC[arch]} -static {src_q} -o {out_q}"
+
+
+def compile_exploit(container: Any, *, src: Path, arch: str, out: Path, image: str) -> Path:
+    """Cross-compile a single `.c` to a static musl binary for `arch` in the like_musl container.
+    Raises ForeignError on an unknown arch or if no output is produced."""
+    out.parent.mkdir(parents=True, exist_ok=True)
+    volumes, (src_path, out_path) = _dedup_mounts(
+        [("/src", src.parent, "ro", src.name), ("/out", out.parent, "rw", out.name)]
+    )
+    cmd = _musl_compile(arch, shlex.quote(src_path), shlex.quote(out_path))
+    c = container.run_detached(image, volumes=volumes, detach=True, tty=True)
+    try:
+        container.exec(c, cmd)
+    finally:
+        container.stop(c)
+    if not out.is_file() or out.stat().st_size == 0:
+        raise ForeignError(
+            f"exploit compile produced no output at {out}",
+            remedy="check the .c compiles static-musl (a single flag-less .c; else pass a prebuilt binary)",
+        )
+    return out
+
+
+def _repack_command(in_path: str, src_path: str, arch: str, out_path: str) -> str:
     in_q = shlex.quote(in_path)
     src_q = shlex.quote(src_path)
     out_q = shlex.quote(out_path)
     if src_path.endswith(".c"):
-        inject = f"{_MUSL_GCC[arch]} -static {src_q} -o /work/rootfs/exploit"
+        inject = _musl_compile(arch, src_q, "/work/rootfs/exploit")
     else:
         inject = f"cp {src_q} /work/rootfs/exploit && chmod +x /work/rootfs/exploit"
     unpack = f"if gzip -t {in_q} 2>/dev/null; then gzip -dc {in_q} | cpio -idm; else cpio -idm < {in_q}; fi"
