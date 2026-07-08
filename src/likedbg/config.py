@@ -83,7 +83,7 @@ class BuildCfg(_Base):
     rust: bool = False
     label_suffix: str = ""
     patch_dirs: tuple[str, ...] = ()
-    custom_modules: tuple[str, ...] = ()  # B1: validated schema slot only; built in B6.
+    custom_modules: tuple[str, ...] = ()  # validated schema slot; built at boot by ModuleBuildStage.
     extra_fragments: tuple[str, ...] = ()
 
     @field_validator("patch_dirs", "custom_modules", mode="before")

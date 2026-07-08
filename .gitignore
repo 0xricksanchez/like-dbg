@@ -32,6 +32,11 @@ artifacts/
 # SDD controller scratch (briefs, reports, review packages, ledger)
 .superpowers/
 
+# Internal design docs (glossary + ADRs + superpowers specs/plans/notes): kept local, not shipped
+CONTEXT.md
+docs/adr/
+docs/superpowers/
+
 exploit/*
 !exploit/README.md
 
