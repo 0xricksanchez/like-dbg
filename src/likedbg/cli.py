@@ -762,6 +762,20 @@ def _artifact_size(workspace: Path, manifest: Manifest, *, container: ContainerS
     return str(image.stat().st_size) if image is not None else "-"
 
 
+def _build_size(workspace: Path, manifest: Manifest, *, container: ContainerService | None = None) -> str:
+    """Get build size: prefer stamped size_bytes if > 0, else fall back to best-effort helpers."""
+    if manifest.size_bytes > 0:
+        return str(manifest.size_bytes)
+    return _artifact_size(workspace, manifest, container=container)
+
+
+def _source_size_stamped(workspace: Path, manifest: Manifest, *, container: ContainerService | None = None) -> str:
+    """Get source size: prefer stamped size_bytes if > 0, else fall back to best-effort helpers."""
+    if manifest.size_bytes > 0:
+        return str(manifest.size_bytes)
+    return _source_size(workspace, manifest, container=container)
+
+
 def summarize_cache(workspace: Path, *, container: ContainerService | None = None) -> list[str]:
     builds = cache.list_manifests(workspace, "build")
     rootfs = cache.list_manifests(workspace, "rootfs")
@@ -770,19 +784,22 @@ def summarize_cache(workspace: Path, *, container: ContainerService | None = Non
         return ["(cache empty)"]
     lines: list[str] = []
     if builds or rootfs:
-        lines.append("kind    label  version  arch  size  created")
+        lines.append("kind    label  version  arch  size  created  last_used")
         for m in [*builds, *rootfs]:
             mp = cache.manifest_path(workspace, m.kind, m.label)
             created = datetime.fromtimestamp(mp.stat().st_mtime, tz=UTC).date().isoformat()
+            size = _build_size(workspace, m, container=container)
+            # Only show last_used for builds (rootfs doesn't have it)
+            last_used_val = m.last_used if m.kind == "build" else "-"
             lines.append(
                 f"{m.kind}  {m.label}  {m.version or '-'}  {m.arch}  "
-                f"{_artifact_size(workspace, m, container=container)}  {created}"
+                f"{size}  {created}  {last_used_val}"
             )
     if sources:
         lines.append("shared sources:")
         for s in sources:
             refcount = cache.source_refcount(workspace, s.key)
-            size = _source_size(workspace, s, container=container)
+            size = _source_size_stamped(workspace, s, container=container)
             lines.append(f"{s.label}  {s.version or '-'}  refcount={refcount}  size={size}")
     return lines
 
