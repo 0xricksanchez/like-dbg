@@ -327,8 +327,7 @@ def remove_source(
             BASE_IMAGE, volumes={volume: {"bind": VOLUME_MOUNT, "mode": "rw"}}, detach=True, tty=True
         )
         try:
-            container.exec(c, f"chmod -R u+w {src_path}")
-            container.exec(c, f"rm -rf {src_path}")
+            container.exec(c, f"[ -d {src_path} ] && chmod -R u+w {src_path}; rm -rf {src_path}")
         finally:
             container.stop(c)
     else:  # bind: the tree is on the host, but read-only, so make it writable before rmtree
