@@ -151,17 +151,23 @@ for _s in _FATAL:
 # so arm them only once the guest reaches userspace, via a one-shot gate on run_init_process (else
 # kernel_init). If neither resolves (stripped kernel), they stay unarmed and KASAN is captured from
 # the console instead. The gate never halts and removes itself after arming.
-class _LikedbgGate(gdb.Breakpoint):
-    def stop(self):
-        for _s in _SANITIZER:
-            try:
-                _LikedbgCrash(_s)
-            except Exception:
-                pass
+def _arm_sanitizers(gate):
+    for _s in _SANITIZER:
         try:
-            self.delete()
+            _LikedbgCrash(_s)
         except Exception:
             pass
+    try:
+        gate.delete()
+    except Exception:
+        pass
+
+
+class _LikedbgGate(gdb.Breakpoint):
+    def stop(self):
+        # Defer arming + self-delete to outside stop(): creating or deleting breakpoints from
+        # within a stop() handler crashes gdb (it is mid-breakpoint-processing).
+        gdb.post_event(lambda: _arm_sanitizers(self))
         return False
 
 

@@ -307,6 +307,7 @@ class _FakeGdbBP:
     def __init__(self):
         self.calls = []
         self.writes = []
+        self.posted = []
 
     def execute(self, cmd, to_string=False):
         self.calls.append(cmd)
@@ -314,6 +315,9 @@ class _FakeGdbBP:
 
     def write(self, msg):
         self.writes.append(msg)
+
+    def post_event(self, fn):
+        self.posted.append(fn)
 
 
 def test_crash_capture_gates_sanitizer_breakpoints_until_userspace(monkeypatch):
@@ -343,8 +347,12 @@ def test_crash_capture_gates_sanitizer_breakpoints_until_userspace(monkeypatch):
     gate = next(b for b in _FakeBP.created if b.spec == "run_init_process")
     halted = gate.stop()
     assert halted is False
-    assert gate.deleted is True
+    # Deferred: the sanitizer breakpoint is NOT armed synchronously; a post_event was queued.
+    assert "kasan_report" not in [b.spec for b in _FakeBP.created]
+    assert fake.posted, "gate should defer arming via gdb.post_event"
+    fake.posted[0]()  # simulate gdb running the posted event
     assert "kasan_report" in [b.spec for b in _FakeBP.created]
+    assert gate.deleted is True
 
 
 def test_crash_capture_falls_back_to_kernel_init_when_run_init_process_absent(monkeypatch):
