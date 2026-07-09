@@ -334,7 +334,13 @@ def build_pipeline(
     return Pipeline(
         [
             DownloadStage(_fetch, dl_dir=dl_dir),
-            UnpackStage(container, kernel_volume=kernel_volume, workspace=workspace),
+            UnpackStage(
+                container,
+                recipe=build_recipe,
+                kernel_volume=kernel_volume,
+                workspace=workspace,
+                patch_dirs=patch_dirs,
+            ),
             BuildStage(
                 container,
                 recipe=build_recipe,
