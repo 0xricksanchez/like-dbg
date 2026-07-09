@@ -1,10 +1,13 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from likedbg.cache import Manifest
 from likedbg.cache import write_manifest
 from likedbg.config import Settings
+from likedbg.constants import VOLUME_MOUNT
+from likedbg.container_service import ContainerService
 from likedbg.debug_profiles import Expect
 from likedbg.debug_profiles import ResolvedDebugProfiles
 from likedbg.debug_profiles import RunResolution
@@ -14,6 +17,48 @@ from likedbg.host_profile import Probes
 from likedbg.pipeline import PipelineContext
 from likedbg.stages.profile_verification import ProfileVerificationStage
 from likedbg.stages.profile_verification import read_built_config
+
+
+class _FakeContainer(ContainerService):
+    """Records exec commands; used to pin the legacy .config-read fallback path."""
+
+    def __init__(self) -> None:
+        self.execs: list[str] = []
+
+    def run_detached(self, image, **kwargs):
+        return SimpleNamespace(id="c1")
+
+    def exec(self, container, cmd, *, workdir=None):
+        self.execs.append(cmd)
+        if cmd.startswith("cat "):
+            return SimpleNamespace(exit_code=0, output="CONFIG_FOO=y\n")
+        return SimpleNamespace(exit_code=0, output="")
+
+    def stop(self, container):
+        pass
+
+
+def test_legacy_fallback_reads_config_from_objdir(tmp_path: Path) -> None:
+    """Legacy manifests (no config_host) fall back to a container read of
+    <kernel_root>/.config; kernel_root is now the objdir (obj/<label>), not the old
+    flat <label>/ tree (cache.locations(), Task 4)."""
+    label = "linux-6.6.30-a1b2c3d4"
+    objdir = f"{VOLUME_MOUNT}/obj/{label}"
+    m = Manifest(
+        kind="build",
+        label=label,
+        key="k",
+        version="6.6.30",
+        arch="x86_64",
+        storage_mode="volume",
+        kernel_release="6.6.30",
+        paths={"kernel_root": objdir},
+    )
+    c = _FakeContainer()
+    text, release = read_built_config(m, container=c, workspace=tmp_path)
+    assert any(cmd == f"cat {objdir}/.config" for cmd in c.execs)
+    assert "CONFIG_FOO=y" in text
+    assert release == "6.6.30"
 
 
 def test_reads_host_config_without_container(tmp_path: Path) -> None:

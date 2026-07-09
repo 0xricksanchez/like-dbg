@@ -26,6 +26,9 @@ class PipelineContext:
     host: HostProfile
     kernel_archive: Path | None = None
     kernel_root: Path | None = None
+    source_root: Path | None = None
+    srckey: str | None = None
+    objdir: Path | None = None
     kernel_status: str | None = None
     rootfs_image: Path | None = None
     vmlinux: Path | None = None

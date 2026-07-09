@@ -63,7 +63,7 @@ def _patch_docker(monkeypatch):
     monkeypatch.setattr(
         cli.cache,
         "locations",
-        lambda *a, **k: types.SimpleNamespace(kernel_root="/ksrc/x", gdb_mount_source="likedbg_ksrc"),
+        lambda *a, **k: types.SimpleNamespace(objdir="/ksrc/x", gdb_mount_source="likedbg_ksrc"),
     )
     monkeypatch.setattr(
         cli,

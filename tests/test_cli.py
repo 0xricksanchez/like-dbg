@@ -11,7 +11,6 @@ from likedbg.cache import Manifest
 from likedbg.cache import build_recipe
 from likedbg.cache import rootfs_recipe
 from likedbg.cache import write_manifest
-from likedbg.cli import _require_volume_for_adopt
 from likedbg.cli import build_foreign_pipeline
 from likedbg.cli import build_pipeline
 from likedbg.cli import build_use_pipeline
@@ -22,7 +21,6 @@ from likedbg.config import Settings
 from likedbg.container_service import ContainerService
 from likedbg.errors import CacheError
 from likedbg.errors import ConfigError
-from likedbg.errors import HostCapabilityError
 from likedbg.errors import SessionError
 from likedbg.foreign import ForeignKernel
 from likedbg.host_profile import HostProfile
@@ -273,15 +271,6 @@ def test_debuggee_stage_has_workspace(tmp_path):
     assert dbge._workspace == tmp_path  # type: ignore[attr-defined]
 
 
-def test_adopt_guard_rejects_bind():
-    with pytest.raises(HostCapabilityError):
-        _require_volume_for_adopt(_host("bind"))
-
-
-def test_adopt_guard_accepts_volume():
-    _require_volume_for_adopt(_host("volume"))  # no raise
-
-
 def test_summarize_cache_empty(tmp_path):
     assert summarize_cache(tmp_path) == ["(cache empty)"]
 
@@ -393,6 +382,32 @@ def test_summarize_cache_falls_back_when_volume_du_fails(tmp_path):
     assert "1024" in "\n".join(summarize_cache(tmp_path, container=_DuContainer(fail=True)))
 
 
+def test_summarize_cache_shows_shared_source_refcount(tmp_path):
+    srckey = "shared-src-key"
+    src_label = "linux-6.6.30-gef-deadbeef"
+    write_manifest(
+        tmp_path,
+        Manifest(kind="source", label=src_label, key=srckey, version="6.6.30", arch=""),
+    )
+    for label in ("linux-6.6.30-aaaa", "linux-6.6.30-bbbb"):
+        write_manifest(
+            tmp_path,
+            Manifest(
+                kind="build",
+                label=label,
+                key=label,
+                version="6.6.30",
+                arch="arm64",
+                srckey=srckey,
+                storage_mode="volume",
+            ),
+        )
+    joined = "\n".join(summarize_cache(tmp_path))
+    assert "shared sources:" in joined
+    assert src_label in joined
+    assert "refcount=2" in joined
+
+
 def test_cmd_clean_unknown_label_raises(tmp_path):
     with pytest.raises(CacheError) as exc:
         cmd_clean(_FakeContainer(), tmp_path, label="nope", clean_all=False)
@@ -422,6 +437,78 @@ def test_cmd_clean_all_removes_every_manifest(tmp_path):
     assert rc == 0
     assert cache.list_manifests(tmp_path, "build") == []
     assert cache.list_manifests(tmp_path, "rootfs") == []
+
+
+def _write_shared_source_and_builds(tmp_path, *, srckey: str, src_label: str, labels: tuple[str, ...]):
+    write_manifest(
+        tmp_path,
+        Manifest(kind="source", label=src_label, key=srckey, version="6.6.30", arch=""),
+    )
+    for label in labels:
+        write_manifest(
+            tmp_path,
+            Manifest(
+                kind="build",
+                label=label,
+                key=label,
+                version="6.6.30",
+                arch="arm64",
+                srckey=srckey,
+                storage_mode="volume",
+            ),
+        )
+
+
+def test_cmd_clean_keeps_shared_source_until_last_referencing_build_removed(tmp_path, monkeypatch):
+    srckey = "shared-src-key"
+    src_label = "linux-6.6.30-gef-deadbeef"
+    _write_shared_source_and_builds(
+        tmp_path, srckey=srckey, src_label=src_label, labels=("linux-6.6.30-aaaa", "linux-6.6.30-bbbb")
+    )
+    removed_sources: list[str] = []
+    orig_remove_source = cache.remove_source
+
+    def recording_remove_source(container, workspace, label, *, storage_mode, volume=cache.KERNEL_VOLUME):
+        removed_sources.append(label)
+        orig_remove_source(container, workspace, label, storage_mode=storage_mode, volume=volume)
+
+    monkeypatch.setattr(cache, "remove_source", recording_remove_source)
+
+    # Removing build A: source is still referenced by build B (refcount 1) -> remove_source NOT called.
+    rc = cmd_clean(_FakeContainer(), tmp_path, label="linux-6.6.30-aaaa", clean_all=False)
+    assert rc == 0
+    assert removed_sources == []
+    assert cache.manifest_exists(tmp_path, "build", "linux-6.6.30-aaaa") is False
+    assert cache.manifest_exists(tmp_path, "source", src_label) is True
+
+    # Removing build B: source is now orphaned (refcount 0) -> remove_source IS called.
+    rc = cmd_clean(_FakeContainer(), tmp_path, label="linux-6.6.30-bbbb", clean_all=False)
+    assert rc == 0
+    assert removed_sources == [src_label]
+    assert cache.manifest_exists(tmp_path, "build", "linux-6.6.30-bbbb") is False
+    assert cache.manifest_exists(tmp_path, "source", src_label) is False
+
+
+def test_cmd_clean_all_removes_shared_source_too(tmp_path, monkeypatch):
+    srckey = "shared-src-key"
+    src_label = "linux-6.6.30-gef-deadbeef"
+    _write_shared_source_and_builds(
+        tmp_path, srckey=srckey, src_label=src_label, labels=("linux-6.6.30-aaaa", "linux-6.6.30-bbbb")
+    )
+    removed_sources: list[str] = []
+    orig_remove_source = cache.remove_source
+
+    def recording_remove_source(container, workspace, label, *, storage_mode, volume=cache.KERNEL_VOLUME):
+        removed_sources.append(label)
+        orig_remove_source(container, workspace, label, storage_mode=storage_mode, volume=volume)
+
+    monkeypatch.setattr(cache, "remove_source", recording_remove_source)
+
+    rc = cmd_clean(_FakeContainer(), tmp_path, label=None, clean_all=True)
+    assert rc == 0
+    assert removed_sources == [src_label]
+    assert cache.list_manifests(tmp_path, "build") == []
+    assert cache.list_manifests(tmp_path, "source") == []
 
 
 def test_build_use_pipeline_includes_rootfs_before_launch(tmp_path):
@@ -1022,8 +1109,10 @@ def test_explain_config_json_schema_version(tmp_path: Path, monkeypatch) -> None
 # ---------------------------------------------------------------------------
 
 
-def test_build_pipeline_threads_patch_dirs_to_build_stage(tmp_path):
-    """BuildStage inside the built pipeline must receive the patch_dirs passed to build_pipeline."""
+def test_build_pipeline_threads_patch_dirs_to_unpack_stage(tmp_path):
+    """UnpackStage inside the built pipeline must receive the patch_dirs passed to build_pipeline
+    (patches apply once against the shared source in Unpack, not per-build; BuildStage has no
+    patch_dirs param at all, Task 8)."""
     settings = Settings.model_validate({"general": {"arch": "arm64"}})
     br = build_recipe(settings, version="6.6.30", arch="arm64", workspace=tmp_path, fragments=[])
     rr = rootfs_recipe(settings)
@@ -1044,8 +1133,10 @@ def test_build_pipeline_threads_patch_dirs_to_build_stage(tmp_path):
         patch_dirs=patch_dirs,
         recorder=None,
     )
-    build_stage = next(s for s in pipe._stages if s.name == "build")  # type: ignore[attr-defined]
-    assert build_stage._patch_dirs == patch_dirs  # type: ignore[attr-defined]
+    unpack_stage = next(s for s in pipe._stages if s.name == "unpack")  # type: ignore[attr-defined]
+    assert unpack_stage._patch_dirs == patch_dirs  # type: ignore[attr-defined]
+    build_stage = next(s for s in pipe._stages if s.name == "build")
+    assert not hasattr(build_stage, "_patch_dirs")  # dead param removed from BuildStage
 
 
 def test_build_pipeline_passes_crash_config(tmp_path):
@@ -1126,7 +1217,7 @@ def test_build_pipeline_no_modules_gdb_without_exploit_share(tmp_path):
 
 
 def test_build_pipeline_defaults_patch_dirs_to_empty(tmp_path):
-    """build_pipeline without patch_dirs defaults to ()."""
+    """build_pipeline without patch_dirs defaults to () on UnpackStage (the sole consumer)."""
     settings = Settings.model_validate({"general": {"arch": "arm64"}})
     br = build_recipe(settings, version="6.6.30", arch="arm64", workspace=tmp_path, fragments=[])
     rr = rootfs_recipe(settings)
@@ -1145,8 +1236,8 @@ def test_build_pipeline_defaults_patch_dirs_to_empty(tmp_path):
         rootfs_recipe=rr,
         recorder=None,
     )
-    build_stage = next(s for s in pipe._stages if s.name == "build")  # type: ignore[attr-defined]
-    assert build_stage._patch_dirs == ()  # type: ignore[attr-defined]
+    unpack_stage = next(s for s in pipe._stages if s.name == "unpack")  # type: ignore[attr-defined]
+    assert unpack_stage._patch_dirs == ()  # type: ignore[attr-defined]
 
 
 # ---------------------------------------------------------------------------

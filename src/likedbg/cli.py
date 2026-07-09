@@ -23,8 +23,6 @@ from likedbg import guest
 from likedbg import images
 from likedbg import logsetup
 from likedbg import modules
-from likedbg.adopt import adopt_legacy_build
-from likedbg.adopt import adopt_legacy_rootfs
 from likedbg.cache import BuildRecipe
 from likedbg.cache import Manifest
 from likedbg.cache import RootfsRecipe
@@ -47,7 +45,6 @@ from likedbg.debug_profiles import RunResolution
 from likedbg.debug_profiles import parse_profile_names
 from likedbg.debug_profiles import resolve_run
 from likedbg.errors import CacheError
-from likedbg.errors import HostCapabilityError
 from likedbg.errors import LikeDbgError
 from likedbg.errors import ModuleError
 from likedbg.errors import SessionError
@@ -311,6 +308,8 @@ def build_pipeline(
     debuginfod_enabled: bool = False,
     debuginfod_urls: str = "",
     debuginfod_cache: Path | None = None,
+    ccache: bool = False,
+    ccache_max_size: str = "5G",
 ) -> Pipeline:
     gdb_mount_source = cache.locations(
         build_recipe.label,
@@ -334,7 +333,14 @@ def build_pipeline(
     return Pipeline(
         [
             DownloadStage(_fetch, dl_dir=dl_dir),
-            UnpackStage(container, kernel_volume=kernel_volume, workspace=workspace),
+            UnpackStage(
+                container,
+                recipe=build_recipe,
+                kernel_volume=kernel_volume,
+                workspace=workspace,
+                patch_dirs=patch_dirs,
+                chown_to=chown_to,
+            ),
             BuildStage(
                 container,
                 recipe=build_recipe,
@@ -342,7 +348,8 @@ def build_pipeline(
                 workspace=workspace,
                 kernel_volume=kernel_volume,
                 chown_to=chown_to,
-                patch_dirs=patch_dirs,
+                ccache=ccache,
+                ccache_max_size=ccache_max_size,
             ),
             ProfileVerificationStage(container, workspace=workspace, kernel_volume=kernel_volume),
             RootfsStage(
@@ -676,23 +683,14 @@ def cmd_foreign(
     return 0
 
 
-def _require_volume_for_adopt(host: HostProfile) -> None:
-    if host.storage_mode != "volume":
-        raise HostCapabilityError(
-            "--adopt migrates the legacy in-volume tree and is volume-mode only",
-            remedy="bind/Linux builds fresh, just run start_kgdb",
-        )
-
-
 def _ensure_images(container: ContainerService, workspace: Path, *, specs: tuple[images.ImageSpec, ...]) -> None:
     for tag in images.ensure_current(container, workspace, specs):
         logger.warning(f"image {tag} looks stale (build inputs changed); run `start_kgdb --build-images` to refresh")
 
 
-def _volume_build_size(container: ContainerService, manifest: Manifest, *, volume: str = KERNEL_VOLUME) -> str | None:
-    kernel_root = manifest.paths.get("kernel_root")
-    if manifest.storage_mode != "volume" or not kernel_root:
-        return None
+def _volume_du(container: ContainerService, path: str, *, volume: str = KERNEL_VOLUME) -> str | None:
+    """Best-effort `du -sb <path>` inside a throwaway container mounting `volume` ro at VOLUME_MOUNT.
+    Returns None (never raises) if Docker/du is unavailable, so `--list` stays best-effort."""
     try:
         c = container.run_detached(
             BASE_IMAGE,
@@ -701,13 +699,50 @@ def _volume_build_size(container: ContainerService, manifest: Manifest, *, volum
             tty=True,
         )
         try:
-            out = container.exec(c, f"du -sb {shlex.quote(kernel_root)}").output.strip()
+            out = container.exec(c, f"du -sb {shlex.quote(path)}").output.strip()
         finally:
             container.stop(c)
         size = int(out.split()[0])
     except Exception:  # noqa: BLE001 - `--list` should remain best-effort if Docker/du is unavailable.
         return None
     return str(size)
+
+
+def _volume_build_size(container: ContainerService, manifest: Manifest, *, volume: str = KERNEL_VOLUME) -> str | None:
+    kernel_root = manifest.paths.get("kernel_root")
+    if manifest.storage_mode != "volume" or not kernel_root:
+        return None
+    return _volume_du(container, kernel_root, volume=volume)
+
+
+def _dir_size(path: Path) -> int | None:
+    """Best-effort recursive size of a host directory tree; None if it doesn't exist or errors out."""
+    if not path.is_dir():
+        return None
+    total = 0
+    try:
+        for root, _dirs, files in os.walk(path):
+            for name in files:
+                try:
+                    total += (Path(root) / name).stat().st_size
+                except OSError:
+                    continue
+    except OSError:
+        return None
+    return total
+
+
+def _source_size(workspace: Path, manifest: Manifest, *, container: ContainerService | None = None) -> str:
+    """Best-effort size of a shared source tree: du inside the volume (mirrors the builds
+    section), falling back to a recursive host dir size for bind mode. Source manifests don't
+    carry `storage_mode`/`paths` (they're shared across builds), so the path is derived from
+    the label the same way remove_source/UnpackStage do."""
+    if container is not None:
+        volume_size = _volume_du(container, f"{VOLUME_MOUNT}/src/{manifest.label}")
+        if volume_size is not None:
+            return volume_size
+    total = _dir_size(workspace / "artifacts" / cache.TREE_ROOT / "src" / manifest.label)
+    return str(total) if total is not None else "-"
 
 
 def _artifact_size(workspace: Path, manifest: Manifest, *, container: ContainerService | None = None) -> str:
@@ -726,16 +761,25 @@ def _artifact_size(workspace: Path, manifest: Manifest, *, container: ContainerS
 def summarize_cache(workspace: Path, *, container: ContainerService | None = None) -> list[str]:
     builds = cache.list_manifests(workspace, "build")
     rootfs = cache.list_manifests(workspace, "rootfs")
-    if not builds and not rootfs:
+    sources = cache.list_manifests(workspace, "source")
+    if not builds and not rootfs and not sources:
         return ["(cache empty)"]
-    lines = ["kind    label  version  arch  size  created"]
-    for m in [*builds, *rootfs]:
-        mp = cache.manifest_path(workspace, m.kind, m.label)
-        created = datetime.fromtimestamp(mp.stat().st_mtime, tz=UTC).date().isoformat()
-        lines.append(
-            f"{m.kind}  {m.label}  {m.version or '-'}  {m.arch}  "
-            f"{_artifact_size(workspace, m, container=container)}  {created}"
-        )
+    lines: list[str] = []
+    if builds or rootfs:
+        lines.append("kind    label  version  arch  size  created")
+        for m in [*builds, *rootfs]:
+            mp = cache.manifest_path(workspace, m.kind, m.label)
+            created = datetime.fromtimestamp(mp.stat().st_mtime, tz=UTC).date().isoformat()
+            lines.append(
+                f"{m.kind}  {m.label}  {m.version or '-'}  {m.arch}  "
+                f"{_artifact_size(workspace, m, container=container)}  {created}"
+            )
+    if sources:
+        lines.append("shared sources:")
+        for s in sources:
+            refcount = cache.source_refcount(workspace, s.key)
+            size = _source_size(workspace, s, container=container)
+            lines.append(f"{s.label}  {s.version or '-'}  refcount={refcount}  size={size}")
     return lines
 
 
@@ -743,6 +787,18 @@ def cmd_list(workspace: Path, *, container: ContainerService | None = None) -> i
     for line in summarize_cache(workspace, container=container):
         logger.info(line)
     return 0
+
+
+def _remove_orphaned_source(container: ContainerService, workspace: Path, build: Manifest) -> None:
+    """After removing a build manifest, drop its source tree too if no other build still
+    references it (refcount 0). Sources are auto-managed: never user-targetable by label."""
+    if cache.source_refcount(workspace, build.srckey) != 0:
+        return
+    source = next((s for s in cache.list_manifests(workspace, "source") if s.key == build.srckey), None)
+    if source is None:
+        return
+    cache.remove_source(container, workspace, source.label, storage_mode=build.storage_mode, volume=KERNEL_VOLUME)
+    logger.info(f"removed source {source.label}")
 
 
 def cmd_clean(container: ContainerService, workspace: Path, *, label: str | None, clean_all: bool) -> int:
@@ -756,6 +812,18 @@ def cmd_clean(container: ContainerService, workspace: Path, *, label: str | None
     for m in targets:
         cache.remove_cached(container, workspace, m)
         logger.info(f"removed {m.kind} {m.label}")
+        if m.kind == "build":
+            _remove_orphaned_source(container, workspace, m)
+    if clean_all:
+        # Safety net: every build's source should already be gone via the refcount check above,
+        # but sweep the sources/ registry explicitly so no leftover (e.g. orphaned pre-existing)
+        # source survives a --clean-all. storage_mode isn't recorded on source manifests (shared
+        # across builds), so infer it from whether the bind-mode host tree actually exists.
+        for s in cache.list_manifests(workspace, "source"):
+            bind_tree = workspace / "artifacts" / cache.TREE_ROOT / "src" / s.label
+            src_storage_mode = "bind" if bind_tree.is_dir() else "volume"
+            cache.remove_source(container, workspace, s.label, storage_mode=src_storage_mode, volume=KERNEL_VOLUME)
+            logger.info(f"removed source {s.label}")
     return 0
 
 
@@ -917,7 +985,7 @@ def cmd_insmod(workspace: Path, *, run_id: str, path: str, args: str, force_unlo
             container,
             entry=e,
             out_dir=out_dir,
-            kernel_root=loc.kernel_root,
+            kernel_root=loc.objdir,
             mount_source=loc.gdb_mount_source,
             env=env,
             image=KBUILDER_IMAGE,
@@ -1042,8 +1110,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--profile", default="")
     parser.add_argument("--verbose", "-v", action="store_true")
     parser.add_argument("--force-rebuild", action="store_true")
-    parser.add_argument("--adopt", action="store_true")
-    parser.add_argument("--adopt-rootfs", nargs="?", const="", default=None, metavar="SOURCE")
     parser.add_argument("--list", action="store_true")
     parser.add_argument("--clean", default="")
     parser.add_argument("--clean-all", action="store_true")
@@ -1108,14 +1174,8 @@ def main(argv: list[str] | None = None) -> int:
             except Exception:  # noqa: BLE001 - fall back to host-visible sizes when Docker is unavailable.
                 list_container = None
             return cmd_list(workspace, container=list_container)
-        # Early paths that don't need the full TOML flow: --build-images, --clean*, --adopt-rootfs
+        # Early paths that don't need the full TOML flow: --build-images, --clean*
         cfg = load_config(workspace, scenario=_scenario_path(workspace, args.config))
-        rr_settings = make_rootfs_recipe(cfg.settings, workspace=workspace)
-        if args.adopt_rootfs is not None:
-            source = Path(args.adopt_rootfs) if args.adopt_rootfs else None
-            label = adopt_legacy_rootfs(workspace=workspace, recipe=rr_settings, source=source)
-            logger.info(f"adopted legacy rootfs as {label}")
-            return 0
         client = docker_env.make_client(docker_env.resolve_docker_host(env=os.environ))
         container = ContainerService(client)
         if args.build_images:
@@ -1171,11 +1231,6 @@ def main(argv: list[str] | None = None) -> int:
         rr_recipe = make_rootfs_recipe(cfg.settings, arch=host.target_arch, workspace=workspace)
         if args.force_rebuild:
             cache.manifest_path(workspace, "build", br.label).unlink(missing_ok=True)
-        if args.adopt:
-            _require_volume_for_adopt(host)
-            label = adopt_legacy_build(container, workspace=workspace, recipe=br)
-            logger.info(f"adopted legacy build as {label}")
-            return 0
         if not os.getenv("TMUX"):
             logger.error("Not running inside a TMUX session. Start tmux first.")
             return 2
@@ -1230,6 +1285,8 @@ def main(argv: list[str] | None = None) -> int:
             debuginfod_enabled=debuginfod_enabled,
             debuginfod_urls=cfg.settings.debugger.debuginfod_urls,
             debuginfod_cache=debuginfod_cache,
+            ccache=cfg.settings.build.ccache,
+            ccache_max_size=cfg.settings.build.ccache_max_size,
         )
         pipeline.run(ctx)
         return 0

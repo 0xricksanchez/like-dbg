@@ -148,8 +148,11 @@ uv run ./start_kgdb --use <build-label> --rootfs <rootfs-label>
 uv run ./start_kgdb --clean <label>            # remove one cached artifact
 uv run ./start_kgdb --clean-all                # clear the cache
 uv run ./start_kgdb --force-rebuild            # rebuild the current configuration
-uv run ./start_kgdb --adopt-rootfs [path]      # adopt a manually created rootfs into the cache
 ```
+
+Kernel source trees are shared across builds with the same (version, patches): `--list` shows
+each source with a refcount of the builds referencing it, and `--clean`/`--clean-all` auto-remove
+a source once its last referencing build is cleaned.
 
 ## Limitations
 

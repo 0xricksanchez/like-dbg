@@ -83,3 +83,16 @@ def test_write_manifest_leaves_no_tmp_residue(tmp_path):
     )
     builds = tmp_path / "artifacts" / "cache" / "builds"
     assert list(builds.glob("*.tmp")) == []
+
+
+def test_source_manifest_roundtrip(tmp_path):
+    m = Manifest(kind="source", label="linux-6.6.30-aaaaaaaa", key="k", version="6.6.30", arch="")
+    write_manifest(tmp_path, m)
+    assert manifest_exists(tmp_path, "source", "linux-6.6.30-aaaaaaaa")
+    assert load_manifest(tmp_path, "source", "linux-6.6.30-aaaaaaaa").kind == "source"
+
+
+def test_build_manifest_carries_srckey(tmp_path):
+    m = Manifest(kind="build", label="lbl", key="k", version="6.6.30", arch="arm64", srckey="src")
+    write_manifest(tmp_path, m)
+    assert load_manifest(tmp_path, "build", "lbl").srckey == "src"

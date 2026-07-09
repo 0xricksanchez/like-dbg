@@ -10,6 +10,9 @@ value = "6.6.30"
 compiler = "clang"
 toolchain = "auto"
 rust = false
+# ccache: compiler cache for cheap rebuilds (persisted in the likedbg_ccache volume, capped at ccache_max_size).
+ccache = true
+ccache_max_size = "5G"
 
 [rootfs]
 distribution = "bookworm"
