@@ -98,6 +98,17 @@ class BuildRecipe:
         tag = f"-{slug(self.kernel_tag)}" if self.kernel_tag else ""
         return f"linux-{slug(self.version)}{tag}-{short_hash(self.key)}"
 
+    @property
+    def src_key(self) -> str:
+        inputs = {"version": self.version, "kernel_tag": self.kernel_tag}
+        inputs.update({f"patch:{name}": h for name, h in self.patch_hashes})
+        return cache_key(inputs)
+
+    @property
+    def src_label(self) -> str:
+        tag = f"-{slug(self.kernel_tag)}" if self.kernel_tag else ""
+        return f"linux-{slug(self.version)}{tag}-{short_hash(self.src_key)}"
+
 
 @dataclass(frozen=True)
 class RootfsRecipe:

@@ -102,3 +102,24 @@ def test_fragment_hash_ignores_comment_only_edits(tmp_path):
     (tmp_path / rel).write_text("CONFIG_FOO=n\n")
     h3 = build_recipe(s, version="6.6.30", arch="x86_64", workspace=tmp_path, fragments=[rel]).frag_hashes
     assert h3 != h1
+
+
+def _recipe(*, arch="arm64", compiler="clang", frags=(), patches=()):
+    return BuildRecipe(
+        version="6.6.30", arch=arch, compiler=compiler, make_vars=(),
+        frag_hashes=tuple((f, "h") for f in frags), fragments=frags, patch_hashes=patches,
+    )
+
+
+def test_src_key_is_arch_compiler_fragment_independent():
+    a = _recipe(arch="arm64", compiler="clang", frags=("f1",))
+    b = _recipe(arch="x86_64", compiler="gcc", frags=("f2",))
+    assert a.src_key == b.src_key          # same version, no patches -> shared source
+    assert a.label != b.label               # but distinct builds
+    assert a.src_label == b.src_label
+
+
+def test_src_key_changes_with_patches():
+    a = _recipe(patches=(("p", "h1"),))
+    b = _recipe(patches=(("p", "h2"),))
+    assert a.src_key != b.src_key
