@@ -119,6 +119,8 @@ to cross-build and boot a foreign-architecture guest.
 | `patch_dirs` | empty | Workspace-relative directories of patch files applied before build. |
 | `custom_modules` | empty | Workspace-relative out-of-tree module sources or prebuilt `.ko` files, built at boot. See [modules/README.md](../modules/README.md). |
 | `extra_fragments` | empty | Extra kconfig fragments (must live under `configs/fragments/`). |
+| `ccache` | `true` | Cache compilation via ccache (persistent, capped) for fast rebuilds. |
+| `ccache_max_size` | `5G` | Max ccache size (ccache size syntax, e.g. `5G`, `500M`). |
 
 ### `[rootfs]`
 

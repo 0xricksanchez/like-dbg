@@ -86,6 +86,8 @@ class BuildCfg(_Base):
     patch_dirs: tuple[str, ...] = ()
     custom_modules: tuple[str, ...] = ()  # validated schema slot; built at boot by ModuleBuildStage.
     extra_fragments: tuple[str, ...] = ()
+    ccache: bool = True
+    ccache_max_size: str = "5G"
 
     @field_validator("patch_dirs", "custom_modules", mode="before")
     @classmethod

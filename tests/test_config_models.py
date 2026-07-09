@@ -178,3 +178,19 @@ def test_foreign_cfg_qemu_extra_is_tuple() -> None:
 def test_foreign_cfg_rejects_unknown_key() -> None:
     with pytest.raises(ValidationError):
         ForeignCfg(bogus=1)  # type: ignore[call-arg]
+
+
+# ---------------------------------------------------------------------------
+# ccache config (Task 1)
+# ---------------------------------------------------------------------------
+
+
+def test_ccache_config_defaults() -> None:
+    b = BuildCfg()
+    assert b.ccache is True
+    assert b.ccache_max_size == "5G"
+
+
+def test_ccache_overridable() -> None:
+    b = BuildCfg(ccache=False, ccache_max_size="10G")
+    assert b.ccache is False and b.ccache_max_size == "10G"
