@@ -95,6 +95,7 @@ class BuildStage:
             ctx.objdir = Path(objdir)
             ctx.kernel_root = Path(objdir)  # deprecated alias, kept for compat
             ctx.build_was_cached = True  # cache hit: no disk added, auto-sweep (CacheEvictionStage) skips
+            cache.touch_last_used(self._workspace, label)
             return ctx
         ctx.build_was_cached = False
         env = self._recipe.env()

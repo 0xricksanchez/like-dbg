@@ -285,6 +285,43 @@ def test_build_reuses_bind_manifest_uses_host_image(tmp_path):
     assert str(out.kernel_image) == image_host  # bind cached path uses image_host, not image_in_tree
 
 
+def test_build_cache_hit_refreshes_last_used(tmp_path):
+    """On cache hit, touch_last_used is called to refresh recency (LRU parity with --use boot)."""
+    label = "linux-6.6.30-a1b2c3d4"
+    old_timestamp = "2020-01-01T00:00:00+00:00"
+    write_manifest(
+        tmp_path,
+        Manifest(
+            kind="build",
+            label=label,
+            key="k",
+            version="6.6.30",
+            arch="arm64",
+            storage_mode="volume",
+            paths={
+                "vmlinux_in_tree": f"/ksrc/{label}/vmlinux",
+                "image_in_tree": f"/ksrc/{label}/arch/arm64/boot/Image",
+            },
+            last_used=old_timestamp,
+        ),
+    )
+    c = _BuildFakeC()
+    ctx = _ctx(tmp_path)
+    ctx.build_label = label
+    ctx.kernel_root = None
+    out = BuildStage(
+        c,
+        recipe=_recipe(),
+        kbuilder_image="like_kbuilder_arm64:latest",
+        workspace=tmp_path,
+        kernel_volume="likedbg_ksrc",
+    ).run(ctx)
+    assert out.build_was_cached is True
+    m = load_manifest(tmp_path, "build", label)
+    assert m.last_used != old_timestamp
+    assert m.last_used != ""
+
+
 def test_build_bind_mode_mounts_host_ksrc_and_chowns_objdir(tmp_path):
     c = _BuildFakeC()
     label = "linux-6.6.30-a1b2c3d4"
