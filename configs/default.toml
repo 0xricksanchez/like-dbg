@@ -36,7 +36,8 @@ share = true
 [debugger]
 ext = "pwndbg"
 break_on_crash = true
-crash_breakpoints = ["panic", "die", "oops_enter", "kasan_report", "ubsan_epilogue"]
+crash_breakpoints = ["panic", "die", "oops_enter"]
+sanitizer_breakpoints = ["kasan_report", "ubsan_epilogue"]
 
 [debugging]
 profiles = ["exploit-dev"]

@@ -153,7 +153,10 @@ class DebuggeeCfg(_Base):
 class DebuggerCfg(_Base):
     ext: Ext = "pwndbg"
     break_on_crash: bool = True
-    crash_breakpoints: tuple[str, ...] = ("panic", "die", "oops_enter", "kasan_report", "ubsan_epilogue")
+    # FATAL faults: armed immediately. SANITIZER reports: armed only after the guest reaches
+    # userspace (see gdbcmd._crash_capture_source), because KASAN/UBSAN fire benignly at boot.
+    crash_breakpoints: tuple[str, ...] = ("panic", "die", "oops_enter")
+    sanitizer_breakpoints: tuple[str, ...] = ("kasan_report", "ubsan_epilogue")
 
 
 class DebuggingCfg(_Base):
