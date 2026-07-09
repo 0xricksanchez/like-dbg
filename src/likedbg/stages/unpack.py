@@ -59,7 +59,7 @@ class UnpackStage:
         ctx.source_root = Path(loc.source_root)
         ctx.srckey = recipe.src_key
         ctx.objdir = Path(loc.objdir)
-        ctx.kernel_root = Path(loc.kernel_root)  # deprecated alias, kept for compat (Task 12 removes it)
+        ctx.kernel_root = Path(loc.objdir)  # deprecated ctx alias, kept for compat
 
         if cache.manifest_exists(self._workspace, "source", recipe.src_label):
             logger.info(f"unpack cache hit: {recipe.src_label}")

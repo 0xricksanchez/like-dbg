@@ -7,7 +7,6 @@ from likedbg.cache import tree_mount_source
 def test_volume_mode_footprint():
     label = "linux-6.6.30-gef-a1b2c3d4"
     loc = locations(label, arch="arm64", storage_mode="volume", workspace=Path("/ws"))
-    assert loc.kernel_root == f"/ksrc/obj/{label}"
     assert loc.objdir == f"/ksrc/obj/{label}"
     assert loc.image_in_tree == f"/ksrc/obj/{label}/arch/arm64/boot/Image"
     assert loc.image_host == f"/ws/artifacts/{label}/Image"
@@ -32,7 +31,6 @@ def test_bind_mode_footprint_is_symmetric_and_host_in_tree():
     label = "linux-6.6.30-gef-a1b2c3d4"
     loc = locations(label, arch="x86_64", storage_mode="bind", workspace=Path("/ws"))
     # container-side paths are identical to volume mode (mode-invariant)
-    assert loc.kernel_root == f"/ksrc/obj/{label}"
     assert loc.objdir == f"/ksrc/obj/{label}"
     assert loc.image_in_tree == f"/ksrc/obj/{label}/arch/x86_64/boot/bzImage"
     assert loc.gdb_vmlinux == f"/ksrc/obj/{label}/vmlinux"

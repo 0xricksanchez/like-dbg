@@ -240,7 +240,6 @@ def source_refcount(workspace: Path, srckey: str) -> int:
 
 @dataclass(frozen=True)
 class Locations:
-    kernel_root: str  # deprecated alias for objdir; removed once callers migrate (Task 12)
     vmlinux_in_tree: str
     image_in_tree: str
     image_host: str
@@ -272,7 +271,6 @@ def locations(
     image_in_tree = f"{objdir}/arch/{arch}/boot/{image_name}"
     if storage_mode == "volume":
         return Locations(
-            kernel_root=objdir,
             vmlinux_in_tree=f"{objdir}/vmlinux",
             image_in_tree=image_in_tree,
             image_host=str(workspace / "artifacts" / label / image_name.replace("bzImage", "Image")),
@@ -284,7 +282,6 @@ def locations(
         )
     host_objdir = workspace / "artifacts" / TREE_ROOT / "obj" / label  # the real on-host build dir (bind)
     return Locations(
-        kernel_root=objdir,  # VOLUME_MOUNT/obj/<label>  (symmetric with volume)
         vmlinux_in_tree=f"{objdir}/vmlinux",
         image_in_tree=image_in_tree,  # container path (symmetric)
         image_host=str(host_objdir / "arch" / arch / "boot" / image_name),  # real host in-tree file

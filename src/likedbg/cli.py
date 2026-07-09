@@ -985,7 +985,7 @@ def cmd_insmod(workspace: Path, *, run_id: str, path: str, args: str, force_unlo
             container,
             entry=e,
             out_dir=out_dir,
-            kernel_root=loc.kernel_root,
+            kernel_root=loc.objdir,
             mount_source=loc.gdb_mount_source,
             env=env,
             image=KBUILDER_IMAGE,

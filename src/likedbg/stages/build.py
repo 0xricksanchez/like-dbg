@@ -161,7 +161,7 @@ class BuildStage:
                 storage_mode=ctx.host.storage_mode,
                 inputs=self._recipe.cache_inputs(),
                 paths={
-                    "kernel_root": loc.kernel_root,
+                    "kernel_root": loc.objdir,
                     "objdir": objdir,
                     "source_root": source_root,
                     "vmlinux_in_tree": loc.vmlinux_in_tree,
