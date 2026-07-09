@@ -17,6 +17,15 @@ _EXT_SOURCE = {"gef": "/opt/gef/gef.py", "pwndbg": "/opt/pwndbg/gdbinit.py"}
 _GDB_ARCH = {"arm64": "aarch64", "x86_64": "i386:x86-64"}
 
 
+def resolve_debuginfod_enabled(mode: str, *, is_foreign: bool) -> bool:
+    """Resolve the debuginfod policy to a boolean. auto = on for foreign runs, off for self-built."""
+    if mode == "on":
+        return True
+    if mode == "off":
+        return False
+    return is_foreign  # "auto"
+
+
 def _remote_command(ext: str, addr: str, port: int) -> str:
     if ext == "gef":
         return f"gef-remote {addr} {port}"
