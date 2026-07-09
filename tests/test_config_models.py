@@ -2,6 +2,7 @@ import pytest
 from pydantic import ValidationError
 
 from likedbg.config import BuildCfg
+from likedbg.config import CacheCfg
 from likedbg.config import DebuggeeCfg
 from likedbg.config import DebuggerCfg
 from likedbg.config import DebuggingCfg
@@ -194,3 +195,29 @@ def test_ccache_config_defaults() -> None:
 def test_ccache_overridable() -> None:
     b = BuildCfg(ccache=False, ccache_max_size="10G")
     assert b.ccache is False and b.ccache_max_size == "10G"
+
+
+# ---------------------------------------------------------------------------
+# CacheCfg (Task 1)
+# ---------------------------------------------------------------------------
+
+
+def test_cache_cfg_defaults() -> None:
+    c = CacheCfg()
+    assert c.max_size == ""
+
+
+def test_cache_cfg_overridable() -> None:
+    c = CacheCfg(max_size="20G")
+    assert c.max_size == "20G"
+
+
+def test_cache_cfg_rejects_unknown_key() -> None:
+    with pytest.raises(ValidationError):
+        CacheCfg(bogus=1)  # type: ignore[call-arg]
+
+
+def test_settings_has_cache_config() -> None:
+    s = Settings()
+    assert s.cache.max_size == ""
+    assert isinstance(s.cache, CacheCfg)

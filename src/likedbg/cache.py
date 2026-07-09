@@ -34,6 +34,21 @@ _ROOTFS_SCRIPT = "io/scripts/rootfs.sh"
 
 TREE_ROOT = "ksrc"  # host mirror of the kernel-source mount: artifacts/<TREE_ROOT>/<label>
 
+_SIZE_UNITS = {"": 1, "K": 1024, "M": 1024**2, "G": 1024**3, "T": 1024**4}
+
+
+def parse_size(s: str) -> int:
+    """Parse a ccache-style size string ('50G', '500M', '') to bytes. '' -> 0 (no cap)."""
+    s = s.strip().upper()
+    if not s:
+        return 0
+    unit = s[-1] if s[-1] in "KMGT" else ""
+    num = s[:-1] if unit else s
+    try:
+        return int(float(num) * _SIZE_UNITS[unit])
+    except (ValueError, KeyError) as exc:
+        raise ValueError(f"invalid size {s!r}: use e.g. 50G, 500M") from exc
+
 
 def cache_key(inputs: dict[str, str]) -> str:
     blob = json.dumps(inputs, sort_keys=True, separators=(",", ":"))

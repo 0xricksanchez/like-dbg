@@ -174,6 +174,10 @@ class DebuggingCfg(_Base):
     profiles: tuple[str, ...] = ("exploit-dev",)
 
 
+class CacheCfg(_Base):
+    max_size: str = ""
+
+
 class Settings(_Base):
     general: GeneralCfg = GeneralCfg()
     source: SourceCfg = SourceCfg()
@@ -182,6 +186,7 @@ class Settings(_Base):
     debuggee: DebuggeeCfg = DebuggeeCfg()
     debugger: DebuggerCfg = DebuggerCfg()
     debugging: DebuggingCfg = DebuggingCfg()
+    cache: CacheCfg = CacheCfg()
     foreign: ForeignCfg = ForeignCfg()
 
 
@@ -204,6 +209,7 @@ _SECTION_MODELS: dict[str, type[_Base]] = {
     "debuggee": DebuggeeCfg,
     "debugger": DebuggerCfg,
     "debugging": DebuggingCfg,
+    "cache": CacheCfg,
     "foreign": ForeignCfg,
 }
 
