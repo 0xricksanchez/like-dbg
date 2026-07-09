@@ -14,6 +14,7 @@ from loguru import logger
 
 from likedbg import cache
 from likedbg.cache import BuildRecipe
+from likedbg.cache import parse_du_bytes
 from likedbg.constants import BASE_IMAGE
 from likedbg.constants import VOLUME_MOUNT
 from likedbg.container_service import ContainerService
@@ -112,6 +113,9 @@ class UnpackStage:
                 uid, gid = self._chown_to
                 self._c.exec(container, f"chown -R {uid}:{gid} {source_root}")
             self._c.exec(container, f"chmod -R a-w {source_root}")
+            # du only reads, so the read-only tree (chmod -R a-w above) is not an obstacle here.
+            du_out = self._c.exec(container, f"du -sb {source_root}", workdir=source_root).output
+            size_bytes = parse_du_bytes(du_out)
         finally:
             self._c.stop(container)
 
@@ -124,6 +128,7 @@ class UnpackStage:
                 version=recipe.version,
                 arch="",
                 inputs={f"patch:{name}": h for name, h in recipe.patch_hashes},
+                size_bytes=size_bytes,
             ),
         )
         return ctx

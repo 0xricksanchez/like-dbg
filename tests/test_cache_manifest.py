@@ -96,3 +96,40 @@ def test_build_manifest_carries_srckey(tmp_path):
     m = Manifest(kind="build", label="lbl", key="k", version="6.6.30", arch="arm64", srckey="src")
     write_manifest(tmp_path, m)
     assert load_manifest(tmp_path, "build", "lbl").srckey == "src"
+
+
+def test_manifest_last_used_defaults_empty():
+    assert _m().last_used == ""
+
+
+def test_manifest_last_used_roundtrips(tmp_path):
+    m = Manifest(
+        kind="build",
+        label="lbl-last-used",
+        key="k",
+        version="6.6.30",
+        arch="arm64",
+        last_used="2026-01-01T00:00:00+00:00",
+    )
+    write_manifest(tmp_path, m)
+    loaded = load_manifest(tmp_path, "build", "lbl-last-used")
+    assert loaded.last_used == "2026-01-01T00:00:00+00:00"
+
+
+def test_touch_last_used_refreshes_timestamp(tmp_path):
+    from likedbg.cache import touch_last_used
+
+    old_timestamp = "2020-01-01T00:00:00+00:00"
+    m = Manifest(
+        kind="build",
+        label="lbl-touch",
+        key="k",
+        version="6.6.30",
+        arch="arm64",
+        last_used=old_timestamp,
+    )
+    write_manifest(tmp_path, m)
+    touch_last_used(tmp_path, "lbl-touch")
+    loaded = load_manifest(tmp_path, "build", "lbl-touch")
+    assert loaded.last_used != old_timestamp
+    assert loaded.last_used != ""

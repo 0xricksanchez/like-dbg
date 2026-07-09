@@ -35,6 +35,7 @@ class PipelineContext:
     kernel_image: Path | None = None
     build_label: str | None = None
     rootfs_label: str | None = None
+    build_was_cached: bool = False
     # debug-profile fields (all optional, defaulted)
     run_resolution: RunResolution | None = None
     effective_debuggee: DebuggeeCfg | None = None

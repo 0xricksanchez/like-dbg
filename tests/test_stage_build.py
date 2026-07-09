@@ -48,6 +48,16 @@ def _loc(tmp_path: Path, recipe: BuildRecipe, label: str, storage: str = "volume
 # ---------------------------------------------------------------------------
 
 
+_DU_OUTPUT = "12345\t/ksrc/obj/fake\n"
+
+
+def _fake_exec_output(cmd: str) -> str:
+    """Shared canned response used by every fake container's exec(): answers `du -sb` (needed
+    since BuildStage now parses its output for size_bytes) and "" for everything else, so the
+    rest of the (unrelated) build flow is unaffected."""
+    return _DU_OUTPUT if cmd.startswith("du -sb") else ""
+
+
 class FakeC(ContainerService):
     def __init__(self):
         self.execs: list[tuple[str, str | None]] = []
@@ -59,7 +69,7 @@ class FakeC(ContainerService):
 
     def exec(self, container, cmd, *, workdir=None):
         self.execs.append((cmd, workdir))
-        return SimpleNamespace(exit_code=0, output="")
+        return SimpleNamespace(exit_code=0, output=_fake_exec_output(cmd))
 
     def stop(self, container):
         pass
@@ -116,7 +126,7 @@ class _BuildFakeC(ContainerService):
 
     def exec(self, container, cmd, *, workdir=None):
         self.execs.append(cmd)
-        return SimpleNamespace(exit_code=0, output="")
+        return SimpleNamespace(exit_code=0, output=_fake_exec_output(cmd))
 
     def stop(self, container):
         pass
@@ -239,6 +249,7 @@ def test_build_reuses_when_manifest_present(tmp_path):
     assert out.objdir == Path(f"/ksrc/obj/{label}")  # objdir set even on cache hit
     assert c.started is False
     assert any(f"build cache hit: {label}" in m for m in msgs)
+    assert out.build_was_cached is True  # CacheEvictionStage skips: a cache hit adds no disk
 
 
 def test_build_reuses_bind_manifest_uses_host_image(tmp_path):
@@ -272,6 +283,43 @@ def test_build_reuses_bind_manifest_uses_host_image(tmp_path):
     ).run(ctx)
     assert c.started is False  # cache hit, no container started
     assert str(out.kernel_image) == image_host  # bind cached path uses image_host, not image_in_tree
+
+
+def test_build_cache_hit_refreshes_last_used(tmp_path):
+    """On cache hit, touch_last_used is called to refresh recency (LRU parity with --use boot)."""
+    label = "linux-6.6.30-a1b2c3d4"
+    old_timestamp = "2020-01-01T00:00:00+00:00"
+    write_manifest(
+        tmp_path,
+        Manifest(
+            kind="build",
+            label=label,
+            key="k",
+            version="6.6.30",
+            arch="arm64",
+            storage_mode="volume",
+            paths={
+                "vmlinux_in_tree": f"/ksrc/{label}/vmlinux",
+                "image_in_tree": f"/ksrc/{label}/arch/arm64/boot/Image",
+            },
+            last_used=old_timestamp,
+        ),
+    )
+    c = _BuildFakeC()
+    ctx = _ctx(tmp_path)
+    ctx.build_label = label
+    ctx.kernel_root = None
+    out = BuildStage(
+        c,
+        recipe=_recipe(),
+        kbuilder_image="like_kbuilder_arm64:latest",
+        workspace=tmp_path,
+        kernel_volume="likedbg_ksrc",
+    ).run(ctx)
+    assert out.build_was_cached is True
+    m = load_manifest(tmp_path, "build", label)
+    assert m.last_used != old_timestamp
+    assert m.last_used != ""
 
 
 def test_build_bind_mode_mounts_host_ksrc_and_chowns_objdir(tmp_path):
@@ -363,6 +411,28 @@ def test_build_compiles_with_recipe_make_vars_then_writes_manifest_with_srckey_a
     assert m.srckey == recipe.src_key
     assert m.paths["objdir"] == loc.objdir
     assert m.paths["source_root"] == loc.source_root
+    assert ctx.build_was_cached is False  # fresh build: CacheEvictionStage may run
+
+
+def test_build_stamps_size_bytes_and_last_used_from_du(tmp_path):
+    c = _BuildFakeC()
+    label = "linux-6.6.30-a1b2c3d4"
+    recipe = _recipe()
+    loc = _loc(tmp_path, recipe, label)
+    ctx = _ctx(tmp_path)
+    ctx.build_label = label
+    ctx.kernel_root = None
+    BuildStage(
+        c,
+        recipe=recipe,
+        kbuilder_image="like_kbuilder_arm64:latest",
+        workspace=tmp_path,
+        kernel_volume="likedbg_ksrc",
+    ).run(ctx)
+    assert any(cmd == f"du -sb {loc.objdir}" for cmd in c.execs)
+    m = load_manifest(tmp_path, "build", label)
+    assert m.size_bytes == 12345
+    assert m.last_used != ""
 
 
 def test_build_config_snapshot_read_from_objdir_dot_config(tmp_path):
@@ -375,7 +445,7 @@ def test_build_config_snapshot_read_from_objdir_dot_config(tmp_path):
             self.execs.append(cmd)
             if cmd == f"cat {loc.objdir}/.config":
                 return SimpleNamespace(exit_code=0, output="CONFIG_FOO=y\r\n")
-            return SimpleNamespace(exit_code=0, output="")
+            return SimpleNamespace(exit_code=0, output=_fake_exec_output(cmd))
 
     c = _ConfigFakeC()
     ctx = _ctx(tmp_path)
@@ -536,3 +606,58 @@ def test_build_does_not_apply_patches_patches_moved_to_unpack(tmp_path) -> None:
     ).run(ctx)
     patch_cmds = [cmd for cmd in c.execs if "patch -p1" in cmd or "git apply" in cmd]
     assert len(patch_cmds) == 0
+
+
+def test_build_handles_malformed_du_output_sets_size_zero(tmp_path):
+    """Robustness: if du -sb returns empty or unparseable output, size_bytes defaults to 0
+    (best-effort accounting) rather than crashing a successful build."""
+    label = "linux-6.6.30-a1b2c3d4"
+    recipe = _recipe()
+
+    class _MalformedDuFakeC(_BuildFakeC):
+        def exec(self, container, cmd, *, workdir=None):
+            self.execs.append(cmd)
+            if cmd.startswith("du -sb"):
+                return SimpleNamespace(exit_code=0, output="")  # empty du output
+            return SimpleNamespace(exit_code=0, output=_fake_exec_output(cmd))
+
+    c = _MalformedDuFakeC()
+    ctx = _ctx(tmp_path)
+    ctx.build_label = label
+    ctx.kernel_root = None
+    BuildStage(
+        c,
+        recipe=recipe,
+        kbuilder_image="like_kbuilder_arm64:latest",
+        workspace=tmp_path,
+        kernel_volume="likedbg_ksrc",
+    ).run(ctx)
+    m = load_manifest(tmp_path, "build", label)
+    assert m.size_bytes == 0  # defaults to 0, does not raise
+
+
+def test_build_handles_garbage_du_output_sets_size_zero(tmp_path):
+    """Robustness: if du -sb returns garbage (no leading bytes field), size_bytes defaults to 0."""
+    label = "linux-6.6.30-a1b2c3d4"
+    recipe = _recipe()
+
+    class _GarbageDuFakeC(_BuildFakeC):
+        def exec(self, container, cmd, *, workdir=None):
+            self.execs.append(cmd)
+            if cmd.startswith("du -sb"):
+                return SimpleNamespace(exit_code=0, output="not_a_number\t/path\n")
+            return SimpleNamespace(exit_code=0, output=_fake_exec_output(cmd))
+
+    c = _GarbageDuFakeC()
+    ctx = _ctx(tmp_path)
+    ctx.build_label = label
+    ctx.kernel_root = None
+    BuildStage(
+        c,
+        recipe=recipe,
+        kbuilder_image="like_kbuilder_arm64:latest",
+        workspace=tmp_path,
+        kernel_volume="likedbg_ksrc",
+    ).run(ctx)
+    m = load_manifest(tmp_path, "build", label)
+    assert m.size_bytes == 0  # defaults to 0, does not raise

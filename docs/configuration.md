@@ -122,6 +122,12 @@ to cross-build and boot a foreign-architecture guest.
 | `ccache` | `true` | Cache compilation via ccache (persistent, capped) for fast rebuilds. |
 | `ccache_max_size` | `5G` | Max ccache size (ccache size syntax, e.g. `5G`, `500M`). |
 
+### `[cache]`
+
+| Key | Default | Values and meaning |
+|---|---|---|
+| `max_size` | (unset) | Cache size cap for auto-eviction (e.g. `50G`, `500M`). Unset means no limit. Explicit `--prune` is always available. |
+
 ### `[rootfs]`
 
 | Key | Default | Values and meaning |

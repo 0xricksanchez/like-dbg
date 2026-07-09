@@ -17,6 +17,14 @@ from likedbg.host_profile import HostProfile
 from likedbg.pipeline import PipelineContext
 from likedbg.stages.unpack import UnpackStage
 
+_DU_OUTPUT = "54321\t/ksrc/src/fake\n"
+
+
+def _fake_exec_output(cmd: str) -> str:
+    """Answers `du -sb` (needed since UnpackStage now parses its output for size_bytes) and ""
+    for everything else, so the rest of the (unrelated) unpack flow is unaffected."""
+    return _DU_OUTPUT if cmd.startswith("du -sb") else ""
+
 
 class FakeContainerService(ContainerService):
     def __init__(self):
@@ -29,7 +37,7 @@ class FakeContainerService(ContainerService):
 
     def exec(self, container, cmd, *, workdir=None):
         self.execs.append(cmd)
-        return SimpleNamespace(exit_code=0, output="")
+        return SimpleNamespace(exit_code=0, output=_fake_exec_output(cmd))
 
     def stop(self, container):
         pass
@@ -190,6 +198,28 @@ def test_unpack_applies_patches_then_mrproper_then_chmod_in_order(tmp_path):
     assert m.inputs == {"patch:patches": "deadbeef"}
 
 
+def test_unpack_stamps_source_manifest_size_bytes_from_du(tmp_path):
+    recipe = _recipe()
+    svc = FakeContainerService()
+    ctx = _ctx("volume", tmp_path)
+
+    loc = cache.locations(
+        recipe.label,
+        arch=recipe.arch,
+        storage_mode="volume",
+        workspace=tmp_path,
+        volume="likedbg_ksrc",
+        src_label=recipe.src_label,
+    )
+    source_root = loc.source_root
+
+    UnpackStage(svc, recipe=recipe, kernel_volume="likedbg_ksrc", workspace=tmp_path).run(ctx)
+
+    assert any(c == f"du -sb {source_root}" for c in svc.execs)
+    m = load_manifest(tmp_path, "source", recipe.src_label)
+    assert m.size_bytes > 0
+
+
 def test_bind_mode_chowns_to_user_after_mrproper_before_chmod(tmp_path):
     recipe = _recipe()
     svc = FakeContainerService()
@@ -255,3 +285,40 @@ def test_bind_mode_creates_host_side_src_parent_dir(tmp_path):
     svc = FakeContainerService()
     UnpackStage(svc, recipe=_recipe(), kernel_volume="likedbg_ksrc", workspace=tmp_path).run(_ctx("bind", tmp_path))
     assert (tmp_path / "artifacts" / "ksrc" / "src").is_dir()
+
+
+def test_unpack_handles_malformed_du_output_sets_size_zero(tmp_path):
+    """Robustness: if du -sb returns empty or unparseable output, size_bytes defaults to 0
+    (best-effort accounting) rather than crashing a successful unpack."""
+    recipe = _recipe()
+
+    class _MalformedDuFakeC(FakeContainerService):
+        def exec(self, container, cmd, *, workdir=None):
+            self.execs.append(cmd)
+            if cmd.startswith("du -sb"):
+                return SimpleNamespace(exit_code=0, output="")  # empty du output
+            return SimpleNamespace(exit_code=0, output=_fake_exec_output(cmd))
+
+    svc = _MalformedDuFakeC()
+    ctx = _ctx("volume", tmp_path)
+    UnpackStage(svc, recipe=recipe, kernel_volume="likedbg_ksrc", workspace=tmp_path).run(ctx)
+    m = load_manifest(tmp_path, "source", recipe.src_label)
+    assert m.size_bytes == 0  # defaults to 0, does not raise
+
+
+def test_unpack_handles_garbage_du_output_sets_size_zero(tmp_path):
+    """Robustness: if du -sb returns garbage (no leading bytes field), size_bytes defaults to 0."""
+    recipe = _recipe()
+
+    class _GarbageDuFakeC(FakeContainerService):
+        def exec(self, container, cmd, *, workdir=None):
+            self.execs.append(cmd)
+            if cmd.startswith("du -sb"):
+                return SimpleNamespace(exit_code=0, output="garbage_output\t/path\n")
+            return SimpleNamespace(exit_code=0, output=_fake_exec_output(cmd))
+
+    svc = _GarbageDuFakeC()
+    ctx = _ctx("volume", tmp_path)
+    UnpackStage(svc, recipe=recipe, kernel_volume="likedbg_ksrc", workspace=tmp_path).run(ctx)
+    m = load_manifest(tmp_path, "source", recipe.src_label)
+    assert m.size_bytes == 0  # defaults to 0, does not raise

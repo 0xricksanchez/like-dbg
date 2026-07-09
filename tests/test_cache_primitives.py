@@ -1,4 +1,7 @@
+import pytest
+
 from likedbg.cache import cache_key
+from likedbg.cache import parse_size
 from likedbg.cache import short_hash
 from likedbg.cache import slug
 
@@ -33,3 +36,58 @@ def test_slug_empty_string():
 
 def test_slug_already_clean_roundtrips():
     assert slug("linux-6.6.30") == "linux-6.6.30"
+
+
+# ---------------------------------------------------------------------------
+# parse_size tests (Task 1)
+# ---------------------------------------------------------------------------
+
+
+def test_parse_size_empty_string():
+    assert parse_size("") == 0
+
+
+def test_parse_size_gigabytes():
+    assert parse_size("50G") == 50 * 1024**3
+
+
+def test_parse_size_megabytes():
+    assert parse_size("500M") == 500 * 1024**2
+
+
+def test_parse_size_kilobytes():
+    assert parse_size("1024K") == 1024 * 1024
+
+
+def test_parse_size_terabytes():
+    assert parse_size("2T") == 2 * 1024**4
+
+
+def test_parse_size_case_insensitive():
+    assert parse_size("10g") == 10 * 1024**3
+    assert parse_size("10G") == 10 * 1024**3
+    assert parse_size("500m") == 500 * 1024**2
+    assert parse_size("500M") == 500 * 1024**2
+
+
+def test_parse_size_no_unit():
+    assert parse_size("1024") == 1024
+
+
+def test_parse_size_whitespace_stripped():
+    assert parse_size("  50G  ") == 50 * 1024**3
+    assert parse_size("  100M  ") == 100 * 1024**2
+
+
+def test_parse_size_float_input():
+    assert parse_size("1.5G") == int(1.5 * 1024**3)
+
+
+def test_parse_size_invalid_unit():
+    with pytest.raises(ValueError, match="invalid size"):
+        parse_size("50X")
+
+
+def test_parse_size_invalid_number():
+    with pytest.raises(ValueError, match="invalid size"):
+        parse_size("notanumber")

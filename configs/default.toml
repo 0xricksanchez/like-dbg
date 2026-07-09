@@ -14,6 +14,10 @@ rust = false
 ccache = true
 ccache_max_size = "5G"
 
+[cache]
+# max_size: cache size cap for auto-eviction (unset = no limit). Supports K/M/G/T suffixes, e.g. "50G".
+# max_size = "50G"
+
 [rootfs]
 distribution = "bookworm"
 hostname = "LIKE-DBG"

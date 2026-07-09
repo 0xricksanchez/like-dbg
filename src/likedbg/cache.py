@@ -8,6 +8,7 @@ identity (ADR-0003).
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import json
 import os
@@ -16,7 +17,11 @@ import shutil
 import tempfile
 from dataclasses import dataclass
 from dataclasses import field
+from datetime import UTC
+from datetime import datetime
 from pathlib import Path
+
+from loguru import logger
 
 from likedbg.config import Arch
 from likedbg.config import Settings
@@ -33,6 +38,33 @@ _NOT_SET_RE = re.compile(r"^# CONFIG_\w+ is not set$")
 _ROOTFS_SCRIPT = "io/scripts/rootfs.sh"
 
 TREE_ROOT = "ksrc"  # host mirror of the kernel-source mount: artifacts/<TREE_ROOT>/<label>
+
+_SIZE_UNITS = {"": 1, "K": 1024, "M": 1024**2, "G": 1024**3, "T": 1024**4}
+
+
+def parse_size(s: str) -> int:
+    """Parse a ccache-style size string ('50G', '500M', '') to bytes. '' -> 0 (no cap)."""
+    s = s.strip().upper()
+    if not s:
+        return 0
+    unit = s[-1] if s[-1] in "KMGT" else ""
+    num = s[:-1] if unit else s
+    try:
+        return int(float(num) * _SIZE_UNITS[unit])
+    except (ValueError, KeyError) as exc:
+        raise ValueError(f"invalid size {s!r}: use e.g. 50G, 500M") from exc
+
+
+def parse_du_bytes(out: str) -> int:
+    """Parse `du -sb` output tolerantly; returns 0 on malformed/empty input.
+
+    `du -sb <path>` normally returns "<size_bytes>\t<path>\n"; we extract the size.
+    On empty output or parse failure, returns 0 instead of raising (best-effort accounting).
+    """
+    try:
+        return int(out.split()[0])
+    except (IndexError, ValueError):
+        return 0
 
 
 def cache_key(inputs: dict[str, str]) -> str:
@@ -183,6 +215,7 @@ class Manifest:
     inputs: dict[str, str] = field(default_factory=dict)
     paths: dict[str, str] = field(default_factory=dict)
     created_at: str = ""
+    last_used: str = ""
     size_bytes: int = 0
 
 
@@ -223,6 +256,12 @@ def load_manifest(workspace: Path, kind: str, label: str) -> Manifest:
         return Manifest(**data)
     except (ValueError, TypeError) as exc:
         raise CacheError(f"corrupt manifest {path}", remedy=f"`start_kgdb --clean {label}` and rebuild") from exc
+
+
+def touch_last_used(workspace: Path, label: str) -> None:
+    """Refresh a build manifest's last_used to now (LRU recency on --use/boot)."""
+    m = load_manifest(workspace, "build", label)
+    write_manifest(workspace, dataclasses.replace(m, last_used=datetime.now(UTC).isoformat()))
 
 
 def list_manifests(workspace: Path, kind: str) -> list[Manifest]:
@@ -345,3 +384,69 @@ def remove_source(
             tree.chmod(0o755)
             shutil.rmtree(tree)
     manifest_path(workspace, "source", src_label).unlink(missing_ok=True)
+
+
+def cache_total_bytes(workspace: Path) -> int:
+    """Total on-disk footprint of the cache: sum of every build's and shared source's
+    `size_bytes` (rootfs images aren't stamped/tracked by the eviction policy)."""
+    builds = list_manifests(workspace, "build")
+    sources = list_manifests(workspace, "source")
+    return sum(m.size_bytes for m in builds) + sum(m.size_bytes for m in sources)
+
+
+def drop_orphaned_source(
+    container: ContainerService, workspace: Path, build: Manifest, *, volume: str = KERNEL_VOLUME
+) -> str | None:
+    """After removing `build`, drop its shared source too once no other build still
+    references it (refcount 0). Sources are auto-managed: never user-targetable by label.
+
+    Returns the dropped source's label, or None if nothing was dropped. Single canonical
+    implementation shared by `prune_cache` and `cli.cmd_clean` (via `cli._remove_orphaned_source`).
+    """
+    if not build.srckey or source_refcount(workspace, build.srckey) != 0:
+        return None
+    source = next((s for s in list_manifests(workspace, "source") if s.key == build.srckey), None)
+    if source is None:
+        return None
+    remove_source(container, workspace, source.label, storage_mode=build.storage_mode, volume=volume)
+    return source.label
+
+
+def prune_cache(
+    container: ContainerService,
+    workspace: Path,
+    target_bytes: int,
+    *,
+    protect: set[str],
+    volume: str = KERNEL_VOLUME,
+) -> list[str]:
+    """Evict cached builds oldest-`last_used`-first (LRU) until `cache_total_bytes(workspace)`
+    is at or under `target_bytes`, or no evictable build remains. Builds whose label is in
+    `protect` are never evicted. Each eviction also drops the build's shared source once its
+    refcount hits zero. Returns the evicted build labels, oldest-evicted-first. Never raises:
+    if the target is still exceeded once only protected builds remain, logs a warning instead."""
+    total = cache_total_bytes(workspace)
+    if total <= target_bytes:
+        return []
+
+    # "" (unstamped/legacy last_used) sorts before any ISO-8601 timestamp, so those go first.
+    evictable = sorted(
+        (b for b in list_manifests(workspace, "build") if b.label not in protect),
+        key=lambda b: b.last_used,
+    )
+
+    evicted: list[str] = []
+    for build in evictable:
+        if total <= target_bytes:
+            break
+        remove_cached(container, workspace, build, volume=volume)
+        drop_orphaned_source(container, workspace, build, volume=volume)
+        evicted.append(build.label)
+        total = cache_total_bytes(workspace)
+
+    if total > target_bytes:
+        logger.warning(
+            f"cache still {total - target_bytes} bytes over target ({total} > {target_bytes}); "
+            "only protected build(s) remain, raise [cache] max_size or widen the protect set"
+        )
+    return evicted

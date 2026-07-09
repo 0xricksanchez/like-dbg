@@ -3,6 +3,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from loguru import logger
 
 import likedbg.cli as cli
 from likedbg import cache
@@ -215,6 +216,7 @@ def test_build_pipeline_includes_all_stage_names(tmp_path):
         "download",
         "unpack",
         "build",
+        "cache-eviction",
         "profile-verification",
         "rootfs",
         "export",
@@ -408,6 +410,104 @@ def test_summarize_cache_shows_shared_source_refcount(tmp_path):
     assert "refcount=2" in joined
 
 
+def test_summarize_cache_uses_stamped_size_bytes_and_shows_last_used(tmp_path):
+    """Verify --list uses stamped size_bytes + shows last_used WITHOUT calling du."""
+    label = "linux-6.6.30-stamped"
+    last_used_str = "2026-07-10T12:34:56+00:00"
+
+    write_manifest(
+        tmp_path,
+        Manifest(
+            kind="build",
+            label=label,
+            key="k",
+            version="6.6.30",
+            arch="arm64",
+            storage_mode="volume",
+            size_bytes=123456789,
+            last_used=last_used_str,
+            paths={"kernel_root": f"/ksrc/{label}", "image_host": "/path/to/image"},
+        ),
+    )
+
+    # Use container that would fail if du were called
+    container = _DuContainer(fail=True)
+
+    joined = "\n".join(summarize_cache(tmp_path, container=container))
+
+    # Should show the stamped size (no du call)
+    assert "123456789" in joined
+
+    # Should show last_used (at least the date part)
+    assert "2026-07-10" in joined
+
+
+def test_summarize_cache_fallback_on_legacy_zero_size_bytes(tmp_path):
+    """Legacy manifests with size_bytes==0 should still use du fallback."""
+    label = "linux-6.6.30-legacy"
+    image = tmp_path / "artifacts" / label / "Image"
+    image.parent.mkdir(parents=True)
+    image.write_bytes(b"x" * 2048)
+
+    write_manifest(
+        tmp_path,
+        Manifest(
+            kind="build",
+            label=label,
+            key="k",
+            version="6.6.30",
+            arch="arm64",
+            storage_mode="volume",
+            size_bytes=0,  # Legacy: zero indicates not yet stamped
+            paths={"kernel_root": f"/ksrc/{label}", "image_host": str(image)},
+        ),
+    )
+
+    # With size_bytes==0, should fall back to _artifact_size (checking Image file)
+    joined = "\n".join(summarize_cache(tmp_path, container=None))
+    assert "2048" in joined
+
+
+def test_summarize_cache_source_uses_stamped_size_bytes(tmp_path):
+    """Source manifests with size_bytes should use that instead of du."""
+    srckey = "shared-src-key"
+    src_label = "linux-6.6.30-gef-deadbeef"
+
+    write_manifest(
+        tmp_path,
+        Manifest(
+            kind="source",
+            label=src_label,
+            key=srckey,
+            version="6.6.30",
+            arch="",
+            size_bytes=987654321,
+        ),
+    )
+
+    write_manifest(
+        tmp_path,
+        Manifest(
+            kind="build",
+            label="linux-6.6.30-aaaa",
+            key="k",
+            version="6.6.30",
+            arch="arm64",
+            srckey=srckey,
+            storage_mode="volume",
+        ),
+    )
+
+    # Use container that would fail if du were called
+    container = _DuContainer(fail=True)
+
+    joined = "\n".join(summarize_cache(tmp_path, container=container))
+
+    # Should show the stamped size without calling du
+    assert "987654321" in joined
+    assert "shared sources:" in joined
+
+
 def test_cmd_clean_unknown_label_raises(tmp_path):
     with pytest.raises(CacheError) as exc:
         cmd_clean(_FakeContainer(), tmp_path, label="nope", clean_all=False)
@@ -509,6 +609,35 @@ def test_cmd_clean_all_removes_shared_source_too(tmp_path, monkeypatch):
     assert removed_sources == [src_label]
     assert cache.list_manifests(tmp_path, "build") == []
     assert cache.list_manifests(tmp_path, "source") == []
+
+
+def test_remove_orphaned_source_logs_removed_source(tmp_path):
+    """Consolidation check: cli._remove_orphaned_source is now a thin wrapper around
+    cache.drop_orphaned_source, but must still emit the "removed source" log line --clean relies on."""
+    srckey = "shared-src-key"
+    src_label = "linux-6.6.30-gef-deadbeef"
+    write_manifest(tmp_path, Manifest(kind="source", label=src_label, key=srckey, version="6.6.30", arch=""))
+    # `build`'s own manifest is intentionally NOT written: mirrors cmd_clean's real call order,
+    # where cache.remove_cached already unlinked it before _remove_orphaned_source runs.
+    build = Manifest(
+        kind="build",
+        label="linux-6.6.30-aaaa",
+        key="k",
+        version="6.6.30",
+        arch="arm64",
+        srckey=srckey,
+        storage_mode="volume",
+    )
+
+    messages: list[str] = []
+    handler_id = logger.add(messages.append, level="INFO")
+    try:
+        cli._remove_orphaned_source(_FakeContainer(), tmp_path, build)
+    finally:
+        logger.remove(handler_id)
+
+    assert any(f"removed source {src_label}" in m for m in messages)
+    assert cache.manifest_exists(tmp_path, "source", src_label) is False
 
 
 def test_build_use_pipeline_includes_rootfs_before_launch(tmp_path):

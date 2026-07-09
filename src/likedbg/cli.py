@@ -64,6 +64,7 @@ from likedbg.pipeline import PipelineContext
 from likedbg.run_artifacts import RunRecorder
 from likedbg.session import Session
 from likedbg.stages.build import BuildStage
+from likedbg.stages.cache_eviction import CacheEvictionStage
 from likedbg.stages.debuggee import DebuggeeStage
 from likedbg.stages.debugger import DebuggerStage
 from likedbg.stages.download import DownloadStage
@@ -310,6 +311,7 @@ def build_pipeline(
     debuginfod_cache: Path | None = None,
     ccache: bool = False,
     ccache_max_size: str = "5G",
+    max_size: str = "",
 ) -> Pipeline:
     gdb_mount_source = cache.locations(
         build_recipe.label,
@@ -351,6 +353,7 @@ def build_pipeline(
                 ccache=ccache,
                 ccache_max_size=ccache_max_size,
             ),
+            CacheEvictionStage(container, workspace=workspace, max_size=max_size, volume=kernel_volume),
             ProfileVerificationStage(container, workspace=workspace, kernel_volume=kernel_volume),
             RootfsStage(
                 container,
@@ -520,6 +523,7 @@ def cmd_use(
     if not cache.manifest_exists(workspace, "build", label):
         raise CacheError(f"no cached build labelled {label!r}", remedy="run `start_kgdb --list`")
     bm = cache.load_manifest(workspace, "build", label)
+    cache.touch_last_used(workspace, label)
     # Build identity (arch) is authoritative; reload config with the arch override so the
     # host profile / QEMU follow the cached build, keeping runtime+debugger prefs from config.
     scenario = _scenario_path(workspace, str(custom_ini) if custom_ini is not None else "")
@@ -758,6 +762,20 @@ def _artifact_size(workspace: Path, manifest: Manifest, *, container: ContainerS
     return str(image.stat().st_size) if image is not None else "-"
 
 
+def _build_size(workspace: Path, manifest: Manifest, *, container: ContainerService | None = None) -> str:
+    """Get build size: prefer stamped size_bytes if > 0, else fall back to best-effort helpers."""
+    if manifest.size_bytes > 0:
+        return str(manifest.size_bytes)
+    return _artifact_size(workspace, manifest, container=container)
+
+
+def _source_size_stamped(workspace: Path, manifest: Manifest, *, container: ContainerService | None = None) -> str:
+    """Get source size: prefer stamped size_bytes if > 0, else fall back to best-effort helpers."""
+    if manifest.size_bytes > 0:
+        return str(manifest.size_bytes)
+    return _source_size(workspace, manifest, container=container)
+
+
 def summarize_cache(workspace: Path, *, container: ContainerService | None = None) -> list[str]:
     builds = cache.list_manifests(workspace, "build")
     rootfs = cache.list_manifests(workspace, "rootfs")
@@ -766,19 +784,22 @@ def summarize_cache(workspace: Path, *, container: ContainerService | None = Non
         return ["(cache empty)"]
     lines: list[str] = []
     if builds or rootfs:
-        lines.append("kind    label  version  arch  size  created")
+        lines.append("kind    label  version  arch  size  created  last_used")
         for m in [*builds, *rootfs]:
             mp = cache.manifest_path(workspace, m.kind, m.label)
             created = datetime.fromtimestamp(mp.stat().st_mtime, tz=UTC).date().isoformat()
+            size = _build_size(workspace, m, container=container)
+            # Only show last_used for builds (rootfs doesn't have it)
+            last_used_val = m.last_used if m.kind == "build" else "-"
             lines.append(
                 f"{m.kind}  {m.label}  {m.version or '-'}  {m.arch}  "
-                f"{_artifact_size(workspace, m, container=container)}  {created}"
+                f"{size}  {created}  {last_used_val}"
             )
     if sources:
         lines.append("shared sources:")
         for s in sources:
             refcount = cache.source_refcount(workspace, s.key)
-            size = _source_size(workspace, s, container=container)
+            size = _source_size_stamped(workspace, s, container=container)
             lines.append(f"{s.label}  {s.version or '-'}  refcount={refcount}  size={size}")
     return lines
 
@@ -791,14 +812,11 @@ def cmd_list(workspace: Path, *, container: ContainerService | None = None) -> i
 
 def _remove_orphaned_source(container: ContainerService, workspace: Path, build: Manifest) -> None:
     """After removing a build manifest, drop its source tree too if no other build still
-    references it (refcount 0). Sources are auto-managed: never user-targetable by label."""
-    if cache.source_refcount(workspace, build.srckey) != 0:
-        return
-    source = next((s for s in cache.list_manifests(workspace, "source") if s.key == build.srckey), None)
-    if source is None:
-        return
-    cache.remove_source(container, workspace, source.label, storage_mode=build.storage_mode, volume=KERNEL_VOLUME)
-    logger.info(f"removed source {source.label}")
+    references it (refcount 0). Thin wrapper: `cache.drop_orphaned_source` is the single
+    canonical implementation, shared with `cache.prune_cache`."""
+    label = cache.drop_orphaned_source(container, workspace, build, volume=KERNEL_VOLUME)
+    if label:
+        logger.info(f"removed source {label}")
 
 
 def cmd_clean(container: ContainerService, workspace: Path, *, label: str | None, clean_all: bool) -> int:
@@ -824,6 +842,37 @@ def cmd_clean(container: ContainerService, workspace: Path, *, label: str | None
             src_storage_mode = "bind" if bind_tree.is_dir() else "volume"
             cache.remove_source(container, workspace, s.label, storage_mode=src_storage_mode, volume=KERNEL_VOLUME)
             logger.info(f"removed source {s.label}")
+    return 0
+
+
+def _latest_run_build_label(workspace: Path) -> str | None:
+    """Best-effort read of the latest run's build label (artifacts/runs/latest/run.json).
+    Returns None if there is no recorded run, or it can't be read (never raises: --prune must
+    stay usable even with a stale/missing `latest` pointer)."""
+    run_json = workspace / "artifacts" / "runs" / "latest" / "run.json"
+    if not run_json.is_file():
+        return None
+    try:
+        data = json.loads(run_json.read_text())
+    except (OSError, ValueError):
+        return None
+    label = data.get("build_label")
+    return label if isinstance(label, str) and label else None
+
+
+def cmd_prune(container: ContainerService, workspace: Path, *, size_arg: str | None, max_size: str) -> int:
+    """Evict cached builds down to a target size: `--prune 30G` (explicit) or `--prune` alone
+    (falls back to [cache] max_size). Protects the latest run's build (if any) from eviction."""
+    target = cache.parse_size(size_arg) if size_arg else cache.parse_size(max_size)
+    if target == 0 and not size_arg and not max_size:
+        raise CacheError("--prune needs a size", remedy="pass --prune 30G or set [cache] max_size")
+    label = _latest_run_build_label(workspace)
+    protect = {label} if label else set()
+    evicted = cache.prune_cache(container, workspace, target, protect=protect)
+    if evicted:
+        logger.info(f"pruned: {', '.join(evicted)}")
+    else:
+        logger.info("nothing to prune")
     return 0
 
 
@@ -1113,6 +1162,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--list", action="store_true")
     parser.add_argument("--clean", default="")
     parser.add_argument("--clean-all", action="store_true")
+    parser.add_argument("--prune", nargs="?", const="", default=None, metavar="SIZE")
     parser.add_argument("--use", default="")
     parser.add_argument("--rootfs", default="")
     parser.add_argument("--build-images", action="store_true")
@@ -1183,6 +1233,8 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.clean or args.clean_all:
             return cmd_clean(container, workspace, label=args.clean or None, clean_all=args.clean_all)
+        if args.prune is not None:
+            return cmd_prune(container, workspace, size_arg=args.prune, max_size=cfg.settings.cache.max_size)
         if cfg.settings.foreign.image:
             if not os.getenv("TMUX"):
                 logger.error("Not running inside a TMUX session. Start tmux first.")
@@ -1287,6 +1339,7 @@ def main(argv: list[str] | None = None) -> int:
             debuginfod_cache=debuginfod_cache,
             ccache=cfg.settings.build.ccache,
             ccache_max_size=cfg.settings.build.ccache_max_size,
+            max_size=cfg.settings.cache.max_size,
         )
         pipeline.run(ctx)
         return 0
