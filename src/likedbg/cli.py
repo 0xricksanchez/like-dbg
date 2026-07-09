@@ -23,8 +23,6 @@ from likedbg import guest
 from likedbg import images
 from likedbg import logsetup
 from likedbg import modules
-from likedbg.adopt import adopt_legacy_build
-from likedbg.adopt import adopt_legacy_rootfs
 from likedbg.cache import BuildRecipe
 from likedbg.cache import Manifest
 from likedbg.cache import RootfsRecipe
@@ -47,7 +45,6 @@ from likedbg.debug_profiles import RunResolution
 from likedbg.debug_profiles import parse_profile_names
 from likedbg.debug_profiles import resolve_run
 from likedbg.errors import CacheError
-from likedbg.errors import HostCapabilityError
 from likedbg.errors import LikeDbgError
 from likedbg.errors import ModuleError
 from likedbg.errors import SessionError
@@ -686,14 +683,6 @@ def cmd_foreign(
     return 0
 
 
-def _require_volume_for_adopt(host: HostProfile) -> None:
-    if host.storage_mode != "volume":
-        raise HostCapabilityError(
-            "--adopt migrates the legacy in-volume tree and is volume-mode only",
-            remedy="bind/Linux builds fresh, just run start_kgdb",
-        )
-
-
 def _ensure_images(container: ContainerService, workspace: Path, *, specs: tuple[images.ImageSpec, ...]) -> None:
     for tag in images.ensure_current(container, workspace, specs):
         logger.warning(f"image {tag} looks stale (build inputs changed); run `start_kgdb --build-images` to refresh")
@@ -1121,8 +1110,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--profile", default="")
     parser.add_argument("--verbose", "-v", action="store_true")
     parser.add_argument("--force-rebuild", action="store_true")
-    parser.add_argument("--adopt", action="store_true")
-    parser.add_argument("--adopt-rootfs", nargs="?", const="", default=None, metavar="SOURCE")
     parser.add_argument("--list", action="store_true")
     parser.add_argument("--clean", default="")
     parser.add_argument("--clean-all", action="store_true")
@@ -1187,14 +1174,8 @@ def main(argv: list[str] | None = None) -> int:
             except Exception:  # noqa: BLE001 - fall back to host-visible sizes when Docker is unavailable.
                 list_container = None
             return cmd_list(workspace, container=list_container)
-        # Early paths that don't need the full TOML flow: --build-images, --clean*, --adopt-rootfs
+        # Early paths that don't need the full TOML flow: --build-images, --clean*
         cfg = load_config(workspace, scenario=_scenario_path(workspace, args.config))
-        rr_settings = make_rootfs_recipe(cfg.settings, workspace=workspace)
-        if args.adopt_rootfs is not None:
-            source = Path(args.adopt_rootfs) if args.adopt_rootfs else None
-            label = adopt_legacy_rootfs(workspace=workspace, recipe=rr_settings, source=source)
-            logger.info(f"adopted legacy rootfs as {label}")
-            return 0
         client = docker_env.make_client(docker_env.resolve_docker_host(env=os.environ))
         container = ContainerService(client)
         if args.build_images:
@@ -1250,11 +1231,6 @@ def main(argv: list[str] | None = None) -> int:
         rr_recipe = make_rootfs_recipe(cfg.settings, arch=host.target_arch, workspace=workspace)
         if args.force_rebuild:
             cache.manifest_path(workspace, "build", br.label).unlink(missing_ok=True)
-        if args.adopt:
-            _require_volume_for_adopt(host)
-            label = adopt_legacy_build(container, workspace=workspace, recipe=br)
-            logger.info(f"adopted legacy build as {label}")
-            return 0
         if not os.getenv("TMUX"):
             logger.error("Not running inside a TMUX session. Start tmux first.")
             return 2

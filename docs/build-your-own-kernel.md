@@ -148,7 +148,6 @@ uv run ./start_kgdb --use <build-label> --rootfs <rootfs-label>
 uv run ./start_kgdb --clean <label>            # remove one cached artifact
 uv run ./start_kgdb --clean-all                # clear the cache
 uv run ./start_kgdb --force-rebuild            # rebuild the current configuration
-uv run ./start_kgdb --adopt-rootfs [path]      # adopt a manually created rootfs into the cache
 ```
 
 ## Limitations

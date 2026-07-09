@@ -11,7 +11,6 @@ from likedbg.cache import Manifest
 from likedbg.cache import build_recipe
 from likedbg.cache import rootfs_recipe
 from likedbg.cache import write_manifest
-from likedbg.cli import _require_volume_for_adopt
 from likedbg.cli import build_foreign_pipeline
 from likedbg.cli import build_pipeline
 from likedbg.cli import build_use_pipeline
@@ -22,7 +21,6 @@ from likedbg.config import Settings
 from likedbg.container_service import ContainerService
 from likedbg.errors import CacheError
 from likedbg.errors import ConfigError
-from likedbg.errors import HostCapabilityError
 from likedbg.errors import SessionError
 from likedbg.foreign import ForeignKernel
 from likedbg.host_profile import HostProfile
@@ -271,15 +269,6 @@ def test_debuggee_stage_has_workspace(tmp_path):
     )
     dbge = next(s for s in pipe._stages if s.name == "debuggee")  # type: ignore[attr-defined]
     assert dbge._workspace == tmp_path  # type: ignore[attr-defined]
-
-
-def test_adopt_guard_rejects_bind():
-    with pytest.raises(HostCapabilityError):
-        _require_volume_for_adopt(_host("bind"))
-
-
-def test_adopt_guard_accepts_volume():
-    _require_volume_for_adopt(_host("volume"))  # no raise
 
 
 def test_summarize_cache_empty(tmp_path):
