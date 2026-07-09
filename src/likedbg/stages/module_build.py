@@ -53,7 +53,10 @@ class ModuleBuildStage:
                 self._c,
                 entry=self._workspace / rel,
                 out_dir=out_dir,
+                # loc.kernel_root is the objdir (obj/<label>): the KBUILD dir for an O=-built
+                # kernel (carries a `source` symlink into the tree mounted below). See modules.py.
                 kernel_root=loc.kernel_root,
+                # ksrc root mounted ro: exposes both obj/<label> and src/<src_label> under it.
                 mount_source=loc.gdb_mount_source,
                 env=self._env,
                 image=self._image,

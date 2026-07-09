@@ -45,8 +45,13 @@ class ArtifactExporter:
             ctx.kernel_image = host_image
             return ctx
         out_dir.mkdir(parents=True, exist_ok=True)
+        # Build now happens out-of-tree (make O=<objdir>): artifacts live under obj/<label>, not
+        # the old flat <label>/ tree. image_in_tree already carries the objdir (ctx.kernel_image
+        # is set from cache.locations().image_in_tree by BuildStage); derive vmlinux_in_tree from
+        # the same objdir base so both match cache.locations().objdir exactly.
+        objdir = f"{VOLUME_MOUNT}/obj/{label}"
         image_in_tree = str(ctx.kernel_image)
-        vmlinux_in_tree = f"{VOLUME_MOUNT}/{label}/vmlinux"
+        vmlinux_in_tree = f"{objdir}/vmlinux"
         volumes = {
             self._volume: {"bind": VOLUME_MOUNT, "mode": "ro"},
             str(out_dir): {"bind": _OUT_MOUNT, "mode": "rw"},

@@ -482,8 +482,8 @@ def test_build_ccache_with_gcc_no_cc_wrap_clang_still_wrapped(tmp_path):
 
 
 def test_build_does_not_apply_patches_patches_moved_to_unpack(tmp_path) -> None:
-    """BuildStage no longer applies patches (UnpackStage does), even if patch_dirs is passed
-    for constructor compatibility with existing callers."""
+    """BuildStage no longer applies patches (UnpackStage does); BuildStage's constructor no
+    longer accepts patch_dirs at all (dead param removed, Task 8)."""
     (tmp_path / "configs" / "fragments").mkdir(parents=True)
     frag = "configs/fragments/generic.config"
     (tmp_path / frag).write_text("CONFIG_X=y\n")
@@ -511,7 +511,6 @@ def test_build_does_not_apply_patches_patches_moved_to_unpack(tmp_path) -> None:
         kbuilder_image="like_kbuilder_x86_64:latest",
         workspace=tmp_path,
         kernel_volume="likedbg_ksrc",
-        patch_dirs=("patches/uaf",),
     ).run(ctx)
     patch_cmds = [cmd for cmd in c.execs if "patch -p1" in cmd or "git apply" in cmd]
     assert len(patch_cmds) == 0

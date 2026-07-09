@@ -1022,8 +1022,10 @@ def test_explain_config_json_schema_version(tmp_path: Path, monkeypatch) -> None
 # ---------------------------------------------------------------------------
 
 
-def test_build_pipeline_threads_patch_dirs_to_build_stage(tmp_path):
-    """BuildStage inside the built pipeline must receive the patch_dirs passed to build_pipeline."""
+def test_build_pipeline_threads_patch_dirs_to_unpack_stage(tmp_path):
+    """UnpackStage inside the built pipeline must receive the patch_dirs passed to build_pipeline
+    (patches apply once against the shared source in Unpack, not per-build; BuildStage has no
+    patch_dirs param at all, Task 8)."""
     settings = Settings.model_validate({"general": {"arch": "arm64"}})
     br = build_recipe(settings, version="6.6.30", arch="arm64", workspace=tmp_path, fragments=[])
     rr = rootfs_recipe(settings)
@@ -1044,8 +1046,10 @@ def test_build_pipeline_threads_patch_dirs_to_build_stage(tmp_path):
         patch_dirs=patch_dirs,
         recorder=None,
     )
-    build_stage = next(s for s in pipe._stages if s.name == "build")  # type: ignore[attr-defined]
-    assert build_stage._patch_dirs == patch_dirs  # type: ignore[attr-defined]
+    unpack_stage = next(s for s in pipe._stages if s.name == "unpack")  # type: ignore[attr-defined]
+    assert unpack_stage._patch_dirs == patch_dirs  # type: ignore[attr-defined]
+    build_stage = next(s for s in pipe._stages if s.name == "build")
+    assert not hasattr(build_stage, "_patch_dirs")  # dead param removed from BuildStage
 
 
 def test_build_pipeline_passes_crash_config(tmp_path):
@@ -1126,7 +1130,7 @@ def test_build_pipeline_no_modules_gdb_without_exploit_share(tmp_path):
 
 
 def test_build_pipeline_defaults_patch_dirs_to_empty(tmp_path):
-    """build_pipeline without patch_dirs defaults to ()."""
+    """build_pipeline without patch_dirs defaults to () on UnpackStage (the sole consumer)."""
     settings = Settings.model_validate({"general": {"arch": "arm64"}})
     br = build_recipe(settings, version="6.6.30", arch="arm64", workspace=tmp_path, fragments=[])
     rr = rootfs_recipe(settings)
@@ -1145,8 +1149,8 @@ def test_build_pipeline_defaults_patch_dirs_to_empty(tmp_path):
         rootfs_recipe=rr,
         recorder=None,
     )
-    build_stage = next(s for s in pipe._stages if s.name == "build")  # type: ignore[attr-defined]
-    assert build_stage._patch_dirs == ()  # type: ignore[attr-defined]
+    unpack_stage = next(s for s in pipe._stages if s.name == "unpack")  # type: ignore[attr-defined]
+    assert unpack_stage._patch_dirs == ()  # type: ignore[attr-defined]
 
 
 # ---------------------------------------------------------------------------

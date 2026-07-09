@@ -351,7 +351,6 @@ def build_pipeline(
                 workspace=workspace,
                 kernel_volume=kernel_volume,
                 chown_to=chown_to,
-                patch_dirs=patch_dirs,
                 ccache=ccache,
                 ccache_max_size=ccache_max_size,
             ),

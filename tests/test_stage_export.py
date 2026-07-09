@@ -52,9 +52,9 @@ def _ctx(storage: str, tmp_path: Path) -> PipelineContext:
     )
     ctx = PipelineContext(settings=Settings(), host=host)
     ctx.build_label = _LABEL
-    ctx.kernel_root = Path(f"/ksrc/{_LABEL}")
-    ctx.vmlinux = Path(f"/ksrc/{_LABEL}/vmlinux")
-    ctx.kernel_image = Path(f"/ksrc/{_LABEL}/arch/arm64/boot/Image")
+    ctx.kernel_root = Path(f"/ksrc/obj/{_LABEL}")
+    ctx.vmlinux = Path(f"/ksrc/obj/{_LABEL}/vmlinux")
+    ctx.kernel_image = Path(f"/ksrc/obj/{_LABEL}/arch/arm64/boot/Image")
     return ctx
 
 
@@ -68,12 +68,14 @@ def test_volume_mode_copies_and_rewrites_paths(tmp_path):
     # Image is exported to the host workspace for native QEMU, keyed by build_label.
     assert out.kernel_image == tmp_path / "artifacts" / _LABEL / "Image"
     assert "likedbg_ksrc" in str(c.run_kwargs["volumes"])
-    # Both in-volume artifacts must be verified before copy.
-    assert any(f"test -e /ksrc/{_LABEL}/vmlinux" in cmd for cmd in c.execs)
-    assert any(f"test -e /ksrc/{_LABEL}/arch/arm64/boot/Image" in cmd for cmd in c.execs)
+    # Both in-volume artifacts must be verified before copy, from the objdir (obj/<label>/...),
+    # NOT the old flat /ksrc/<label>/... tree.
+    assert any(f"test -e /ksrc/obj/{_LABEL}/vmlinux" in cmd for cmd in c.execs)
+    assert any(f"test -e /ksrc/obj/{_LABEL}/arch/arm64/boot/Image" in cmd for cmd in c.execs)
     assert any("cp" in cmd and "Image" in cmd for cmd in c.execs)
+    assert not any(f"/ksrc/{_LABEL}/vmlinux" in cmd for cmd in c.execs)  # old flat path must not appear
     # vmlinux stays in the volume so in-container gdb can read it (spec §4.6).
-    assert out.vmlinux == Path(f"/ksrc/{_LABEL}/vmlinux")
+    assert out.vmlinux == Path(f"/ksrc/obj/{_LABEL}/vmlinux")
 
 
 def test_export_verifies_then_copies_and_sets_host_image(tmp_path):
@@ -82,8 +84,8 @@ def test_export_verifies_then_copies_and_sets_host_image(tmp_path):
     out = ArtifactExporter(c, kernel_volume="likedbg_ksrc", workspace=tmp_path).run(ctx)
     assert out.kernel_image == tmp_path / "artifacts" / _LABEL / "Image"
     allcmds = " ; ".join(c.execs)
-    assert f"test -e /ksrc/{_LABEL}/vmlinux" in allcmds
-    assert f"cp /ksrc/{_LABEL}/arch/arm64/boot/Image" in allcmds
+    assert f"test -e /ksrc/obj/{_LABEL}/vmlinux" in allcmds
+    assert f"cp /ksrc/obj/{_LABEL}/arch/arm64/boot/Image" in allcmds
 
 
 def test_export_idempotent_skip_when_host_image_exists(tmp_path):

@@ -42,7 +42,6 @@ class BuildStage:
         workspace: Path,
         kernel_volume: str,
         chown_to: tuple[int, int] | None = None,
-        patch_dirs: tuple[str, ...] = (),
         ccache: bool = False,
         ccache_max_size: str = "5G",
     ) -> None:
@@ -52,9 +51,6 @@ class BuildStage:
         self._workspace = workspace
         self._volume = kernel_volume
         self._chown_to = chown_to
-        # patch_dirs kept only for constructor compat with existing callers (cli.py); patches are
-        # applied once against the shared source in UnpackStage now, not per-build.
-        self._patch_dirs = patch_dirs
         self._ccache = ccache
         self._ccache_max_size = ccache_max_size
 

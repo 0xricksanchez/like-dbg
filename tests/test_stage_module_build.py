@@ -1,4 +1,5 @@
 from likedbg.config import Settings
+from likedbg.constants import VOLUME_MOUNT
 from likedbg.stages.module_build import ModuleBuildStage
 
 
@@ -77,6 +78,36 @@ def test_builds_and_stages_ko(tmp_path, monkeypatch):
     assert stage.should_skip(ctx) is False
     stage.run(ctx)
     assert (tmp_path / "exploit" / "modules" / "lk01.ko").is_file()
+
+
+def test_build_command_dash_c_target_is_objdir(tmp_path, monkeypatch):
+    """The make -C target (kernel_root passed to modules.build_module) must be the per-config
+    objdir (obj/<label>), not the flat old-tree path or the bare source tree."""
+    src = tmp_path / "modules" / "lk01"
+    src.mkdir(parents=True)
+    (src / "lk01.c").write_text("x\n")
+
+    captured: dict = {}
+
+    def fake_build(container, *, src_dir, kernel_root, mount_source, env, out_dir, image, volume):
+        captured["kernel_root"] = kernel_root
+        out_dir.mkdir(parents=True, exist_ok=True)
+        ko = out_dir / "lk01.ko"
+        ko.write_bytes(b"K")
+        return ko
+
+    monkeypatch.setattr("likedbg.modules.build_module", fake_build)
+    stage = ModuleBuildStage(
+        FakeC(),
+        image="img",
+        workspace=tmp_path,
+        env={"ARCH": "arm64", "LLVM": "1"},
+        arch="arm64",
+        volume="likedbg_ksrc",
+    )
+    ctx = _ctx(tmp_path, ("modules/lk01",))
+    stage.run(ctx)
+    assert captured["kernel_root"] == f"{VOLUME_MOUNT}/obj/linux-6.6.30-abc"
 
 
 def test_prebuilt_ko_passthrough_copies_without_build(tmp_path, monkeypatch):
