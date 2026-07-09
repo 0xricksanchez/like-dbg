@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="img/logo.png" alt="LIKE-DBG" width="280">
+</p>
+
 # LIKE-DBG
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://tldrlegal.com/license/mit-license)
