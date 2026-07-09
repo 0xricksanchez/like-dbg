@@ -73,6 +73,37 @@ def test_run_in_new_pane_splits_detached_returns_pane_and_sets_remain_on_exit():
     assert rec.calls == []
 
 
+def test_run_in_new_pane_full_adds_dash_f_for_full_window_split():
+    # full=True inserts -f so the new pane spans the full window height (the Debugger's right column),
+    # not just the target pane's size.
+    checked_query = CheckedQueryRecorder(response="%3")
+    pane = Session("LIKE-DBG", checked_query=checked_query).run_in_new_pane(
+        target="%1",
+        direction="h",
+        percent=62,
+        cmd="gdb",
+        full=True,
+    )
+    assert pane == "%3"
+    assert checked_query.calls == [
+        [
+            "tmux",
+            "split-window",
+            "-d",
+            "-P",
+            "-F",
+            "#{pane_id}",
+            "-f",
+            "-h",
+            "-p",
+            "62",
+            "-t",
+            "%1",
+            "tmux set-option -p remain-on-exit on; exec gdb",
+        ]
+    ]
+
+
 def test_run_in_new_pane_raises_when_split_fails():
     checked_query = CheckedQueryRecorder(rc=1)
     with pytest.raises(SessionError):

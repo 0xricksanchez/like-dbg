@@ -35,7 +35,7 @@ class _FakeSession:
     def set_option(self, k, v):
         self.options[k] = v
 
-    def run_in_new_pane(self, *, target, direction, percent, cmd):
+    def run_in_new_pane(self, *, target, direction, percent, cmd, full=False):
         return next(self._panes)
 
     def pipe_pane(self, *, pane, output):

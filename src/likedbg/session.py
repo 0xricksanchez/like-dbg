@@ -86,21 +86,17 @@ class Session:
         direction: Literal["h", "v"],
         percent: int,
         cmd: str,
+        full: bool = False,
     ) -> str:
+        # full (-f): split the whole window rather than just `target`, so the new pane spans the full
+        # window height (with -h). Lets the Debugger take the full-height right column even though the
+        # left column is already split into the host CLI and the Debuggee.
         wrapped_cmd = f"tmux set-option -p remain-on-exit on; exec {cmd}"
-        pane = self._tmux_query(
-            "split-window",
-            "-d",
-            "-P",
-            "-F",
-            "#{pane_id}",
-            f"-{direction}",
-            "-p",
-            str(percent),
-            "-t",
-            str(target),
-            wrapped_cmd,
-        )
+        split_args = ["split-window", "-d", "-P", "-F", "#{pane_id}"]
+        if full:
+            split_args.append("-f")
+        split_args += [f"-{direction}", "-p", str(percent), "-t", str(target), wrapped_cmd]
+        pane = self._tmux_query(*split_args)
         return pane
 
     def respawn_pane(self, *, pane: str, cmd: str) -> None:

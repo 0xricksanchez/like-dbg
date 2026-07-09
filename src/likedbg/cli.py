@@ -208,6 +208,13 @@ def explain_config(
     return "\n".join(lines)
 
 
+# tmux layout: the host CLI (top-left) and the Debuggee/QEMU console (bottom-left) share the left
+# column; the Debugger (pwndbg/GEF) takes the full-height right column, where it needs the vertical
+# room for registers, disassembly, source, and backtrace. See run_in_new_pane's `full` (-f).
+_DEBUGGER_WIDTH_PCT = 62   # Debugger share of the full window width (spans the full height, on the right)
+_DEBUGGEE_HEIGHT_PCT = 50  # Debuggee (QEMU) share of the left column height, below the host CLI
+
+
 def _make_pane_launchers(
     session: Session,
     host: HostProfile,
@@ -236,7 +243,10 @@ def _make_pane_launchers(
     def launch_debuggee(cmd: str) -> None:
         nonlocal debuggee_pane
         session.set_option("@likedbg_debuggee_cmd", cmd)
-        debuggee_pane = session.run_in_new_pane(target=base_pane, direction="h", percent=66, cmd=cmd)
+        # Debuggee (QEMU) below the host CLI, in the left column.
+        debuggee_pane = session.run_in_new_pane(
+            target=base_pane, direction="v", percent=_DEBUGGEE_HEIGHT_PCT, cmd=cmd
+        )
         session.set_option("@likedbg_debuggee_pane", debuggee_pane)
         if recorder is not None:
             session.set_option("@likedbg_debuggee_pane_log", str(recorder.debuggee_pane_log))
@@ -259,10 +269,13 @@ def _make_pane_launchers(
             debuginfod_cache=debuginfod_cache,
         )
         session.set_option("@likedbg_debugger_cmd", cmd)
+        # Debugger on the full-height right column. -f (full=True) spans the whole window height even
+        # though the left column is already split into the host CLI and the Debuggee above.
         debugger_pane = session.run_in_new_pane(
-            target=debuggee_pane,
-            direction="v",
-            percent=50,
+            target=base_pane,
+            direction="h",
+            percent=_DEBUGGER_WIDTH_PCT,
+            full=True,
             cmd=cmd,
         )
         session.set_option("@likedbg_debugger_pane", debugger_pane)
@@ -777,7 +790,11 @@ def cmd_restart_debuggee(session: Session) -> int:
                     f"stored base pane {base_pane} is gone; cannot recreate Debuggee pane",
                     remedy="start a fresh Debugging session with `uv run ./start_kgdb`",
                 )
-            debuggee_pane = session.run_in_new_pane(target=base_pane, direction="h", percent=66, cmd=cmd)
+            # Recreate below the host CLI (left column), matching launch_debuggee: the Debugger, if
+            # still alive, keeps the full-height right column untouched.
+            debuggee_pane = session.run_in_new_pane(
+                target=base_pane, direction="v", percent=_DEBUGGEE_HEIGHT_PCT, cmd=cmd
+            )
             session.set_option("@likedbg_debuggee_pane", debuggee_pane)
         pane_log = session.get_option("@likedbg_debuggee_pane_log")
         if pane_log and debuggee_pane:

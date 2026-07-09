@@ -77,7 +77,7 @@ class _FakeSession:
     def current_pane_id(self) -> str:
         return "%1"
 
-    def run_in_new_pane(self, *, target, direction, percent, cmd):
+    def run_in_new_pane(self, *, target, direction, percent, cmd, full=False):
         pane = next(self._panes)
         self.pane_launches.append(
             {
@@ -86,6 +86,7 @@ class _FakeSession:
                 "percent": percent,
                 "cmd": cmd,
                 "pane": pane,
+                "full": full,
             }
         )
         return pane
@@ -132,10 +133,12 @@ class _RestartSession:
     def respawn_pane(self, *, pane, cmd):
         self.respawns.append((pane, cmd))
 
-    def run_in_new_pane(self, *, target, direction, percent, cmd):
+    def run_in_new_pane(self, *, target, direction, percent, cmd, full=False):
         pane = "%4"
         self.existing.add(pane)
-        self.launches.append({"target": target, "direction": direction, "percent": percent, "cmd": cmd, "pane": pane})
+        self.launches.append(
+            {"target": target, "direction": direction, "percent": percent, "cmd": cmd, "pane": pane, "full": full}
+        )
         return pane
 
     def select_pane(self, target):
@@ -653,12 +656,16 @@ def test_pipeline_launches_process_panes_and_stores_session_options(tmp_path):
     pipe._stages[-2].run(ctx)  # type: ignore[attr-defined]
     pipe._stages[-1].run(ctx)  # type: ignore[attr-defined]
 
+    # Debuggee (QEMU) splits below the host CLI (%1) in the left column.
     assert session.pane_launches[0]["target"] == "%1"
-    assert session.pane_launches[0]["direction"] == "h"
-    assert session.pane_launches[0]["percent"] == 66
-    assert session.pane_launches[1]["target"] == "%2"
-    assert session.pane_launches[1]["direction"] == "v"
-    assert session.pane_launches[1]["percent"] == 50
+    assert session.pane_launches[0]["direction"] == "v"
+    assert session.pane_launches[0]["percent"] == 50
+    assert session.pane_launches[0]["full"] is False
+    # Debugger takes the full-height right column (-f) off the host-CLI anchor.
+    assert session.pane_launches[1]["target"] == "%1"
+    assert session.pane_launches[1]["direction"] == "h"
+    assert session.pane_launches[1]["percent"] == 62
+    assert session.pane_launches[1]["full"] is True
     assert session.unset_options == [
         "@likedbg_restart_in_progress",
         "@likedbg_debuggee_cmd",
@@ -829,10 +836,11 @@ def test_restart_debuggee_recreates_when_debuggee_pane_stale():
     assert session.launches == [
         {
             "target": "%1",
-            "direction": "h",
-            "percent": 66,
+            "direction": "v",
+            "percent": 50,
             "cmd": "qemu-system-aarch64 -S",
             "pane": "%4",
+            "full": False,
         }
     ]
     assert session.options["@likedbg_debuggee_pane"] == "%4"
