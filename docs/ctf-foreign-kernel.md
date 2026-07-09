@@ -68,6 +68,15 @@ With a `vmlinux`, GDB gets full function symbols. Without one:
 If architecture detection fails or is wrong (an unusual image, or no usable `vmlinux`), set
 `[foreign] arch` to `x86_64` or `arm64`.
 
+`[debugger] debuginfod` defaults to `auto`, which is on for a `[foreign]` run. GDB queries a
+debuginfod server by the kernel's build-id before loading `vmlinux`, so a stock distro or n-day
+kernel (whose build-id is commonly indexed by a public or vendor debuginfod server) can regain
+full function symbols even from the stripped, kallsyms-only auto-extracted x86 `vmlinux` above. A
+bespoke CTF kernel with a build-id no server has ever indexed simply gets no match; GDB falls back
+to whatever symbols it already had, with no other effect. Set `[debugger] debuginfod = "off"` to
+disable the lookup outright, or `debuginfod_urls` to point at a private mirror; see
+[configuration.md](configuration.md#debugger) for both knobs.
+
 ## Deliver an exploit
 
 There is no SSH or 9p share, so the exploit reaches the guest one of two ways. In both, you run
