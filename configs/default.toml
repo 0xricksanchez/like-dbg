@@ -37,7 +37,10 @@ share = true
 ext = "pwndbg"
 break_on_crash = true
 crash_breakpoints = ["panic", "die", "oops_enter"]
-sanitizer_breakpoints = ["kasan_report", "ubsan_epilogue"]
+# Opt-in, empty by default. Set e.g. ["kasan_report"] to halt gdb at KASAN reports (armed only after
+# userspace via the gate). On a KASAN kernel with the text_poke false positive it floods, so prefer a
+# manual `break kasan_report` right before the exploit. KASAN is captured into crash.md regardless.
+sanitizer_breakpoints = []
 
 [debugging]
 profiles = ["exploit-dev"]

@@ -27,33 +27,24 @@ walkthrough does.
 
 KASAN turns the silent use-after-free into a precise report that crash intelligence records.
 
-One configuration note first, for **x86_64**. A KASAN kernel emits benign KASAN reports very early
-in boot (in the x86 alternatives / text-poke path). With the default crash auto-break enabled, gdb
-re-traps on them and never reaches userspace, so turn it off for this run by adding to
-`configs/local.toml`:
-
-```toml
-[debugger]
-break_on_crash = false
-```
-
-The exploit's use-after-free is still captured from the serial console, so you lose nothing. On
-arm64 this step is not needed (the kernel boots through those early reports cleanly), but setting
-it is harmless and keeps the walkthrough identical on both architectures. Then build and boot:
+Build an `exploit-dev` kernel with KASAN added:
 
 ```sh
 uv run ./start_kgdb --profile exploit-dev,kasan
 ```
 
-The first KASAN build is slow (several minutes; it is cached afterward). When it finishes, gdb
-lands at `start_kernel`. In the Debugger pane, boot to userspace:
+The first KASAN build is slow (several minutes; it is cached afterward). When it finishes, gdb lands
+at `start_kernel`. In the Debugger pane, boot to userspace:
 
 ```gdb
 continue
 ```
 
-With `break_on_crash` off, the kernel boots straight through to the login prompt; the boot-time
-KASAN reports print to the console but do not stop gdb.
+Wait for the login prompt in the Debuggee pane. By default the debugger does not halt on KASAN
+reports, so the kernel's benign boot-time KASAN reports (an x86 text-poke false positive) print to
+the console without stopping gdb, and the boot runs straight through. The exploit's use-after-free
+is still captured either way; see [Optional: halt gdb at the KASAN report](#optional-halt-gdb-at-the-kasan-report)
+if you want to land at the fault in the debugger.
 
 ## 2. Load the vulnerable driver
 
@@ -136,6 +127,25 @@ To see the other half, break on `lk01_write` (`lk01.c:83`) as well. Note it fire
 write before the free too, so continue to the call that happens after `lk01_free`: there the guard
 `if (!o->ptr)` passes because the pointer is non-NULL (though dangling), and `copy_from_user` writes
 into the freed object. That is the use-after-free the non-NULL check fails to prevent.
+
+## Optional: halt gdb at the KASAN report
+
+By default the debugger captures KASAN reports from the console (into `crash.md`) but does not stop
+gdb at them, because a KASAN kernel like this one emits a benign text-poke KASAN false positive that
+floods `kasan_report` throughout boot and init. To land in the debugger *at* the exploit's fault,
+arm `kasan_report` by hand in the Debugger pane right before you run the exploit, so you skip the
+boot and init flood:
+
+```gdb
+break kasan_report
+```
+
+Then run the PoC from a host shell; gdb halts at `kasan_report` with the use-after-free's live
+registers and backtrace. You can also set `[debugger] sanitizer_breakpoints = ["kasan_report"]` in
+config to arm it automatically once userspace is reached, but on this kernel it still trips on the
+boot and init text-poke reports first, so the manual "arm it right before the exploit" approach is
+cleaner here. On a KASAN kernel without the text-poke false positive, the config option works
+cleanly.
 
 ## The loop's commands and mechanisms
 

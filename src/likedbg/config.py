@@ -153,10 +153,12 @@ class DebuggeeCfg(_Base):
 class DebuggerCfg(_Base):
     ext: Ext = "pwndbg"
     break_on_crash: bool = True
-    # FATAL faults: armed immediately. SANITIZER reports: armed only after the guest reaches
-    # userspace (see gdbcmd._crash_capture_source), because KASAN/UBSAN fire benignly at boot.
+    # FATAL faults (panic/die/oops_enter): armed immediately. SANITIZER breakpoints
+    # (kasan_report/ubsan_epilogue): opt-in, EMPTY by default. When set, they are armed only after
+    # userspace via gdbcmd's gate. Default empty because on a KASAN kernel with the text_poke false
+    # positive kasan_report floods; KASAN is captured from the console into crash.md regardless.
     crash_breakpoints: tuple[str, ...] = ("panic", "die", "oops_enter")
-    sanitizer_breakpoints: tuple[str, ...] = ("kasan_report", "ubsan_epilogue")
+    sanitizer_breakpoints: tuple[str, ...] = ()
 
 
 class DebuggingCfg(_Base):
