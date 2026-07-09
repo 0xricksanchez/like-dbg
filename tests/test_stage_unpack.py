@@ -244,3 +244,14 @@ def test_bind_mode_mounts_host_ksrc_dir(tmp_path):
     assert str(tmp_path / "artifacts" / "ksrc") in mounts
     assert "likedbg_ksrc" not in mounts
     assert (tmp_path / "artifacts" / "ksrc").is_dir()  # bind source created
+
+
+def test_bind_mode_creates_host_side_src_parent_dir(tmp_path):
+    """Regression: the src/ PARENT must be created host-side (as the invoking user), not by the
+    root-run container (which only mkdir -p's the leaf source_root). Otherwise the parent ends up
+    root-owned and a later host-side `cache.remove_source` rmtree fails with PermissionError on
+    the final rmdir. FakeContainerService touches no filesystem, so this dir existing after run()
+    proves the stage itself created it, not the (mocked) container."""
+    svc = FakeContainerService()
+    UnpackStage(svc, recipe=_recipe(), kernel_volume="likedbg_ksrc", workspace=tmp_path).run(_ctx("bind", tmp_path))
+    assert (tmp_path / "artifacts" / "ksrc" / "src").is_dir()

@@ -82,6 +82,12 @@ class UnpackStage:
         source = cache.tree_mount_source(self._workspace, storage_mode=ctx.host.storage_mode, volume=self._volume)
         if ctx.host.storage_mode != "volume":
             Path(source).mkdir(parents=True, exist_ok=True)
+            # Create the src/ PARENT host-side (as the invoking user), not inside the root-run
+            # container: the container only mkdir -p's the leaf (source_root) below, so if the
+            # parent were left for the container to create it would end up root-owned and a later
+            # host-side `cache.remove_source` rmtree of the leaf would fail with PermissionError
+            # on the final rmdir (needs write on the parent).
+            (self._workspace / "artifacts" / cache.TREE_ROOT / "src").mkdir(parents=True, exist_ok=True)
         volumes = {
             str(self._workspace): {"bind": _MOUNT, "mode": "ro"},
             source: {"bind": VOLUME_MOUNT, "mode": "rw"},

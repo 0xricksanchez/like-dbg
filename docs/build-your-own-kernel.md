@@ -150,6 +150,10 @@ uv run ./start_kgdb --clean-all                # clear the cache
 uv run ./start_kgdb --force-rebuild            # rebuild the current configuration
 ```
 
+Kernel source trees are shared across builds with the same (version, patches): `--list` shows
+each source with a refcount of the builds referencing it, and `--clean`/`--clean-all` auto-remove
+a source once its last referencing build is cleaned.
+
 ## Limitations
 
 - **Architectures:** x86_64 and arm64 only.

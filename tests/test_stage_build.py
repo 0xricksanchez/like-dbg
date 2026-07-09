@@ -302,6 +302,28 @@ def test_build_bind_mode_mounts_host_ksrc_and_chowns_objdir(tmp_path):
     )
 
 
+def test_build_bind_mode_creates_host_side_obj_parent_dir(tmp_path):
+    """Regression: the obj/ PARENT must be created host-side (as the invoking user), not by the
+    root-run container (which only mkdir -p's the leaf objdir). Otherwise the parent ends up
+    root-owned and a later host-side `cache.remove_cached` rmtree fails with PermissionError on
+    the final rmdir. _BuildFakeC touches no filesystem, so this dir existing after run() proves
+    the stage itself created it, not the (mocked) container."""
+    c = _BuildFakeC()
+    label = "linux-6.6.30-a1b2c3d4"
+    recipe = _recipe()
+    ctx = _ctx(tmp_path, storage="bind")
+    ctx.build_label = label
+    ctx.kernel_root = None
+    BuildStage(
+        c,
+        recipe=recipe,
+        kbuilder_image="like_kbuilder_arm64:latest",
+        workspace=tmp_path,
+        kernel_volume="likedbg_ksrc",
+    ).run(ctx)
+    assert (tmp_path / "artifacts" / "ksrc" / "obj").is_dir()
+
+
 def test_build_volume_mode_does_not_chown(tmp_path):
     c = _BuildFakeC()
     ctx = _ctx(tmp_path, storage="volume")
