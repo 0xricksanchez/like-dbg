@@ -14,6 +14,7 @@ from loguru import logger
 
 from likedbg import cache
 from likedbg.cache import BuildRecipe
+from likedbg.cache import parse_du_bytes
 from likedbg.constants import LIKEDBG_CCACHE_VOLUME
 from likedbg.constants import VOLUME_MOUNT
 from likedbg.container_service import ContainerService
@@ -139,7 +140,7 @@ class BuildStage:
                 compile_cmd = f'{compile_cmd} CC="ccache {self._recipe.compiler}"'
             self._c.exec(container, ccache_env + compile_cmd, workdir=source_root)
             du_out = self._c.exec(container, f"du -sb {objdir}", workdir=objdir).output
-            size_bytes = int(du_out.split()[0])
+            size_bytes = parse_du_bytes(du_out)
             if self._chown_to is not None and ctx.host.storage_mode != "volume":
                 uid, gid = self._chown_to
                 self._c.exec(container, f"chown -R {uid}:{gid} {objdir}")

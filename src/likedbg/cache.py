@@ -50,6 +50,18 @@ def parse_size(s: str) -> int:
         raise ValueError(f"invalid size {s!r}: use e.g. 50G, 500M") from exc
 
 
+def parse_du_bytes(out: str) -> int:
+    """Parse `du -sb` output tolerantly; returns 0 on malformed/empty input.
+
+    `du -sb <path>` normally returns "<size_bytes>\t<path>\n"; we extract the size.
+    On empty output or parse failure, returns 0 instead of raising (best-effort accounting).
+    """
+    try:
+        return int(out.split()[0])
+    except (IndexError, ValueError):
+        return 0
+
+
 def cache_key(inputs: dict[str, str]) -> str:
     blob = json.dumps(inputs, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(blob.encode()).hexdigest()

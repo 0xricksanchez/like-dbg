@@ -285,3 +285,40 @@ def test_bind_mode_creates_host_side_src_parent_dir(tmp_path):
     svc = FakeContainerService()
     UnpackStage(svc, recipe=_recipe(), kernel_volume="likedbg_ksrc", workspace=tmp_path).run(_ctx("bind", tmp_path))
     assert (tmp_path / "artifacts" / "ksrc" / "src").is_dir()
+
+
+def test_unpack_handles_malformed_du_output_sets_size_zero(tmp_path):
+    """Robustness: if du -sb returns empty or unparseable output, size_bytes defaults to 0
+    (best-effort accounting) rather than crashing a successful unpack."""
+    recipe = _recipe()
+
+    class _MalformedDuFakeC(FakeContainerService):
+        def exec(self, container, cmd, *, workdir=None):
+            self.execs.append(cmd)
+            if cmd.startswith("du -sb"):
+                return SimpleNamespace(exit_code=0, output="")  # empty du output
+            return SimpleNamespace(exit_code=0, output=_fake_exec_output(cmd))
+
+    svc = _MalformedDuFakeC()
+    ctx = _ctx("volume", tmp_path)
+    UnpackStage(svc, recipe=recipe, kernel_volume="likedbg_ksrc", workspace=tmp_path).run(ctx)
+    m = load_manifest(tmp_path, "source", recipe.src_label)
+    assert m.size_bytes == 0  # defaults to 0, does not raise
+
+
+def test_unpack_handles_garbage_du_output_sets_size_zero(tmp_path):
+    """Robustness: if du -sb returns garbage (no leading bytes field), size_bytes defaults to 0."""
+    recipe = _recipe()
+
+    class _GarbageDuFakeC(FakeContainerService):
+        def exec(self, container, cmd, *, workdir=None):
+            self.execs.append(cmd)
+            if cmd.startswith("du -sb"):
+                return SimpleNamespace(exit_code=0, output="garbage_output\t/path\n")
+            return SimpleNamespace(exit_code=0, output=_fake_exec_output(cmd))
+
+    svc = _GarbageDuFakeC()
+    ctx = _ctx("volume", tmp_path)
+    UnpackStage(svc, recipe=recipe, kernel_volume="likedbg_ksrc", workspace=tmp_path).run(ctx)
+    m = load_manifest(tmp_path, "source", recipe.src_label)
+    assert m.size_bytes == 0  # defaults to 0, does not raise
