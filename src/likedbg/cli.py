@@ -288,6 +288,7 @@ def build_pipeline(
     recorder: RunRecorder | None = None,
     break_on_crash: bool = False,
     crash_breakpoints: tuple[str, ...] = (),
+    sanitizer_breakpoints: tuple[str, ...] = (),
     exploit_share: Path | None = None,
 ) -> Pipeline:
     gdb_mount_source = cache.locations(
@@ -343,6 +344,7 @@ def build_pipeline(
                 breakpoint="start_kernel",
                 break_on_crash=break_on_crash,
                 crash_breakpoints=crash_breakpoints,
+                sanitizer_breakpoints=sanitizer_breakpoints,
                 modules_gdb=(f"{EXPLOIT_MOUNT}/modules.gdb" if exploit_share is not None else None),
             ),
         ]
@@ -365,6 +367,7 @@ def build_use_pipeline(
     recorder: RunRecorder | None = None,
     break_on_crash: bool = False,
     crash_breakpoints: tuple[str, ...] = (),
+    sanitizer_breakpoints: tuple[str, ...] = (),
     exploit_share: Path | None = None,
 ) -> Pipeline:
     launch_debuggee, run_gdb = _make_pane_launchers(
@@ -402,6 +405,7 @@ def build_use_pipeline(
                 breakpoint="start_kernel",
                 break_on_crash=break_on_crash,
                 crash_breakpoints=crash_breakpoints,
+                sanitizer_breakpoints=sanitizer_breakpoints,
                 modules_gdb=(f"{EXPLOIT_MOUNT}/modules.gdb" if exploit_share is not None else None),
             ),
         ]
@@ -426,6 +430,7 @@ def build_foreign_pipeline(
     recorder: RunRecorder | None = None,
     break_on_crash: bool = False,
     crash_breakpoints: tuple[str, ...] = (),
+    sanitizer_breakpoints: tuple[str, ...] = (),
 ) -> Pipeline:
     # ADR-0010: a foreign guest has no exploit share (no guest-side delivery path): never mount one,
     # and DebuggerStage below is left at its modules_gdb=None default (no modules.gdb to watch).
@@ -450,6 +455,7 @@ def build_foreign_pipeline(
                 breakpoint="start_kernel",
                 break_on_crash=break_on_crash,
                 crash_breakpoints=crash_breakpoints,
+                sanitizer_breakpoints=sanitizer_breakpoints,
             ),
         ]
     )
@@ -530,6 +536,7 @@ def cmd_use(
         recorder=recorder,
         break_on_crash=use_settings.debugger.break_on_crash,
         crash_breakpoints=use_settings.debugger.crash_breakpoints,
+        sanitizer_breakpoints=use_settings.debugger.sanitizer_breakpoints,
         exploit_share=exploit_share,
     )
     pipeline.run(ctx)
@@ -610,6 +617,7 @@ def cmd_foreign(
         recorder=recorder,
         break_on_crash=cfg.settings.debugger.break_on_crash,
         crash_breakpoints=cfg.settings.debugger.crash_breakpoints,
+        sanitizer_breakpoints=cfg.settings.debugger.sanitizer_breakpoints,
     )
     pipeline.run(ctx)
     return 0
@@ -1156,6 +1164,7 @@ def main(argv: list[str] | None = None) -> int:
             recorder=recorder,
             break_on_crash=cfg.settings.debugger.break_on_crash,
             crash_breakpoints=cfg.settings.debugger.crash_breakpoints,
+            sanitizer_breakpoints=cfg.settings.debugger.sanitizer_breakpoints,
             exploit_share=exploit_share,
         )
         pipeline.run(ctx)

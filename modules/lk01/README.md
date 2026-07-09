@@ -33,9 +33,11 @@ uv run ./start_kgdb --run ./exploit/expl.c       # auto-compile + run
 ```
 
 To have the use-after-free caught deterministically (a KASAN report captured in a crash report),
-build with KASAN: `uv run ./start_kgdb --profile exploit-dev,kasan`. Set
-`[debugger] break_on_crash = false` in `configs/local.toml` first: a KASAN kernel prints benign
-reports during early boot that the crash auto-break would otherwise trap. See the
+build with KASAN: `uv run ./start_kgdb --profile exploit-dev,kasan`. The default crash auto-break
+halts only on fatal faults (panic/die/oops), so a KASAN kernel boots straight through its benign
+boot-time reports; the use-after-free is still captured into the crash report. To also halt gdb at
+the KASAN report, see the walkthrough's [optional
+step](../../docs/walkthrough-lk01.md#optional-halt-gdb-at-the-kasan-report). See the
 [LK01 walkthrough](../../docs/walkthrough-lk01.md) for the full session.
 
 For the complete guided session (build, boot, arm gdb, load the driver, trigger the

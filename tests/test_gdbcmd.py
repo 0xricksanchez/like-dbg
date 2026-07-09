@@ -280,3 +280,142 @@ def test_module_symbols_payload_execs_and_reconciles_against_a_fake_gdb(tmp_path
     fake_gdb.events.stop.callbacks[0](None)
     assert any(c == "remove-symbol-file /exploit/modules/foo.ko" for c in fake_gdb.calls)
     assert namespace["_APPLIED"] == {}
+
+
+# ---------------------------------------------------------------------------
+# Task 2 (Plan B): gated crash-capture payload
+# ---------------------------------------------------------------------------
+
+
+class _FakeBP:
+    """Subclassable stand-in for gdb.Breakpoint; records every instance's spec and enabled state."""
+
+    created: list = []
+
+    def __init__(self, spec):
+        self.spec = spec
+        self.deleted = False
+        self.enabled = True
+        _FakeBP.created.append(self)
+
+    def delete(self):
+        self.deleted = True
+
+
+class _FakeGdbBP:
+    Breakpoint = _FakeBP
+    # Symbols the fake kernel "has": kasan_report and the lead gate resolve; ubsan_epilogue does not.
+    # The payload gates both sanitizer and gate breakpoints on _sym_present (lookup_*_symbol), so a
+    # symbol absent from this set is treated exactly as a stripped kernel would report it.
+    _PRESENT = {"kasan_report", "run_init_process", "kernel_init"}
+
+    def __init__(self):
+        self.calls = []
+        self.writes = []
+        self.posted = []
+
+    def execute(self, cmd, to_string=False):
+        self.calls.append(cmd)
+        return ""
+
+    def write(self, msg):
+        self.writes.append(msg)
+
+    def post_event(self, fn):
+        self.posted.append(fn)
+
+    def lookup_global_symbol(self, name, *a):
+        return object() if name in self._PRESENT else None
+
+    def lookup_static_symbol(self, name, *a):
+        return None
+
+
+def test_crash_capture_gates_sanitizer_breakpoints_until_userspace(monkeypatch):
+    import ast
+    import sys
+
+    from likedbg.gdbcmd import _crash_capture_source
+
+    payload = _crash_capture_source(
+        ("panic",),
+        ("kasan_report", "ubsan_epilogue"),
+        ("run_init_process", "kernel_init"),
+        "/crash/crash.gdb.json",
+    )
+    source = ast.literal_eval(payload[len("python exec(") : -1])
+
+    _FakeBP.created = []
+    fake = _FakeGdbBP()
+    monkeypatch.setitem(sys.modules, "gdb", fake)
+    exec(compile(source, "<crash_payload>", "exec"), {})  # noqa: S102
+
+    by_spec = {b.spec: b for b in _FakeBP.created}
+    # Fatal armed and enabled immediately; the gate is set.
+    assert by_spec["panic"].enabled is True
+    assert "run_init_process" in by_spec
+    # kasan_report is created but DORMANT (disabled) at load; ubsan_epilogue is absent, so skipped
+    # (no benign pending breakpoint left behind).
+    assert by_spec["kasan_report"].enabled is False
+    assert "ubsan_epilogue" not in by_spec
+
+    # Fire the gate: it defers via post_event; nothing is created or enabled inside stop(). Running
+    # the queued event enables the dormant breakpoint and removes the gate.
+    gate = by_spec["run_init_process"]
+    assert gate.stop() is False
+    assert by_spec["kasan_report"].enabled is False
+    assert fake.posted, "gate should defer via gdb.post_event"
+    fake.posted[0]()  # simulate gdb running the posted event
+    assert by_spec["kasan_report"].enabled is True
+    assert gate.deleted is True
+
+
+def test_crash_capture_falls_back_to_kernel_init_when_run_init_process_absent(monkeypatch):
+    import ast
+    import sys
+
+    from likedbg.gdbcmd import _crash_capture_source
+
+    payload = _crash_capture_source(
+        (), ("kasan_report",), ("run_init_process", "kernel_init"), "/crash/crash.gdb.json"
+    )
+    source = ast.literal_eval(payload[len("python exec(") : -1])
+
+    _FakeBP.created = []
+
+    # A stripped kernel that does not export run_init_process: lookup returns None for it (dropped from
+    # _PRESENT), which is how real gdb reports the absent symbol. The payload must skip it via
+    # _sym_present and cascade to kernel_init rather than leave a pending gate that never fires.
+    class _NoRunInitGdb(_FakeGdbBP):
+        _PRESENT = {"kasan_report", "kernel_init"}
+
+    fake = _NoRunInitGdb()
+    monkeypatch.setitem(sys.modules, "gdb", fake)
+    exec(compile(source, "<crash_payload>", "exec"), {})  # noqa: S102
+
+    specs = [b.spec for b in _FakeBP.created]
+    assert "run_init_process" not in specs  # absent symbol skipped before creation (no pending gate)
+    assert "kernel_init" in specs  # cascade fell through to the guaranteed symbol
+
+
+def test_crash_capture_no_gate_when_sanitizer_list_empty(monkeypatch):
+    import ast
+    import sys
+
+    from likedbg.gdbcmd import _crash_capture_source
+
+    # The default path: empty sanitizer list -> _SAN_BPS stays empty -> NO gate breakpoint is created,
+    # even though the gate symbols are embedded in the payload text. Only the fatal breakpoint is armed.
+    payload = _crash_capture_source(
+        ("panic",), (), ("run_init_process", "kernel_init"), "/crash/crash.gdb.json"
+    )
+    source = ast.literal_eval(payload[len("python exec(") : -1])
+
+    _FakeBP.created = []
+    fake = _FakeGdbBP()
+    monkeypatch.setitem(sys.modules, "gdb", fake)
+    exec(compile(source, "<crash_payload>", "exec"), {})  # noqa: S102
+
+    specs = [b.spec for b in _FakeBP.created]
+    assert specs == ["panic"]  # only the fatal breakpoint; no sanitizer bp and no gate
+    assert "run_init_process" not in specs and "kernel_init" not in specs

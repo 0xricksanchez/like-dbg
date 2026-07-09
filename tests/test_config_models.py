@@ -105,7 +105,8 @@ def test_crash_config_defaults() -> None:
     assert DebuggeeCfg().capture_console is True
     dg = DebuggerCfg()
     assert dg.break_on_crash is True
-    assert dg.crash_breakpoints == ("panic", "die", "oops_enter", "kasan_report", "ubsan_epilogue")
+    assert dg.crash_breakpoints == ("panic", "die", "oops_enter")
+    assert dg.sanitizer_breakpoints == ()
 
 
 def test_crash_breakpoints_overridable() -> None:

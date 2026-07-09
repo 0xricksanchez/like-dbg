@@ -158,7 +158,8 @@ configuration error, not a silent no-op.
 |---|---|---|
 | `ext` | `pwndbg` | `pwndbg`, `gef`. The GDB extension. |
 | `break_on_crash` | `true` | Auto-break GDB at a fault to capture a symbolized backtrace. |
-| `crash_breakpoints` | `panic`, `die`, `oops_enter`, `kasan_report`, `ubsan_epilogue` | Symbols the auto-break traps on. |
+| `crash_breakpoints` | `panic`, `die`, `oops_enter` | Fatal-fault symbols the auto-break halts on immediately. |
+| `sanitizer_breakpoints` | (empty) | Opt-in KASAN/UBSAN symbols (e.g. `kasan_report`) to halt on, armed only after the guest reaches userspace via a one-shot gate. Empty by default: a KASAN kernel with the text-poke false positive floods `kasan_report`, so prefer a manual `break kasan_report` right before the exploit. KASAN is captured from the console into `crash.md` regardless. |
 
 ### `[debugging]`
 
