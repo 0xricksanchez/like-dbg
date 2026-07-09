@@ -90,15 +90,21 @@ LikedbgReconnect()
     return f"python exec({source!r})"
 
 
-def _crash_capture_source(symbols: tuple[str, ...], out_path: str) -> str:
-    # Built via literal placeholder substitution (not %-formatting or f-string
-    # interpolation) so the payload's own `%s` formatting and `{}` dict/set
-    # literals below can be written as plain, unescaped Python source.
+def _crash_capture_source(
+    fatal: tuple[str, ...],
+    sanitizer: tuple[str, ...],
+    gates: tuple[str, ...],
+    out_path: str,
+) -> str:
+    # Built via literal placeholder substitution (not %-formatting or f-string interpolation) so the
+    # payload's own `%s` formatting and `{}` literals below stay unescaped.
     source = """
 import gdb, json, os
 
 _OUT = __OUT__
-_SYMS = __SYMS__
+_FATAL = __FATAL__
+_SANITIZER = __SANITIZER__
+_GATES = __GATES__
 
 
 def _regs():
@@ -134,13 +140,49 @@ class _LikedbgCrash(gdb.Breakpoint):
         return True
 
 
-for _s in _SYMS:
+for _s in _FATAL:
     try:
         _LikedbgCrash(_s)
     except Exception:
         pass
+
+
+# Sanitizer reports (KASAN/UBSAN) fire benignly during boot (the x86 alternatives/text-poke path),
+# so arm them only once the guest reaches userspace, via a one-shot gate on run_init_process (else
+# kernel_init). If neither resolves (stripped kernel), they stay unarmed and KASAN is captured from
+# the console instead. The gate never halts and removes itself after arming.
+class _LikedbgGate(gdb.Breakpoint):
+    def stop(self):
+        for _s in _SANITIZER:
+            try:
+                _LikedbgCrash(_s)
+            except Exception:
+                pass
+        try:
+            self.delete()
+        except Exception:
+            pass
+        return False
+
+
+if _SANITIZER:
+    try:
+        gdb.execute("set breakpoint pending off", to_string=True)
+    except Exception:
+        pass
+    for _g in _GATES:
+        try:
+            _LikedbgGate(_g)
+            break
+        except Exception:
+            continue
 """
-    source = source.replace("__OUT__", repr(out_path)).replace("__SYMS__", repr(list(symbols)))
+    source = (
+        source.replace("__OUT__", repr(out_path))
+        .replace("__FATAL__", repr(list(fatal)))
+        .replace("__SANITIZER__", repr(list(sanitizer)))
+        .replace("__GATES__", repr(list(gates)))
+    )
     return f"python exec({source!r})"
 
 
@@ -240,6 +282,7 @@ def build_gdb_args(
     port: int = 1234,
     break_on_crash: bool = False,
     crash_breakpoints: tuple[str, ...] = (),
+    sanitizer_breakpoints: tuple[str, ...] = (),
     crash_drop_path: str = CRASH_DROP_MOUNT,
     modules_gdb: str | None = None,
 ) -> list[str]:
@@ -261,15 +304,20 @@ def build_gdb_args(
         # high-half virtual address before the MMU is enabled at early boot (e.g.
         # start_kernel).
         args += ["-ex", f"hbreak {breakpoint}", "-ex", "continue"]
-    if break_on_crash and crash_breakpoints:
-        # The crash breakpoints are SOFTWARE breakpoints on high-half kernel VAs
-        # (panic/die/oops_enter). gdb inserts breakpoints on resume, so they must be
-        # *created* only after the guest reaches start_kernel (kernel VA space now
-        # mapped): creating them before the initial `continue` makes gdb try to insert
-        # them from CPU reset (MMU off) and abort the command, so the guest never boots.
-        # Deferring creation to here means insertion happens on the user's next
-        # `continue`, when the VA is up, like a runtime `break schedule`.
-        args += ["-ex", _crash_capture_source(crash_breakpoints, f"{crash_drop_path}/crash.gdb.json")]
+    if break_on_crash and (crash_breakpoints or sanitizer_breakpoints):
+        # Fatal breakpoints (panic/die/oops_enter) are armed immediately; the crash-capture payload
+        # gates the sanitizer breakpoints (kasan_report/ubsan_epilogue) behind a one-shot userspace
+        # breakpoint, because a KASAN kernel fires benign reports during boot. gdb inserts breakpoints
+        # on resume, so this whole payload is emitted only after the guest reaches start_kernel.
+        args += [
+            "-ex",
+            _crash_capture_source(
+                crash_breakpoints,
+                sanitizer_breakpoints,
+                ("run_init_process", "kernel_init"),
+                f"{crash_drop_path}/crash.gdb.json",
+            ),
+        ]
     if modules_gdb is not None:
         # Stop-driven reconcile: fires on every gdb stop (breakpoints, signals, manual interrupt),
         # never on its own: loads/reloads/unloads module symbols non-disruptively at the operator's
