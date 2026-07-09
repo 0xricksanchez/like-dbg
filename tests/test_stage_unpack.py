@@ -17,6 +17,14 @@ from likedbg.host_profile import HostProfile
 from likedbg.pipeline import PipelineContext
 from likedbg.stages.unpack import UnpackStage
 
+_DU_OUTPUT = "54321\t/ksrc/src/fake\n"
+
+
+def _fake_exec_output(cmd: str) -> str:
+    """Answers `du -sb` (needed since UnpackStage now parses its output for size_bytes) and ""
+    for everything else, so the rest of the (unrelated) unpack flow is unaffected."""
+    return _DU_OUTPUT if cmd.startswith("du -sb") else ""
+
 
 class FakeContainerService(ContainerService):
     def __init__(self):
@@ -29,7 +37,7 @@ class FakeContainerService(ContainerService):
 
     def exec(self, container, cmd, *, workdir=None):
         self.execs.append(cmd)
-        return SimpleNamespace(exit_code=0, output="")
+        return SimpleNamespace(exit_code=0, output=_fake_exec_output(cmd))
 
     def stop(self, container):
         pass
@@ -188,6 +196,28 @@ def test_unpack_applies_patches_then_mrproper_then_chmod_in_order(tmp_path):
     assert m.key == recipe.src_key
     assert m.version == recipe.version
     assert m.inputs == {"patch:patches": "deadbeef"}
+
+
+def test_unpack_stamps_source_manifest_size_bytes_from_du(tmp_path):
+    recipe = _recipe()
+    svc = FakeContainerService()
+    ctx = _ctx("volume", tmp_path)
+
+    loc = cache.locations(
+        recipe.label,
+        arch=recipe.arch,
+        storage_mode="volume",
+        workspace=tmp_path,
+        volume="likedbg_ksrc",
+        src_label=recipe.src_label,
+    )
+    source_root = loc.source_root
+
+    UnpackStage(svc, recipe=recipe, kernel_volume="likedbg_ksrc", workspace=tmp_path).run(ctx)
+
+    assert any(c == f"du -sb {source_root}" for c in svc.execs)
+    m = load_manifest(tmp_path, "source", recipe.src_label)
+    assert m.size_bytes > 0
 
 
 def test_bind_mode_chowns_to_user_after_mrproper_before_chmod(tmp_path):

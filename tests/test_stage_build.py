@@ -48,6 +48,16 @@ def _loc(tmp_path: Path, recipe: BuildRecipe, label: str, storage: str = "volume
 # ---------------------------------------------------------------------------
 
 
+_DU_OUTPUT = "12345\t/ksrc/obj/fake\n"
+
+
+def _fake_exec_output(cmd: str) -> str:
+    """Shared canned response used by every fake container's exec(): answers `du -sb` (needed
+    since BuildStage now parses its output for size_bytes) and "" for everything else, so the
+    rest of the (unrelated) build flow is unaffected."""
+    return _DU_OUTPUT if cmd.startswith("du -sb") else ""
+
+
 class FakeC(ContainerService):
     def __init__(self):
         self.execs: list[tuple[str, str | None]] = []
@@ -59,7 +69,7 @@ class FakeC(ContainerService):
 
     def exec(self, container, cmd, *, workdir=None):
         self.execs.append((cmd, workdir))
-        return SimpleNamespace(exit_code=0, output="")
+        return SimpleNamespace(exit_code=0, output=_fake_exec_output(cmd))
 
     def stop(self, container):
         pass
@@ -116,7 +126,7 @@ class _BuildFakeC(ContainerService):
 
     def exec(self, container, cmd, *, workdir=None):
         self.execs.append(cmd)
-        return SimpleNamespace(exit_code=0, output="")
+        return SimpleNamespace(exit_code=0, output=_fake_exec_output(cmd))
 
     def stop(self, container):
         pass
@@ -365,6 +375,27 @@ def test_build_compiles_with_recipe_make_vars_then_writes_manifest_with_srckey_a
     assert m.paths["source_root"] == loc.source_root
 
 
+def test_build_stamps_size_bytes_and_last_used_from_du(tmp_path):
+    c = _BuildFakeC()
+    label = "linux-6.6.30-a1b2c3d4"
+    recipe = _recipe()
+    loc = _loc(tmp_path, recipe, label)
+    ctx = _ctx(tmp_path)
+    ctx.build_label = label
+    ctx.kernel_root = None
+    BuildStage(
+        c,
+        recipe=recipe,
+        kbuilder_image="like_kbuilder_arm64:latest",
+        workspace=tmp_path,
+        kernel_volume="likedbg_ksrc",
+    ).run(ctx)
+    assert any(cmd == f"du -sb {loc.objdir}" for cmd in c.execs)
+    m = load_manifest(tmp_path, "build", label)
+    assert m.size_bytes == 12345
+    assert m.last_used != ""
+
+
 def test_build_config_snapshot_read_from_objdir_dot_config(tmp_path):
     label = "linux-6.6.30-a1b2c3d4"
     recipe = _recipe()
@@ -375,7 +406,7 @@ def test_build_config_snapshot_read_from_objdir_dot_config(tmp_path):
             self.execs.append(cmd)
             if cmd == f"cat {loc.objdir}/.config":
                 return SimpleNamespace(exit_code=0, output="CONFIG_FOO=y\r\n")
-            return SimpleNamespace(exit_code=0, output="")
+            return SimpleNamespace(exit_code=0, output=_fake_exec_output(cmd))
 
     c = _ConfigFakeC()
     ctx = _ctx(tmp_path)

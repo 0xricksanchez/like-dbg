@@ -198,6 +198,7 @@ class Manifest:
     inputs: dict[str, str] = field(default_factory=dict)
     paths: dict[str, str] = field(default_factory=dict)
     created_at: str = ""
+    last_used: str = ""
     size_bytes: int = 0
 
 

@@ -6,6 +6,8 @@ that src_label). BuildStage itself no longer applies patches or runs mrproper.""
 
 from __future__ import annotations
 
+from datetime import UTC
+from datetime import datetime
 from pathlib import Path
 
 from loguru import logger
@@ -136,6 +138,8 @@ class BuildStage:
                 # until a gcc build path is actually wired (the kbuilder image has no gcc today).
                 compile_cmd = f'{compile_cmd} CC="ccache {self._recipe.compiler}"'
             self._c.exec(container, ccache_env + compile_cmd, workdir=source_root)
+            du_out = self._c.exec(container, f"du -sb {objdir}", workdir=objdir).output
+            size_bytes = int(du_out.split()[0])
             if self._chown_to is not None and ctx.host.storage_mode != "volume":
                 uid, gid = self._chown_to
                 self._c.exec(container, f"chown -R {uid}:{gid} {objdir}")
@@ -178,6 +182,8 @@ class BuildStage:
                     "gdb_vmlinux": loc.gdb_vmlinux,
                     "config_host": str(config_host),
                 },
+                size_bytes=size_bytes,
+                last_used=datetime.now(UTC).isoformat(),
             ),
         )
         return ctx

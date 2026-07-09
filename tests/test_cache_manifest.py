@@ -96,3 +96,21 @@ def test_build_manifest_carries_srckey(tmp_path):
     m = Manifest(kind="build", label="lbl", key="k", version="6.6.30", arch="arm64", srckey="src")
     write_manifest(tmp_path, m)
     assert load_manifest(tmp_path, "build", "lbl").srckey == "src"
+
+
+def test_manifest_last_used_defaults_empty():
+    assert _m().last_used == ""
+
+
+def test_manifest_last_used_roundtrips(tmp_path):
+    m = Manifest(
+        kind="build",
+        label="lbl-last-used",
+        key="k",
+        version="6.6.30",
+        arch="arm64",
+        last_used="2026-01-01T00:00:00+00:00",
+    )
+    write_manifest(tmp_path, m)
+    loaded = load_manifest(tmp_path, "build", "lbl-last-used")
+    assert loaded.last_used == "2026-01-01T00:00:00+00:00"
