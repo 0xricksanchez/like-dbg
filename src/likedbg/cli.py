@@ -550,7 +550,7 @@ def cmd_use(
     debuginfod_enabled = resolve_debuginfod_enabled(use_settings.debugger.debuginfod, is_foreign=False)
     debuginfod_cache = workspace / "artifacts" / "cache" / "debuginfod"
     if debuginfod_enabled:
-        debuginfod_cache.mkdir(parents=True, exist_ok=True)  # pre-create so docker does not root-own it
+        debuginfod_cache.mkdir(parents=True, exist_ok=True)  # pre-create the leaf so docker bind-mounts a host-owned dir, not a root-owned new one
     pipeline = build_use_pipeline(
         container,
         session,
@@ -636,7 +636,7 @@ def cmd_foreign(
     debuginfod_enabled = resolve_debuginfod_enabled(cfg.settings.debugger.debuginfod, is_foreign=True)
     debuginfod_cache = workspace / "artifacts" / "cache" / "debuginfod"
     if debuginfod_enabled:
-        debuginfod_cache.mkdir(parents=True, exist_ok=True)  # pre-create so docker does not root-own it
+        debuginfod_cache.mkdir(parents=True, exist_ok=True)  # pre-create the leaf so docker bind-mounts a host-owned dir, not a root-owned new one
     pipeline = build_foreign_pipeline(
         container,
         session,
@@ -1190,7 +1190,7 @@ def main(argv: list[str] | None = None) -> int:
         debuginfod_enabled = resolve_debuginfod_enabled(cfg.settings.debugger.debuginfod, is_foreign=False)
         debuginfod_cache = workspace / "artifacts" / "cache" / "debuginfod"
         if debuginfod_enabled:
-            debuginfod_cache.mkdir(parents=True, exist_ok=True)  # pre-create so docker does not root-own it
+            debuginfod_cache.mkdir(parents=True, exist_ok=True)  # pre-create the leaf so docker bind-mounts a host-owned dir, not a root-owned new one
         pipeline = build_pipeline(
             container,
             session,
