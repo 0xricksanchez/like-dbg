@@ -19,6 +19,7 @@ def test_debugger_stage_passes_crash_config(monkeypatch):
         breakpoint="start_kernel",
         break_on_crash=True,
         crash_breakpoints=("panic", "die"),
+        sanitizer_breakpoints=("kasan_report",),
     )
     ctx = MagicMock()
     ctx.vmlinux = Path("/w/vmlinux")
@@ -28,3 +29,4 @@ def test_debugger_stage_passes_crash_config(monkeypatch):
     stage.run(ctx)
     assert captured["break_on_crash"] is True
     assert captured["crash_breakpoints"] == ("panic", "die")
+    assert captured["sanitizer_breakpoints"] == ("kasan_report",)

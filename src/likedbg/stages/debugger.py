@@ -20,6 +20,7 @@ class DebuggerStage:
         breakpoint: str | None,
         break_on_crash: bool = False,
         crash_breakpoints: tuple[str, ...] = (),
+        sanitizer_breakpoints: tuple[str, ...] = (),
         modules_gdb: str | None = None,
     ) -> None:
         self._ext = ext
@@ -27,6 +28,7 @@ class DebuggerStage:
         self._breakpoint = breakpoint
         self._break_on_crash = break_on_crash
         self._crash_breakpoints = crash_breakpoints
+        self._sanitizer_breakpoints = sanitizer_breakpoints
         self._modules_gdb = modules_gdb
 
     def should_skip(self, ctx: PipelineContext) -> bool:
@@ -45,6 +47,7 @@ class DebuggerStage:
             port=eff.gdb_port,
             break_on_crash=self._break_on_crash,
             crash_breakpoints=self._crash_breakpoints,
+            sanitizer_breakpoints=self._sanitizer_breakpoints,
             modules_gdb=self._modules_gdb,
         )
         if ctx.recorder is not None:
