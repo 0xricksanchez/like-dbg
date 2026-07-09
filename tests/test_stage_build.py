@@ -249,6 +249,7 @@ def test_build_reuses_when_manifest_present(tmp_path):
     assert out.objdir == Path(f"/ksrc/obj/{label}")  # objdir set even on cache hit
     assert c.started is False
     assert any(f"build cache hit: {label}" in m for m in msgs)
+    assert out.build_was_cached is True  # CacheEvictionStage skips: a cache hit adds no disk
 
 
 def test_build_reuses_bind_manifest_uses_host_image(tmp_path):
@@ -373,6 +374,7 @@ def test_build_compiles_with_recipe_make_vars_then_writes_manifest_with_srckey_a
     assert m.srckey == recipe.src_key
     assert m.paths["objdir"] == loc.objdir
     assert m.paths["source_root"] == loc.source_root
+    assert ctx.build_was_cached is False  # fresh build: CacheEvictionStage may run
 
 
 def test_build_stamps_size_bytes_and_last_used_from_du(tmp_path):

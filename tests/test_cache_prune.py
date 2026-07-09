@@ -4,6 +4,7 @@ from loguru import logger
 
 from likedbg.cache import Manifest
 from likedbg.cache import cache_total_bytes
+from likedbg.cache import drop_orphaned_source
 from likedbg.cache import manifest_exists
 from likedbg.cache import prune_cache
 from likedbg.cache import write_manifest
@@ -171,3 +172,39 @@ def test_prune_protect_set_never_appears_in_evicted_list(tmp_path):
     assert "A" not in evicted
     assert "B" not in evicted
     assert evicted == []
+
+
+def test_drop_orphaned_source_returns_label_when_dropped(tmp_path):
+    # `build` mirrors prune_cache's real call order: remove_cached has already unlinked A's own
+    # manifest by the time drop_orphaned_source runs, so A is NOT (re)written to the registry here.
+    build = Manifest(
+        kind="build", label="A", key="key-A", version="6.6.30", arch="arm64", srckey="S", storage_mode="bind"
+    )
+    _mksource(tmp_path, "S", key="S", size_bytes=1 * G)
+    c = FakeC()
+
+    label = drop_orphaned_source(c, tmp_path, build, volume="likedbg_ksrc")
+
+    assert label == "S"
+    assert manifest_exists(tmp_path, "source", "S") is False
+
+
+def test_drop_orphaned_source_returns_none_when_still_referenced(tmp_path):
+    build_a = Manifest(
+        kind="build", label="A", key="key-A", version="6.6.30", arch="arm64", srckey="S", storage_mode="bind"
+    )
+    _mkbuild(tmp_path, "B", srckey="S", size_bytes=1 * G, last_used=NEW)  # still references S -> refcount 1
+    _mksource(tmp_path, "S", key="S", size_bytes=1 * G)
+    c = FakeC()
+
+    label = drop_orphaned_source(c, tmp_path, build_a, volume="likedbg_ksrc")
+
+    assert label is None
+    assert manifest_exists(tmp_path, "source", "S") is True
+
+
+def test_drop_orphaned_source_returns_none_when_no_srckey(tmp_path):
+    build = Manifest(kind="build", label="A", key="key-A", version="6.6.30", arch="arm64", srckey="", storage_mode="bind")
+    c = FakeC()
+
+    assert drop_orphaned_source(c, tmp_path, build, volume="likedbg_ksrc") is None

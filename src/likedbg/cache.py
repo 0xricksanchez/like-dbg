@@ -394,18 +394,22 @@ def cache_total_bytes(workspace: Path) -> int:
     return sum(m.size_bytes for m in builds) + sum(m.size_bytes for m in sources)
 
 
-def _drop_orphaned_source(
-    container: ContainerService, workspace: Path, build: Manifest, *, volume: str
-) -> None:
-    """After evicting `build`, drop its shared source too once no other build still
-    references it (refcount 0). Mirrors cli.cmd_clean's `_remove_orphaned_source`; kept local
-    to cache.py so `prune_cache` doesn't need to reach into the CLI layer."""
+def drop_orphaned_source(
+    container: ContainerService, workspace: Path, build: Manifest, *, volume: str = KERNEL_VOLUME
+) -> str | None:
+    """After removing `build`, drop its shared source too once no other build still
+    references it (refcount 0). Sources are auto-managed: never user-targetable by label.
+
+    Returns the dropped source's label, or None if nothing was dropped. Single canonical
+    implementation shared by `prune_cache` and `cli.cmd_clean` (via `cli._remove_orphaned_source`).
+    """
     if not build.srckey or source_refcount(workspace, build.srckey) != 0:
-        return
+        return None
     source = next((s for s in list_manifests(workspace, "source") if s.key == build.srckey), None)
     if source is None:
-        return
+        return None
     remove_source(container, workspace, source.label, storage_mode=build.storage_mode, volume=volume)
+    return source.label
 
 
 def prune_cache(
@@ -436,7 +440,7 @@ def prune_cache(
         if total <= target_bytes:
             break
         remove_cached(container, workspace, build, volume=volume)
-        _drop_orphaned_source(container, workspace, build, volume=volume)
+        drop_orphaned_source(container, workspace, build, volume=volume)
         evicted.append(build.label)
         total = cache_total_bytes(workspace)
 

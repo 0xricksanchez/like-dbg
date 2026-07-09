@@ -3,6 +3,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from loguru import logger
 
 import likedbg.cli as cli
 from likedbg import cache
@@ -215,6 +216,7 @@ def test_build_pipeline_includes_all_stage_names(tmp_path):
         "download",
         "unpack",
         "build",
+        "cache-eviction",
         "profile-verification",
         "rootfs",
         "export",
@@ -509,6 +511,35 @@ def test_cmd_clean_all_removes_shared_source_too(tmp_path, monkeypatch):
     assert removed_sources == [src_label]
     assert cache.list_manifests(tmp_path, "build") == []
     assert cache.list_manifests(tmp_path, "source") == []
+
+
+def test_remove_orphaned_source_logs_removed_source(tmp_path):
+    """Consolidation check: cli._remove_orphaned_source is now a thin wrapper around
+    cache.drop_orphaned_source, but must still emit the "removed source" log line --clean relies on."""
+    srckey = "shared-src-key"
+    src_label = "linux-6.6.30-gef-deadbeef"
+    write_manifest(tmp_path, Manifest(kind="source", label=src_label, key=srckey, version="6.6.30", arch=""))
+    # `build`'s own manifest is intentionally NOT written: mirrors cmd_clean's real call order,
+    # where cache.remove_cached already unlinked it before _remove_orphaned_source runs.
+    build = Manifest(
+        kind="build",
+        label="linux-6.6.30-aaaa",
+        key="k",
+        version="6.6.30",
+        arch="arm64",
+        srckey=srckey,
+        storage_mode="volume",
+    )
+
+    messages: list[str] = []
+    handler_id = logger.add(messages.append, level="INFO")
+    try:
+        cli._remove_orphaned_source(_FakeContainer(), tmp_path, build)
+    finally:
+        logger.remove(handler_id)
+
+    assert any(f"removed source {src_label}" in m for m in messages)
+    assert cache.manifest_exists(tmp_path, "source", src_label) is False
 
 
 def test_build_use_pipeline_includes_rootfs_before_launch(tmp_path):

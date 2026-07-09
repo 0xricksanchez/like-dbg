@@ -94,7 +94,9 @@ class BuildStage:
             ctx.kernel_image = Path(img)
             ctx.objdir = Path(objdir)
             ctx.kernel_root = Path(objdir)  # deprecated alias, kept for compat
+            ctx.build_was_cached = True  # cache hit: no disk added, auto-sweep (CacheEvictionStage) skips
             return ctx
+        ctx.build_was_cached = False
         env = self._recipe.env()
         source = cache.tree_mount_source(self._workspace, storage_mode=ctx.host.storage_mode, volume=self._volume)
         if ctx.host.storage_mode != "volume":
