@@ -232,6 +232,12 @@ def list_manifests(workspace: Path, kind: str) -> list[Manifest]:
     return [load_manifest(workspace, kind, p.stem) for p in sorted(registry.glob("*.json"), key=lambda p: p.stem)]
 
 
+def source_refcount(workspace: Path, srckey: str) -> int:
+    """Number of build manifests currently referencing the source keyed `srckey`. A source is
+    orphaned (safe to remove) once this drops to zero."""
+    return sum(1 for b in list_manifests(workspace, "build") if b.srckey == srckey)
+
+
 @dataclass(frozen=True)
 class Locations:
     kernel_root: str  # deprecated alias for objdir; removed once callers migrate (Task 12)

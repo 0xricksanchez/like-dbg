@@ -393,6 +393,32 @@ def test_summarize_cache_falls_back_when_volume_du_fails(tmp_path):
     assert "1024" in "\n".join(summarize_cache(tmp_path, container=_DuContainer(fail=True)))
 
 
+def test_summarize_cache_shows_shared_source_refcount(tmp_path):
+    srckey = "shared-src-key"
+    src_label = "linux-6.6.30-gef-deadbeef"
+    write_manifest(
+        tmp_path,
+        Manifest(kind="source", label=src_label, key=srckey, version="6.6.30", arch=""),
+    )
+    for label in ("linux-6.6.30-aaaa", "linux-6.6.30-bbbb"):
+        write_manifest(
+            tmp_path,
+            Manifest(
+                kind="build",
+                label=label,
+                key=label,
+                version="6.6.30",
+                arch="arm64",
+                srckey=srckey,
+                storage_mode="volume",
+            ),
+        )
+    joined = "\n".join(summarize_cache(tmp_path))
+    assert "shared sources:" in joined
+    assert src_label in joined
+    assert "refcount=2" in joined
+
+
 def test_cmd_clean_unknown_label_raises(tmp_path):
     with pytest.raises(CacheError) as exc:
         cmd_clean(_FakeContainer(), tmp_path, label="nope", clean_all=False)
@@ -422,6 +448,78 @@ def test_cmd_clean_all_removes_every_manifest(tmp_path):
     assert rc == 0
     assert cache.list_manifests(tmp_path, "build") == []
     assert cache.list_manifests(tmp_path, "rootfs") == []
+
+
+def _write_shared_source_and_builds(tmp_path, *, srckey: str, src_label: str, labels: tuple[str, ...]):
+    write_manifest(
+        tmp_path,
+        Manifest(kind="source", label=src_label, key=srckey, version="6.6.30", arch=""),
+    )
+    for label in labels:
+        write_manifest(
+            tmp_path,
+            Manifest(
+                kind="build",
+                label=label,
+                key=label,
+                version="6.6.30",
+                arch="arm64",
+                srckey=srckey,
+                storage_mode="volume",
+            ),
+        )
+
+
+def test_cmd_clean_keeps_shared_source_until_last_referencing_build_removed(tmp_path, monkeypatch):
+    srckey = "shared-src-key"
+    src_label = "linux-6.6.30-gef-deadbeef"
+    _write_shared_source_and_builds(
+        tmp_path, srckey=srckey, src_label=src_label, labels=("linux-6.6.30-aaaa", "linux-6.6.30-bbbb")
+    )
+    removed_sources: list[str] = []
+    orig_remove_source = cache.remove_source
+
+    def recording_remove_source(container, workspace, label, *, storage_mode, volume=cache.KERNEL_VOLUME):
+        removed_sources.append(label)
+        orig_remove_source(container, workspace, label, storage_mode=storage_mode, volume=volume)
+
+    monkeypatch.setattr(cache, "remove_source", recording_remove_source)
+
+    # Removing build A: source is still referenced by build B (refcount 1) -> remove_source NOT called.
+    rc = cmd_clean(_FakeContainer(), tmp_path, label="linux-6.6.30-aaaa", clean_all=False)
+    assert rc == 0
+    assert removed_sources == []
+    assert cache.manifest_exists(tmp_path, "build", "linux-6.6.30-aaaa") is False
+    assert cache.manifest_exists(tmp_path, "source", src_label) is True
+
+    # Removing build B: source is now orphaned (refcount 0) -> remove_source IS called.
+    rc = cmd_clean(_FakeContainer(), tmp_path, label="linux-6.6.30-bbbb", clean_all=False)
+    assert rc == 0
+    assert removed_sources == [src_label]
+    assert cache.manifest_exists(tmp_path, "build", "linux-6.6.30-bbbb") is False
+    assert cache.manifest_exists(tmp_path, "source", src_label) is False
+
+
+def test_cmd_clean_all_removes_shared_source_too(tmp_path, monkeypatch):
+    srckey = "shared-src-key"
+    src_label = "linux-6.6.30-gef-deadbeef"
+    _write_shared_source_and_builds(
+        tmp_path, srckey=srckey, src_label=src_label, labels=("linux-6.6.30-aaaa", "linux-6.6.30-bbbb")
+    )
+    removed_sources: list[str] = []
+    orig_remove_source = cache.remove_source
+
+    def recording_remove_source(container, workspace, label, *, storage_mode, volume=cache.KERNEL_VOLUME):
+        removed_sources.append(label)
+        orig_remove_source(container, workspace, label, storage_mode=storage_mode, volume=volume)
+
+    monkeypatch.setattr(cache, "remove_source", recording_remove_source)
+
+    rc = cmd_clean(_FakeContainer(), tmp_path, label=None, clean_all=True)
+    assert rc == 0
+    assert removed_sources == [src_label]
+    assert cache.list_manifests(tmp_path, "build") == []
+    assert cache.list_manifests(tmp_path, "source") == []
 
 
 def test_build_use_pipeline_includes_rootfs_before_launch(tmp_path):
