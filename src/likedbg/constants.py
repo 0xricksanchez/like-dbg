@@ -8,6 +8,10 @@ user configuration, so they live here rather than in the Pydantic Settings schem
 KERNEL_VOLUME = "likedbg_ksrc"
 VOLUME_MOUNT = "/ksrc"
 
+# Persistent ccache store shared across builds (Task 7); mounted at /ccache in the kbuilder
+# container only when settings.build.ccache is enabled (see stages/build.py).
+LIKEDBG_CCACHE_VOLUME = "likedbg_ccache"
+
 BASE_IMAGE = "like_dbg_base:latest"
 # NOTE: the kbuilder image is clang-universal (cross-compiles any arch); the `_arm64`
 # suffix is a legacy misnomer. Revisit the name when x86_64-on-Mac lands (ROADMAP section B).

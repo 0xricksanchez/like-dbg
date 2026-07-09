@@ -371,6 +371,62 @@ def test_build_config_snapshot_read_from_objdir_dot_config(tmp_path):
     assert config_host.read_text() == "CONFIG_FOO=y\n"  # CRLF stripped
 
 
+def test_build_ccache_enabled_mounts_volume_and_wires_env(tmp_path):
+    from likedbg.constants import LIKEDBG_CCACHE_VOLUME
+
+    c = _BuildFakeC()
+    label = "linux-6.6.30-a1b2c3d4"
+    recipe = _recipe()
+    ctx = _ctx(tmp_path)
+    ctx.build_label = label
+    ctx.kernel_root = None
+    BuildStage(
+        c,
+        recipe=recipe,
+        kbuilder_image="like_kbuilder_arm64:latest",
+        workspace=tmp_path,
+        kernel_volume="likedbg_ksrc",
+        ccache=True,
+        ccache_max_size="5G",
+    ).run(ctx)
+    vols = c.run_kwargs["volumes"]
+    assert vols[LIKEDBG_CCACHE_VOLUME] == {"bind": "/ccache", "mode": "rw"}
+    compile_cmds = [cmd for cmd in c.execs if " all" in cmd]
+    assert compile_cmds, "expected a compile (all target) command to be issued"
+    joined = " ; ".join(compile_cmds)
+    assert "CCACHE_DIR=/ccache" in joined
+    assert "CCACHE_NOHASHDIR=1" in joined
+    assert "CCACHE_MAXSIZE=5G" in joined
+    assert 'CC="ccache clang"' in joined
+    assert "-fdebug-prefix-map" not in joined
+    assert "-ffile-prefix-map" not in joined
+
+
+def test_build_ccache_disabled_by_default_no_volume_no_env(tmp_path):
+    from likedbg.constants import LIKEDBG_CCACHE_VOLUME
+
+    c = _BuildFakeC()
+    label = "linux-6.6.30-a1b2c3d4"
+    recipe = _recipe()
+    ctx = _ctx(tmp_path)
+    ctx.build_label = label
+    ctx.kernel_root = None
+    BuildStage(
+        c,
+        recipe=recipe,
+        kbuilder_image="like_kbuilder_arm64:latest",
+        workspace=tmp_path,
+        kernel_volume="likedbg_ksrc",
+    ).run(ctx)
+    vols = c.run_kwargs["volumes"]
+    assert LIKEDBG_CCACHE_VOLUME not in vols
+    allcmds = " ; ".join(c.execs)
+    assert "CCACHE_DIR" not in allcmds
+    assert "CCACHE_NOHASHDIR" not in allcmds
+    assert "CCACHE_MAXSIZE" not in allcmds
+    assert "ccache" not in allcmds
+
+
 def test_build_does_not_apply_patches_patches_moved_to_unpack(tmp_path) -> None:
     """BuildStage no longer applies patches (UnpackStage does), even if patch_dirs is passed
     for constructor compatibility with existing callers."""

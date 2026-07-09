@@ -12,6 +12,7 @@ from loguru import logger
 
 from likedbg import cache
 from likedbg.cache import BuildRecipe
+from likedbg.constants import LIKEDBG_CCACHE_VOLUME
 from likedbg.constants import VOLUME_MOUNT
 from likedbg.container_service import ContainerService
 from likedbg.debug_profiles import parse_kernel_release
@@ -42,6 +43,8 @@ class BuildStage:
         kernel_volume: str,
         chown_to: tuple[int, int] | None = None,
         patch_dirs: tuple[str, ...] = (),
+        ccache: bool = False,
+        ccache_max_size: str = "5G",
     ) -> None:
         self._c = container
         self._recipe = recipe
@@ -52,9 +55,23 @@ class BuildStage:
         # patch_dirs kept only for constructor compat with existing callers (cli.py); patches are
         # applied once against the shared source in UnpackStage now, not per-build.
         self._patch_dirs = patch_dirs
+        self._ccache = ccache
+        self._ccache_max_size = ccache_max_size
 
     def should_skip(self, ctx: PipelineContext) -> bool:
         return False
+
+    def _ccache_env_prefix(self) -> str:
+        """Shell env prefix for ccache-enabled make invocations.
+
+        ContainerService.exec has no env param, so these are inlined into the command string.
+        CCACHE_NOHASHDIR=1 is required: without it, ccache keys on the (per-build) objdir path
+        baked into compiler -g debug info, defeating cross-config cache hits. Deliberately does
+        NOT set -fdebug-prefix-map/-ffile-prefix-map (out of scope for this task).
+        """
+        if not self._ccache:
+            return ""
+        return f"CCACHE_DIR=/ccache CCACHE_NOHASHDIR=1 CCACHE_MAXSIZE={self._ccache_max_size} "
 
     def run(self, ctx: PipelineContext) -> PipelineContext:
         if ctx.build_label is None:
@@ -87,14 +104,17 @@ class BuildStage:
             str(self._workspace): {"bind": _MOUNT, "mode": "ro"},
             source: {"bind": VOLUME_MOUNT, "mode": "rw"},
         }
+        if self._ccache:
+            volumes[LIKEDBG_CCACHE_VOLUME] = {"bind": "/ccache", "mode": "rw"}
         container = self._c.run_detached(self._image, volumes=volumes, detach=True, tty=True)
         try:
             self._c.exec(container, f"mkdir -p {objdir}")
+            ccache_env = self._ccache_env_prefix()
             # Out-of-tree build against the shared, read-only source (mrproper + patches already
             # applied once in UnpackStage): make -C <source_root> O=<objdir> ...
             self._c.exec(
                 container,
-                make_command(env, "defconfig", source_root=source_root, objdir=objdir),
+                ccache_env + make_command(env, "defconfig", source_root=source_root, objdir=objdir),
                 workdir=source_root,
             )
             if self._recipe.fragments:
@@ -104,12 +124,14 @@ class BuildStage:
                 # <source_root>/scripts/kconfig/merge_config.sh instead.
                 merge_cmd = f"./scripts/kconfig/merge_config.sh -m -O {objdir} {objdir}/.config {frags}"
                 olddefconfig_cmd = make_command(env, "olddefconfig", source_root=source_root, objdir=objdir)
-                self._c.exec(container, f"{merge_cmd} && {olddefconfig_cmd}", workdir=source_root)
-            self._c.exec(
-                container,
-                make_command(env, "all", source_root=source_root, objdir=objdir),
-                workdir=source_root,
-            )
+                self._c.exec(container, f"{ccache_env}{merge_cmd} && {olddefconfig_cmd}", workdir=source_root)
+            compile_cmd = make_command(env, "all", source_root=source_root, objdir=objdir)
+            if self._ccache:
+                # CC="ccache <compiler>" appended (not merged into `env`) so the shell keeps
+                # "ccache <compiler>" as a single quoted CC value; GNU make accepts VAR=value
+                # overrides anywhere on the command line, including after the target.
+                compile_cmd = f'{compile_cmd} CC="ccache {self._recipe.compiler}"'
+            self._c.exec(container, ccache_env + compile_cmd, workdir=source_root)
             if self._chown_to is not None and ctx.host.storage_mode != "volume":
                 uid, gid = self._chown_to
                 self._c.exec(container, f"chown -R {uid}:{gid} {objdir}")

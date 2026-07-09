@@ -311,6 +311,8 @@ def build_pipeline(
     debuginfod_enabled: bool = False,
     debuginfod_urls: str = "",
     debuginfod_cache: Path | None = None,
+    ccache: bool = False,
+    ccache_max_size: str = "5G",
 ) -> Pipeline:
     gdb_mount_source = cache.locations(
         build_recipe.label,
@@ -350,6 +352,8 @@ def build_pipeline(
                 kernel_volume=kernel_volume,
                 chown_to=chown_to,
                 patch_dirs=patch_dirs,
+                ccache=ccache,
+                ccache_max_size=ccache_max_size,
             ),
             ProfileVerificationStage(container, workspace=workspace, kernel_volume=kernel_volume),
             RootfsStage(
@@ -1237,6 +1241,8 @@ def main(argv: list[str] | None = None) -> int:
             debuginfod_enabled=debuginfod_enabled,
             debuginfod_urls=cfg.settings.debugger.debuginfod_urls,
             debuginfod_cache=debuginfod_cache,
+            ccache=cfg.settings.build.ccache,
+            ccache_max_size=cfg.settings.build.ccache_max_size,
         )
         pipeline.run(ctx)
         return 0
