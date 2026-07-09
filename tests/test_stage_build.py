@@ -427,6 +427,60 @@ def test_build_ccache_disabled_by_default_no_volume_no_env(tmp_path):
     assert "ccache" not in allcmds
 
 
+def test_build_ccache_with_gcc_no_cc_wrap_clang_still_wrapped(tmp_path):
+    """gcc ccache wiring deferred; clang wrap must still be applied."""
+    from likedbg.constants import LIKEDBG_CCACHE_VOLUME
+
+    c = _BuildFakeC()
+    label = "linux-6.6.30-a1b2c3d4"
+    gcc_recipe = BuildRecipe(
+        version="6.6.30",
+        arch="arm64",
+        compiler="gcc",
+        make_vars=(("ARCH", "arm64"), ("CROSS_COMPILE", "aarch64-linux-gnu-")),
+        frag_hashes=(),
+        fragments=("configs/fragments/debug.config",),
+    )
+    ctx = _ctx(tmp_path)
+    ctx.build_label = label
+    ctx.kernel_root = None
+    BuildStage(
+        c,
+        recipe=gcc_recipe,
+        kbuilder_image="like_kbuilder_arm64:latest",
+        workspace=tmp_path,
+        kernel_volume="likedbg_ksrc",
+        ccache=True,
+        ccache_max_size="5G",
+    ).run(ctx)
+    vols = c.run_kwargs["volumes"]
+    assert vols[LIKEDBG_CCACHE_VOLUME] == {"bind": "/ccache", "mode": "rw"}
+    compile_cmds = [cmd for cmd in c.execs if " all" in cmd]
+    assert compile_cmds, "expected a compile (all target) command to be issued"
+    joined = " ; ".join(compile_cmds)
+    assert "CCACHE_DIR=/ccache" in joined
+    assert "CCACHE_NOHASHDIR=1" in joined
+    assert "CCACHE_MAXSIZE=5G" in joined
+    assert 'CC="ccache gcc"' not in joined, "gcc should not get CC wrapper; uses CROSS_COMPILE-derived CC"
+    # Also verify clang still gets wrapped
+    c_clang = _BuildFakeC()
+    ctx_clang = _ctx(tmp_path)
+    ctx_clang.build_label = "linux-6.6.30-x1y2z3w4"
+    ctx_clang.kernel_root = None
+    BuildStage(
+        c_clang,
+        recipe=_recipe(),
+        kbuilder_image="like_kbuilder_arm64:latest",
+        workspace=tmp_path,
+        kernel_volume="likedbg_ksrc",
+        ccache=True,
+        ccache_max_size="5G",
+    ).run(ctx_clang)
+    compile_cmds_clang = [cmd for cmd in c_clang.execs if " all" in cmd]
+    joined_clang = " ; ".join(compile_cmds_clang)
+    assert 'CC="ccache clang"' in joined_clang, "clang must get CC wrapper"
+
+
 def test_build_does_not_apply_patches_patches_moved_to_unpack(tmp_path) -> None:
     """BuildStage no longer applies patches (UnpackStage does), even if patch_dirs is passed
     for constructor compatibility with existing callers."""

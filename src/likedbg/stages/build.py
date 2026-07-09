@@ -126,10 +126,12 @@ class BuildStage:
                 olddefconfig_cmd = make_command(env, "olddefconfig", source_root=source_root, objdir=objdir)
                 self._c.exec(container, f"{ccache_env}{merge_cmd} && {olddefconfig_cmd}", workdir=source_root)
             compile_cmd = make_command(env, "all", source_root=source_root, objdir=objdir)
-            if self._ccache:
+            if self._ccache and self._recipe.compiler == "clang":
                 # CC="ccache <compiler>" appended (not merged into `env`) so the shell keeps
                 # "ccache <compiler>" as a single quoted CC value; GNU make accepts VAR=value
                 # overrides anywhere on the command line, including after the target.
+                # gcc/other-compiler ccache wiring uses the CROSS_COMPILE-derived CC and is deferred
+                # until a gcc build path is actually wired (the kbuilder image has no gcc today).
                 compile_cmd = f'{compile_cmd} CC="ccache {self._recipe.compiler}"'
             self._c.exec(container, ccache_env + compile_cmd, workdir=source_root)
             if self._chown_to is not None and ctx.host.storage_mode != "volume":
