@@ -177,6 +177,7 @@ class Manifest:
     key: str
     version: str
     arch: str
+    srckey: str = ""
     kernel_release: str = ""
     storage_mode: str = ""
     inputs: dict[str, str] = field(default_factory=dict)
@@ -187,7 +188,7 @@ class Manifest:
 
 # Registry sub-directory per artifact kind (spec section 4.3). NOT f"{kind}s": that would
 # pluralize "rootfs" to the wrong "rootfss".
-_KIND_DIR = {"build": "builds", "rootfs": "rootfs"}
+_KIND_DIR = {"build": "builds", "rootfs": "rootfs", "source": "sources"}
 
 
 def manifest_path(workspace: Path, kind: str, label: str) -> Path:
