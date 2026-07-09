@@ -21,6 +21,8 @@ from datetime import UTC
 from datetime import datetime
 from pathlib import Path
 
+from loguru import logger
+
 from likedbg.config import Arch
 from likedbg.config import Settings
 from likedbg.constants import BASE_IMAGE
@@ -382,3 +384,65 @@ def remove_source(
             tree.chmod(0o755)
             shutil.rmtree(tree)
     manifest_path(workspace, "source", src_label).unlink(missing_ok=True)
+
+
+def cache_total_bytes(workspace: Path) -> int:
+    """Total on-disk footprint of the cache: sum of every build's and shared source's
+    `size_bytes` (rootfs images aren't stamped/tracked by the eviction policy)."""
+    builds = list_manifests(workspace, "build")
+    sources = list_manifests(workspace, "source")
+    return sum(m.size_bytes for m in builds) + sum(m.size_bytes for m in sources)
+
+
+def _drop_orphaned_source(
+    container: ContainerService, workspace: Path, build: Manifest, *, volume: str
+) -> None:
+    """After evicting `build`, drop its shared source too once no other build still
+    references it (refcount 0). Mirrors cli.cmd_clean's `_remove_orphaned_source`; kept local
+    to cache.py so `prune_cache` doesn't need to reach into the CLI layer."""
+    if not build.srckey or source_refcount(workspace, build.srckey) != 0:
+        return
+    source = next((s for s in list_manifests(workspace, "source") if s.key == build.srckey), None)
+    if source is None:
+        return
+    remove_source(container, workspace, source.label, storage_mode=build.storage_mode, volume=volume)
+
+
+def prune_cache(
+    container: ContainerService,
+    workspace: Path,
+    target_bytes: int,
+    *,
+    protect: set[str],
+    volume: str = KERNEL_VOLUME,
+) -> list[str]:
+    """Evict cached builds oldest-`last_used`-first (LRU) until `cache_total_bytes(workspace)`
+    is at or under `target_bytes`, or no evictable build remains. Builds whose label is in
+    `protect` are never evicted. Each eviction also drops the build's shared source once its
+    refcount hits zero. Returns the evicted build labels, oldest-evicted-first. Never raises:
+    if the target is still exceeded once only protected builds remain, logs a warning instead."""
+    total = cache_total_bytes(workspace)
+    if total <= target_bytes:
+        return []
+
+    # "" (unstamped/legacy last_used) sorts before any ISO-8601 timestamp, so those go first.
+    evictable = sorted(
+        (b for b in list_manifests(workspace, "build") if b.label not in protect),
+        key=lambda b: b.last_used,
+    )
+
+    evicted: list[str] = []
+    for build in evictable:
+        if total <= target_bytes:
+            break
+        remove_cached(container, workspace, build, volume=volume)
+        _drop_orphaned_source(container, workspace, build, volume=volume)
+        evicted.append(build.label)
+        total = cache_total_bytes(workspace)
+
+    if total > target_bytes:
+        logger.warning(
+            f"cache still {total - target_bytes} bytes over target ({total} > {target_bytes}); "
+            "only protected build(s) remain, raise [cache] max_size or widen the protect set"
+        )
+    return evicted
