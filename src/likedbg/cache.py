@@ -234,13 +234,15 @@ def list_manifests(workspace: Path, kind: str) -> list[Manifest]:
 
 @dataclass(frozen=True)
 class Locations:
-    kernel_root: str
+    kernel_root: str  # deprecated alias for objdir; removed once callers migrate (Task 12)
     vmlinux_in_tree: str
     image_in_tree: str
     image_host: str
     gdb_mount_source: str
     gdb_mount_type: str
     gdb_vmlinux: str
+    source_root: str = ""
+    objdir: str = ""
 
 
 def tree_mount_source(workspace: Path, *, storage_mode: str, volume: str = KERNEL_VOLUME) -> str:
@@ -249,29 +251,42 @@ def tree_mount_source(workspace: Path, *, storage_mode: str, volume: str = KERNE
     return volume if storage_mode == "volume" else str(workspace / "artifacts" / TREE_ROOT)
 
 
-def locations(label: str, *, arch: str, storage_mode: str, workspace: Path, volume: str = KERNEL_VOLUME) -> Locations:
+def locations(
+    label: str,
+    *,
+    arch: str,
+    storage_mode: str,
+    workspace: Path,
+    volume: str = KERNEL_VOLUME,
+    src_label: str | None = None,
+) -> Locations:
     image_name = "bzImage" if arch == "x86_64" else "Image"
-    container_root = f"{VOLUME_MOUNT}/{label}"
-    image_in_tree = f"{container_root}/arch/{arch}/boot/{image_name}"
+    objdir = f"{VOLUME_MOUNT}/obj/{label}"
+    source_root = f"{VOLUME_MOUNT}/src/{src_label}" if src_label is not None else ""
+    image_in_tree = f"{objdir}/arch/{arch}/boot/{image_name}"
     if storage_mode == "volume":
         return Locations(
-            kernel_root=container_root,
-            vmlinux_in_tree=f"{container_root}/vmlinux",
+            kernel_root=objdir,
+            vmlinux_in_tree=f"{objdir}/vmlinux",
             image_in_tree=image_in_tree,
             image_host=str(workspace / "artifacts" / label / image_name.replace("bzImage", "Image")),
             gdb_mount_source=tree_mount_source(workspace, storage_mode=storage_mode, volume=volume),
             gdb_mount_type="volume",
-            gdb_vmlinux=f"{container_root}/vmlinux",
+            gdb_vmlinux=f"{objdir}/vmlinux",
+            source_root=source_root,
+            objdir=objdir,
         )
-    host_tree = workspace / "artifacts" / TREE_ROOT / label  # the real on-host kernel tree (bind)
+    host_objdir = workspace / "artifacts" / TREE_ROOT / "obj" / label  # the real on-host build dir (bind)
     return Locations(
-        kernel_root=container_root,  # VOLUME_MOUNT/<label>  (symmetric with volume)
-        vmlinux_in_tree=f"{container_root}/vmlinux",
+        kernel_root=objdir,  # VOLUME_MOUNT/obj/<label>  (symmetric with volume)
+        vmlinux_in_tree=f"{objdir}/vmlinux",
         image_in_tree=image_in_tree,  # container path (symmetric)
-        image_host=str(host_tree / "arch" / arch / "boot" / image_name),  # real host in-tree file
+        image_host=str(host_objdir / "arch" / arch / "boot" / image_name),  # real host in-tree file
         gdb_mount_source=tree_mount_source(workspace, storage_mode=storage_mode, volume=volume),
         gdb_mount_type="bind",
-        gdb_vmlinux=f"{container_root}/vmlinux",  # VOLUME_MOUNT/<label>/vmlinux (symmetric)
+        gdb_vmlinux=f"{objdir}/vmlinux",  # VOLUME_MOUNT/obj/<label>/vmlinux (symmetric)
+        source_root=source_root,
+        objdir=objdir,
     )
 
 
@@ -284,18 +299,47 @@ def remove_cached(
                 BASE_IMAGE, volumes={volume: {"bind": VOLUME_MOUNT, "mode": "rw"}}, detach=True, tty=True
             )
             try:
-                container.exec(c, f"rm -rf {VOLUME_MOUNT}/{manifest.label}")
+                container.exec(c, f"rm -rf {VOLUME_MOUNT}/obj/{manifest.label}")
             finally:
                 container.stop(c)
             export_dir = workspace / "artifacts" / manifest.label
             if export_dir.is_dir():
                 shutil.rmtree(export_dir)
-        else:  # bind: the tree IS on the host, chown'd to the user at build time, so rmtree just works
-            tree = workspace / "artifacts" / TREE_ROOT / manifest.label
-            if tree.is_dir():
-                shutil.rmtree(tree)
+        else:  # bind: the objdir IS on the host, chown'd to the user at build time, so rmtree just works
+            objdir = workspace / "artifacts" / TREE_ROOT / "obj" / manifest.label
+            if objdir.is_dir():
+                shutil.rmtree(objdir)
     else:
         image = Path(manifest.paths.get("image_host", ""))
         if image.is_file():
             image.unlink()
     manifest_path(workspace, manifest.kind, manifest.label).unlink(missing_ok=True)
+
+
+def remove_source(
+    container: ContainerService, workspace: Path, src_label: str, *, storage_mode: str, volume: str = KERNEL_VOLUME
+) -> None:
+    """Remove a cached source tree. The tree is made read-only (`chmod -R a-w`) after unpack, so it
+    must be made writable again before it can be removed."""
+    src_path = f"{VOLUME_MOUNT}/src/{src_label}"
+    if storage_mode == "volume":
+        c = container.run_detached(
+            BASE_IMAGE, volumes={volume: {"bind": VOLUME_MOUNT, "mode": "rw"}}, detach=True, tty=True
+        )
+        try:
+            container.exec(c, f"chmod -R u+w {src_path}")
+            container.exec(c, f"rm -rf {src_path}")
+        finally:
+            container.stop(c)
+    else:  # bind: the tree is on the host, but read-only, so make it writable before rmtree
+        tree = workspace / "artifacts" / TREE_ROOT / "src" / src_label
+        if tree.is_dir():
+            for root, dirs, files in os.walk(tree):
+                for name in dirs:
+                    (Path(root) / name).chmod(0o755)
+                for name in files:
+                    path = Path(root) / name
+                    path.chmod(path.stat().st_mode | 0o200)
+            tree.chmod(0o755)
+            shutil.rmtree(tree)
+    manifest_path(workspace, "source", src_label).unlink(missing_ok=True)

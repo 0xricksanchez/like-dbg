@@ -151,8 +151,8 @@ def test_build_sequence_includes_mrproper(tmp_path):
 def test_build_sets_vmlinux_and_image_paths(tmp_path):
     label = "linux-6.6.30-a1b2c3d4"
     out = _stage(FakeC(), tmp_path).run(_ctx(tmp_path, storage="volume"))
-    assert out.vmlinux == Path(f"/ksrc/{label}/vmlinux")
-    assert out.kernel_image == Path(f"/ksrc/{label}/arch/arm64/boot/Image")
+    assert out.vmlinux == Path(f"/ksrc/obj/{label}/vmlinux")
+    assert out.kernel_image == Path(f"/ksrc/obj/{label}/arch/arm64/boot/Image")
 
 
 def test_build_volume_mode_mounts_named_volume_and_workspace(tmp_path):
@@ -258,7 +258,9 @@ def test_build_bind_mode_mounts_host_ksrc_and_chowns(tmp_path):
     assert str(tmp_path / "artifacts" / "ksrc") in vols and "likedbg_ksrc" not in vols
     assert any(f"chown -R 1000:1000 /ksrc/{label}" in e for e in c.execs)
     # in bind, the in-container QEMU needs the HOST image path
-    assert str(ctx.kernel_image) == str(tmp_path / "artifacts" / "ksrc" / label / "arch" / "arm64" / "boot" / "Image")
+    assert str(ctx.kernel_image) == str(
+        tmp_path / "artifacts" / "ksrc" / "obj" / label / "arch" / "arm64" / "boot" / "Image"
+    )
 
 
 def test_build_volume_mode_does_not_chown(tmp_path):

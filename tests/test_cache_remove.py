@@ -2,7 +2,9 @@ from types import SimpleNamespace
 
 from likedbg.cache import Manifest
 from likedbg.cache import manifest_exists
+from likedbg.cache import manifest_path
 from likedbg.cache import remove_cached
+from likedbg.cache import remove_source
 from likedbg.cache import write_manifest
 from likedbg.container_service import ContainerService
 
@@ -34,7 +36,7 @@ def test_remove_build_rms_volume_tree_and_host_export_and_manifest(tmp_path):
     remove_cached(
         c, tmp_path, Manifest(kind="build", label=label, key="k", version="6.6.30", arch="arm64", storage_mode="volume")
     )
-    assert any(f"rm -rf /ksrc/{label}" in e for e in c.execs)
+    assert any(f"rm -rf /ksrc/obj/{label}" in e for e in c.execs)
     assert not export.exists()
     assert manifest_exists(tmp_path, "build", label) is False
 
@@ -77,7 +79,7 @@ def test_remove_rootfs_unlinks_image_and_manifest(tmp_path):
 
 def test_remove_bind_build_rmtrees_host_tree(tmp_path):
     label = "linux-6.6.30-bbbb"
-    tree = tmp_path / "artifacts" / "ksrc" / label / "arch" / "arm64" / "boot"
+    tree = tmp_path / "artifacts" / "ksrc" / "obj" / label / "arch" / "arm64" / "boot"
     tree.mkdir(parents=True)
     (tree / "Image").write_bytes(b"img")
     m = Manifest(kind="build", label=label, key="k", version="6.6.30", arch="arm64", storage_mode="bind")
@@ -85,5 +87,40 @@ def test_remove_bind_build_rmtrees_host_tree(tmp_path):
     c = FakeC()
     remove_cached(c, tmp_path, m)
     assert c.execs == []  # bind tree is on the host; no container needed
-    assert not (tmp_path / "artifacts" / "ksrc" / label).exists()
+    assert not (tmp_path / "artifacts" / "ksrc" / "obj" / label).exists()
     assert manifest_exists(tmp_path, "build", label) is False
+
+
+def test_remove_source_volume_chmods_and_rms_and_unlinks_manifest(tmp_path):
+    src_label = "linux-6.6.30-gef-deadbeef"
+    write_manifest(
+        tmp_path,
+        Manifest(kind="source", label=src_label, key="k", version="6.6.30", arch="arm64", storage_mode="volume"),
+    )
+    c = FakeC()
+    remove_source(c, tmp_path, src_label, storage_mode="volume")
+    assert any("chmod -R u+w" in e and f"/ksrc/src/{src_label}" in e for e in c.execs)
+    assert any(f"rm -rf /ksrc/src/{src_label}" in e for e in c.execs)
+    assert manifest_exists(tmp_path, "source", src_label) is False
+
+
+def test_remove_source_bind_chmods_writable_then_rmtrees_and_unlinks_manifest(tmp_path):
+    src_label = "linux-6.6.30-gef-deadbeef"
+    src_tree = tmp_path / "artifacts" / "ksrc" / "src" / src_label
+    src_tree.mkdir(parents=True)
+    (src_tree / "Makefile").write_bytes(b"x")
+    src_tree.chmod(0o555)  # simulate the a-w source tree
+    write_manifest(
+        tmp_path,
+        Manifest(kind="source", label=src_label, key="k", version="6.6.30", arch="arm64", storage_mode="bind"),
+    )
+    c = FakeC()
+    try:
+        remove_source(c, tmp_path, src_label, storage_mode="bind")
+    finally:
+        if src_tree.exists():
+            src_tree.chmod(0o755)
+    assert c.execs == []  # bind tree is on the host; no container needed
+    assert not src_tree.exists()
+    assert manifest_exists(tmp_path, "source", src_label) is False
+    assert manifest_path(tmp_path, "source", src_label).exists() is False
