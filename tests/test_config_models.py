@@ -114,6 +114,23 @@ def test_crash_breakpoints_overridable() -> None:
     assert dg.crash_breakpoints == ("panic", "die")
 
 
+def test_debuginfod_config_defaults() -> None:
+    dg = DebuggerCfg()
+    assert dg.debuginfod == "auto"
+    assert dg.debuginfod_urls == "https://debuginfod.elfutils.org"
+
+
+def test_debuginfod_mode_constrained() -> None:
+    with pytest.raises(ValidationError):
+        DebuggerCfg(debuginfod="sometimes")  # type: ignore[arg-type]
+
+
+def test_debuginfod_overridable() -> None:
+    dg = DebuggerCfg(debuginfod="on", debuginfod_urls="https://mirror.example/dbginfo")
+    assert dg.debuginfod == "on"
+    assert dg.debuginfod_urls == "https://mirror.example/dbginfo"
+
+
 def test_guest_loop_config_defaults() -> None:
     d = DebuggeeCfg()
     assert d.ssh_port == 2222

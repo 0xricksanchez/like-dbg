@@ -58,6 +58,7 @@ from likedbg.foreign import compile_exploit
 from likedbg.foreign import console_upload
 from likedbg.foreign import resolve_foreign
 from likedbg.foreign import resolve_input_path
+from likedbg.gdbcmd import resolve_debuginfod_enabled
 from likedbg.host_profile import HostProfile
 from likedbg.launchers import gdb_pane_command
 from likedbg.modules import stage_module
@@ -216,6 +217,8 @@ def _make_pane_launchers(
     gdb_mount_source: str,
     recorder: RunRecorder | None,
     exploit_share: Path | None = None,
+    debuginfod_urls: str | None = None,
+    debuginfod_cache: Path | None = None,
 ) -> tuple[Callable[[str], None], Callable[[list[str]], None]]:
     """Wire the debuggee/debugger tmux panes + session-restart options for a pipeline run.
 
@@ -252,6 +255,8 @@ def _make_pane_launchers(
             network_mode=host.network_mode,
             crash_drop=recorder.crash_dir if recorder is not None else None,
             exploit_share=exploit_share,
+            debuginfod_urls=debuginfod_urls,
+            debuginfod_cache=debuginfod_cache,
         )
         session.set_option("@likedbg_debugger_cmd", cmd)
         debugger_pane = session.run_in_new_pane(
@@ -290,6 +295,9 @@ def build_pipeline(
     crash_breakpoints: tuple[str, ...] = (),
     sanitizer_breakpoints: tuple[str, ...] = (),
     exploit_share: Path | None = None,
+    debuginfod_enabled: bool = False,
+    debuginfod_urls: str = "",
+    debuginfod_cache: Path | None = None,
 ) -> Pipeline:
     gdb_mount_source = cache.locations(
         build_recipe.label,
@@ -306,6 +314,8 @@ def build_pipeline(
         gdb_mount_source=gdb_mount_source,
         recorder=recorder,
         exploit_share=exploit_share,
+        debuginfod_urls=(debuginfod_urls if debuginfod_enabled else None),
+        debuginfod_cache=(debuginfod_cache if debuginfod_enabled else None),
     )
 
     return Pipeline(
@@ -346,6 +356,8 @@ def build_pipeline(
                 crash_breakpoints=crash_breakpoints,
                 sanitizer_breakpoints=sanitizer_breakpoints,
                 modules_gdb=(f"{EXPLOIT_MOUNT}/modules.gdb" if exploit_share is not None else None),
+                debuginfod_enabled=debuginfod_enabled,
+                debuginfod_urls=debuginfod_urls,
             ),
         ]
     )
@@ -369,6 +381,9 @@ def build_use_pipeline(
     crash_breakpoints: tuple[str, ...] = (),
     sanitizer_breakpoints: tuple[str, ...] = (),
     exploit_share: Path | None = None,
+    debuginfod_enabled: bool = False,
+    debuginfod_urls: str = "",
+    debuginfod_cache: Path | None = None,
 ) -> Pipeline:
     launch_debuggee, run_gdb = _make_pane_launchers(
         session,
@@ -378,6 +393,8 @@ def build_use_pipeline(
         gdb_mount_source=gdb_mount_source,
         recorder=recorder,
         exploit_share=exploit_share,
+        debuginfod_urls=(debuginfod_urls if debuginfod_enabled else None),
+        debuginfod_cache=(debuginfod_cache if debuginfod_enabled else None),
     )
 
     return Pipeline(
@@ -407,6 +424,8 @@ def build_use_pipeline(
                 crash_breakpoints=crash_breakpoints,
                 sanitizer_breakpoints=sanitizer_breakpoints,
                 modules_gdb=(f"{EXPLOIT_MOUNT}/modules.gdb" if exploit_share is not None else None),
+                debuginfod_enabled=debuginfod_enabled,
+                debuginfod_urls=debuginfod_urls,
             ),
         ]
     )
@@ -431,6 +450,9 @@ def build_foreign_pipeline(
     break_on_crash: bool = False,
     crash_breakpoints: tuple[str, ...] = (),
     sanitizer_breakpoints: tuple[str, ...] = (),
+    debuginfod_enabled: bool = False,
+    debuginfod_urls: str = "",
+    debuginfod_cache: Path | None = None,
 ) -> Pipeline:
     # ADR-0010: a foreign guest has no exploit share (no guest-side delivery path): never mount one,
     # and DebuggerStage below is left at its modules_gdb=None default (no modules.gdb to watch).
@@ -442,6 +464,8 @@ def build_foreign_pipeline(
         gdb_mount_source=gdb_mount_source,
         recorder=recorder,
         exploit_share=None,
+        debuginfod_urls=(debuginfod_urls if debuginfod_enabled else None),
+        debuginfod_cache=(debuginfod_cache if debuginfod_enabled else None),
     )
 
     return Pipeline(
@@ -456,6 +480,8 @@ def build_foreign_pipeline(
                 break_on_crash=break_on_crash,
                 crash_breakpoints=crash_breakpoints,
                 sanitizer_breakpoints=sanitizer_breakpoints,
+                debuginfod_enabled=debuginfod_enabled,
+                debuginfod_urls=debuginfod_urls,
             ),
         ]
     )
@@ -521,6 +547,10 @@ def cmd_use(
         recorder=recorder,
     )
     exploit_share = (workspace / rr.effective_debuggee.share_dir) if rr.effective_debuggee.share else None
+    debuginfod_enabled = resolve_debuginfod_enabled(use_settings.debugger.debuginfod, is_foreign=False)
+    debuginfod_cache = workspace / "artifacts" / "cache" / "debuginfod"
+    if debuginfod_enabled:
+        debuginfod_cache.mkdir(parents=True, exist_ok=True)  # pre-create the leaf so docker bind-mounts a host-owned dir, not a root-owned new one
     pipeline = build_use_pipeline(
         container,
         session,
@@ -538,6 +568,9 @@ def cmd_use(
         crash_breakpoints=use_settings.debugger.crash_breakpoints,
         sanitizer_breakpoints=use_settings.debugger.sanitizer_breakpoints,
         exploit_share=exploit_share,
+        debuginfod_enabled=debuginfod_enabled,
+        debuginfod_urls=use_settings.debugger.debuginfod_urls,
+        debuginfod_cache=debuginfod_cache,
     )
     pipeline.run(ctx)
     return 0
@@ -600,6 +633,10 @@ def cmd_foreign(
         extra_boot_args=rr.extra_boot_args,
         recorder=recorder,
     )
+    debuginfod_enabled = resolve_debuginfod_enabled(cfg.settings.debugger.debuginfod, is_foreign=True)
+    debuginfod_cache = workspace / "artifacts" / "cache" / "debuginfod"
+    if debuginfod_enabled:
+        debuginfod_cache.mkdir(parents=True, exist_ok=True)  # pre-create the leaf so docker bind-mounts a host-owned dir, not a root-owned new one
     pipeline = build_foreign_pipeline(
         container,
         session,
@@ -618,6 +655,9 @@ def cmd_foreign(
         break_on_crash=cfg.settings.debugger.break_on_crash,
         crash_breakpoints=cfg.settings.debugger.crash_breakpoints,
         sanitizer_breakpoints=cfg.settings.debugger.sanitizer_breakpoints,
+        debuginfod_enabled=debuginfod_enabled,
+        debuginfod_urls=cfg.settings.debugger.debuginfod_urls,
+        debuginfod_cache=debuginfod_cache,
     )
     pipeline.run(ctx)
     return 0
@@ -1147,6 +1187,10 @@ def main(argv: list[str] | None = None) -> int:
             recorder=recorder,
         )
         exploit_share = (workspace / run_res.effective_debuggee.share_dir) if run_res.effective_debuggee.share else None
+        debuginfod_enabled = resolve_debuginfod_enabled(cfg.settings.debugger.debuginfod, is_foreign=False)
+        debuginfod_cache = workspace / "artifacts" / "cache" / "debuginfod"
+        if debuginfod_enabled:
+            debuginfod_cache.mkdir(parents=True, exist_ok=True)  # pre-create the leaf so docker bind-mounts a host-owned dir, not a root-owned new one
         pipeline = build_pipeline(
             container,
             session,
@@ -1166,6 +1210,9 @@ def main(argv: list[str] | None = None) -> int:
             crash_breakpoints=cfg.settings.debugger.crash_breakpoints,
             sanitizer_breakpoints=cfg.settings.debugger.sanitizer_breakpoints,
             exploit_share=exploit_share,
+            debuginfod_enabled=debuginfod_enabled,
+            debuginfod_urls=cfg.settings.debugger.debuginfod_urls,
+            debuginfod_cache=debuginfod_cache,
         )
         pipeline.run(ctx)
         return 0

@@ -9,6 +9,7 @@ import shlex
 from pathlib import Path
 
 from likedbg.constants import CRASH_DROP_MOUNT
+from likedbg.constants import DEBUGINFOD_CACHE_MOUNT
 from likedbg.constants import EXPLOIT_MOUNT
 from likedbg.constants import VOLUME_MOUNT
 
@@ -28,6 +29,8 @@ def gdb_pane_command(
     network_mode: str = "published",
     crash_drop: Path | None = None,
     exploit_share: Path | None = None,
+    debuginfod_urls: str | None = None,
+    debuginfod_cache: Path | None = None,
 ) -> str:
     # Host net (Linux): gdb reaches QEMU on localhost. Published (macOS): the host-gateway alias
     # resolves host.docker.internal to the published gdbstub port.
@@ -35,7 +38,15 @@ def gdb_pane_command(
     crash = f"-v {shlex.quote(str(crash_drop))}:{CRASH_DROP_MOUNT}:rw " if crash_drop is not None else ""
     # ro: gdb only needs to read the delivered .ko files + modules.gdb from the exploit share.
     expl = f"-v {shlex.quote(str(exploit_share))}:{EXPLOIT_MOUNT}:ro " if exploit_share is not None else ""
-    docker = f"docker run --rm -it {net} -v {mount_source}:{VOLUME_MOUNT}:ro {crash}{expl}{image} "
+    dbginfo = ""
+    if debuginfod_urls and debuginfod_cache is not None:
+        # Persist the fetched debug info across the --rm container so later runs hit the cache.
+        dbginfo = (
+            f"-e DEBUGINFOD_URLS={shlex.quote(debuginfod_urls)} "
+            f"-e DEBUGINFOD_CACHE_PATH={DEBUGINFOD_CACHE_MOUNT} "
+            f"-v {shlex.quote(str(debuginfod_cache))}:{DEBUGINFOD_CACHE_MOUNT}:rw "
+        )
+    docker = f"docker run --rm -it {net} -v {mount_source}:{VOLUME_MOUNT}:ro {crash}{expl}{dbginfo}{image} "
     # Quote the gdb argv too: `-ex "hbreak start_kernel"` must reach gdb as one arg.
     return docker + shlex.join(gdb_args)
 

@@ -22,6 +22,8 @@ class DebuggerStage:
         crash_breakpoints: tuple[str, ...] = (),
         sanitizer_breakpoints: tuple[str, ...] = (),
         modules_gdb: str | None = None,
+        debuginfod_enabled: bool = False,
+        debuginfod_urls: str = "",
     ) -> None:
         self._ext = ext
         self._run_gdb = run_gdb
@@ -30,6 +32,8 @@ class DebuggerStage:
         self._crash_breakpoints = crash_breakpoints
         self._sanitizer_breakpoints = sanitizer_breakpoints
         self._modules_gdb = modules_gdb
+        self._debuginfod_enabled = debuginfod_enabled
+        self._debuginfod_urls = debuginfod_urls
 
     def should_skip(self, ctx: PipelineContext) -> bool:
         return False
@@ -49,6 +53,8 @@ class DebuggerStage:
             crash_breakpoints=self._crash_breakpoints,
             sanitizer_breakpoints=self._sanitizer_breakpoints,
             modules_gdb=self._modules_gdb,
+            debuginfod_enabled=self._debuginfod_enabled,
+            debuginfod_urls=self._debuginfod_urls,
         )
         if ctx.recorder is not None:
             ctx.recorder.record_command("gdb", shell=" ".join(args), argv=args)  # type: ignore[attr-defined]

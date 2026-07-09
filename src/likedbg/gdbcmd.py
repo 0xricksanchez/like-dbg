@@ -17,6 +17,15 @@ _EXT_SOURCE = {"gef": "/opt/gef/gef.py", "pwndbg": "/opt/pwndbg/gdbinit.py"}
 _GDB_ARCH = {"arm64": "aarch64", "x86_64": "i386:x86-64"}
 
 
+def resolve_debuginfod_enabled(mode: str, *, is_foreign: bool) -> bool:
+    """Resolve the debuginfod policy to a boolean. auto = on for foreign runs, off for self-built."""
+    if mode == "on":
+        return True
+    if mode == "off":
+        return False
+    return is_foreign  # "auto"
+
+
 def _remote_command(ext: str, addr: str, port: int) -> str:
     if ext == "gef":
         return f"gef-remote {addr} {port}"
@@ -318,6 +327,8 @@ def build_gdb_args(
     break_on_crash: bool = False,
     crash_breakpoints: tuple[str, ...] = (),
     sanitizer_breakpoints: tuple[str, ...] = (),
+    debuginfod_enabled: bool = False,
+    debuginfod_urls: str = "",
     crash_drop_path: str = CRASH_DROP_MOUNT,
     modules_gdb: str | None = None,
 ) -> list[str]:
@@ -330,7 +341,14 @@ def build_gdb_args(
     # hooks must be in place first (a later -ex is too late).
     args = ["gdb-multiarch", "-q"]
     args += ["-iex", f"source {_EXT_SOURCE[ext]}"]
-    args += ["-iex", "set auto-load safe-path /", str(vmlinux)]
+    args += ["-iex", "set auto-load safe-path /"]
+    if debuginfod_enabled:
+        # Non-interactive session: enable explicitly ON (never `ask`, which blocks on a prompt). Set
+        # the URLs first, then enable, then load the vmlinux so gdb fetches by build-id on resolve.
+        if debuginfod_urls:
+            args += ["-iex", f"set debuginfod urls {debuginfod_urls}"]
+        args += ["-iex", "set debuginfod enabled on"]
+    args += [str(vmlinux)]
     args += ["-ex", f"set architecture {gdb_arch}"]
     args += ["-ex", _reconnect_helper(ext, addr, port, breakpoint)]
     args += ["-ex", _remote_command(ext, addr, port)]

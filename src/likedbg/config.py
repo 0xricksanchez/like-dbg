@@ -57,6 +57,7 @@ SourceKind = Literal["mmp", "tag", "commit"]
 Compiler = Literal["clang", "gcc"]
 Ext = Literal["gef", "pwndbg"]
 Network = Literal["auto", "host", "published"]
+Debuginfod = Literal["auto", "on", "off"]
 
 
 class _Base(BaseModel):
@@ -159,6 +160,12 @@ class DebuggerCfg(_Base):
     # positive kasan_report floods; KASAN is captured from the console into crash.md regardless.
     crash_breakpoints: tuple[str, ...] = ("panic", "die", "oops_enter")
     sanitizer_breakpoints: tuple[str, ...] = ()
+    # gdb-native debuginfod: fetch debug info by build-id for stripped/distro/foreign vmlinux.
+    # auto = ON for [foreign] runs, OFF for self-built (which always carries its own symtab).
+    # Emitted as `set debuginfod enabled on` before the vmlinux load; never `ask` (would block the
+    # non-interactive session). See docs/adr/0012-*.
+    debuginfod: Debuginfod = "auto"
+    debuginfod_urls: str = "https://debuginfod.elfutils.org"
 
 
 class DebuggingCfg(_Base):
