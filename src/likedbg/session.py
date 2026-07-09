@@ -72,7 +72,7 @@ class Session:
 
     def pane_base_index(self) -> int:
         # tmux pane indices honor the user's `pane-base-index` (commonly 1, not 0).
-        # Never assume 0 — query it, falling back to 0 if tmux is unavailable.
+        # Never assume 0: query it, falling back to 0 if tmux is unavailable.
         out = self._query(["tmux", "display-message", "-p", "#{pane-base-index}"])
         try:
             return int(out)

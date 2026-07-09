@@ -1,7 +1,7 @@
 """Container-image manifest + content-hash currency (ADR-0004; CONTEXT.md -> Container image).
 
 Each Container image is checked for staleness by a content hash (`input_sha`) over its declared
-build inputs — the dockerfile plus any local files it bakes in via COPY/ADD — stamped onto the
+build inputs (the dockerfile plus any local files it bakes in via COPY/ADD) stamped onto the
 built image as the docker label `likedbg.input_sha`. `build_inputs` is declared explicitly per
 image; a test (tests/test_images.py::test_build_inputs_cover_every_copy_source) enforces that the
 declaration covers every COPY/ADD source, so it cannot silently drift.
@@ -149,7 +149,7 @@ def required_for_use(host: HostProfile) -> tuple[ImageSpec, ...]:
 
 
 def foreign_prep_images() -> tuple[ImageSpec, ...]:
-    """base + musl — needed before host/arch detection (extract vmlinux, repack)."""
+    """base + musl: needed before host/arch detection (extract vmlinux, repack)."""
     return tuple(s for s in IMAGES if s.tag in (BASE_IMAGE, MUSL_IMAGE))
 
 

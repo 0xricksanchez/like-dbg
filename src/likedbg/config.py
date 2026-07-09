@@ -1,7 +1,7 @@
 """Typed configuration models plus the TOML config loader.
 
 ``load_config``: the 6-layer TOML loader producing whole-Settings provenance
-(built-in ◁ default ◁ profile ◁ local ◁ scenario ◁ cli).
+(built-in < default < profile < local < scenario < cli).
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ def _reject_traversal(p: str) -> None:
     """Raise ConfigError only on '..' traversal; absolute paths are allowed.
 
     Foreign inputs are read-only external artifacts a CTF challenge ships anywhere
-    (e.g. ~/ctf/<name>/), so absolute paths are permitted here — unlike _reject_unsafe_path.
+    (e.g. ~/ctf/<name>/), so absolute paths are permitted here, unlike _reject_unsafe_path.
     """
     if ".." in Path(p).parts:
         raise ConfigError(
@@ -193,7 +193,7 @@ _SECTION_MODELS: dict[str, type[_Base]] = {
     "foreign": ForeignCfg,
 }
 
-# Section→key→value layer dict.
+# Section->key->value layer dict.
 _Layer = dict[str, dict[str, object]]
 
 
@@ -205,7 +205,7 @@ def _read_toml(path: Path) -> _Layer:
 
 
 def _merge(layers: list[tuple[str, _Layer]]) -> tuple[dict[str, dict[str, object]], dict[tuple[str, str], str]]:
-    """Apply ordered (low→high) layers; return merged section dicts + winning-layer provenance."""
+    """Apply ordered (low->high) layers; return merged section dicts + winning-layer provenance."""
     merged: dict[str, dict[str, object]] = {}
     prov: dict[tuple[str, str], str] = {}
     for name, layer in layers:
@@ -233,7 +233,7 @@ def _build_settings(merged: dict[str, dict[str, object]]) -> Settings:
 class ConfigResolution:
     settings: Settings
     provenance: dict[tuple[str, str], str]
-    _ordered_layers: tuple[tuple[str, _Layer], ...]  # built-in placeholder excluded; low→high
+    _ordered_layers: tuple[tuple[str, _Layer], ...]  # built-in placeholder excluded; low->high
 
     def effective_debuggee(self, profile_defaults: dict[str, str]) -> tuple[DebuggeeCfg, dict[tuple[str, str], str]]:
         """Re-merge [debuggee] with profile defaults spliced in at layer 4 (above default, below local)."""

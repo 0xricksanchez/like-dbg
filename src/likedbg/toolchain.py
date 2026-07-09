@@ -1,7 +1,7 @@
 """Toolchain registry: (compiler, arch) -> kernel make environment.
 
 clang/LLVM is the default universal cross-compiler (one toolchain builds every
-arch via ARCH=… LLVM=1); gcc uses per-arch cross prefixes. The registry is the
+arch via ARCH=... LLVM=1); gcc uses per-arch cross prefixes. The registry is the
 seam where pinned older toolchains slot in later.
 """
 

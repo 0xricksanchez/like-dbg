@@ -15,7 +15,7 @@ def test_message_only():
 def test_message_with_remedy_renders_fix_line():
     err = HostCapabilityError("no qemu", remedy="run 'just bootstrap'")
     assert err.remedy == "run 'just bootstrap'"
-    assert str(err) == "no qemu\n  → fix: run 'just bootstrap'"
+    assert str(err) == "no qemu\n  -> fix: run 'just bootstrap'"
 
 
 def test_subclasses_are_likedbgerror():

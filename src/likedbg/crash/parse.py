@@ -11,7 +11,7 @@ gaps mid-dump never drop the fault PC or the remaining trace.
 
 An event is closed by an explicit end-marker (``---[ end trace``, ``---[ end Kernel
 panic``, a KASAN ``====`` closing banner, or a ``Rebooting in `` line). Closing the
-event lets a genuinely NEW fault open a fresh one — e.g. a benign ``WARNING`` block
+event lets a genuinely NEW fault open a fresh one, e.g. a benign ``WARNING`` block
 that precedes the real ``BUG:`` fault is kept as its own non-fatal event instead of
 swallowing the fatal crash. Only these explicit markers close an event; blank lines
 never do.

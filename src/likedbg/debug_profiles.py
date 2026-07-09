@@ -37,7 +37,7 @@ class _PBase(BaseModel):
 
 class Expect(_PBase):
     symbol: str
-    value: Literal["y", "m", "n"]  # "n" → "# CONFIG_FOO is not set"
+    value: Literal["y", "m", "n"]  # "n" -> "# CONFIG_FOO is not set"
     severity: Literal["hard", "soft"]
     arch: tuple[str, ...] | None = None
     kernel_min: str | None = None
@@ -213,7 +213,7 @@ def verify_config(
 
 
 _EXPLICIT_LAYERS: frozenset[str] = frozenset({LAYER_LOCAL, LAYER_SCENARIO, LAYER_CLI})
-# Runtime toggle → build symbol it requires to be enable-able.
+# Runtime toggle -> build symbol it requires to be enable-able.
 _TOGGLE_REQUIRES: dict[str, str] = {"kaslr": "CONFIG_RANDOMIZE_BASE"}
 
 
@@ -236,7 +236,7 @@ class RunResolution:
 def _expand(
     profile_names: tuple[str, ...], registry: dict[str, ProfileDef]
 ) -> tuple[list[str], str, dict[str, list[str]]]:
-    """Return (ordered resolved names, base, implied_by) — base first, implied add-ons, explicit add-ons."""
+    """Return (ordered resolved names, base, implied_by): base first, implied add-ons, explicit add-ons."""
     for n in profile_names:
         if n not in registry:
             choices = ", ".join(sorted(registry))
@@ -304,7 +304,7 @@ def resolve_run(
     fragments = tuple(f for d in defs for f in d.fragments)
     expectations = tuple(e for d in defs for e in d.expect)
 
-    # Profile runtime defaults (layer 4) — later profiles win on conflict.
+    # Profile runtime defaults (layer 4): later profiles win on conflict.
     runtime_defaults: dict[str, str] = {}
     for d in defs:
         for k, v in d.runtime_defaults.debuggee.items():
@@ -349,14 +349,14 @@ def resolve_run(
         if wants_on and forbidden_hard:
             # Only EXPLICIT (user/scenario/CLI) requests are hard errors (Q12). When the toggle is on
             # via a profile default with no build symbol, the runtime kaslr boot arg is a harmless no-op,
-            # so we silently pass — this is intentional, not a missing else.
+            # so we silently pass: this is intentional, not a missing else.
             if explicit:
                 raise ConfigError(
                     f"[debuggee] {toggle}=on is impossible: active profiles build {symbol} disabled",
                     remedy="remove the explicit toggle, or switch to a base profile that builds it in (e.g. hardened)",
                 )
         if not wants_on and prov == LAYER_PROFILE:
-            overrides.append(f"runtime override: {toggle} off → adds nokaslr (profile default was on)")
+            overrides.append(f"runtime override: {toggle} off -> adds nokaslr (profile default was on)")
 
     resolved = ResolvedDebugProfiles(
         names=tuple(ordered), base=base, expected_config=expectations, future_breakpoint_groups=()

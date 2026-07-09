@@ -29,9 +29,9 @@ def _prune_old_logs(logs: Path, *, keep: int) -> None:
 def _point_latest(link: Path, target: Path) -> None:
     try:
         link.unlink(missing_ok=True)
-        link.symlink_to(target.name)  # relative — same dir
+        link.symlink_to(target.name)  # relative, same dir
     except OSError:
-        pass  # symlinks unavailable (e.g. Windows) — non-fatal
+        pass  # symlinks unavailable (e.g. Windows), non-fatal
 
 
 def add_run_logfile(workspace: Path, *, path: Path | None = None) -> Path:

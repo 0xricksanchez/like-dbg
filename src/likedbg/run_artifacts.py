@@ -1,4 +1,4 @@
-"""RunRecorder: the runtime seam. Owns artifacts/runs/<run-id>/ — its layout, run.json status
+"""RunRecorder: the runtime seam. Owns artifacts/runs/<run-id>/: its layout, run.json status
 machine, and the resolved-profile/fragment snapshots. Callers get paths, not directory knowledge."""
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ def _run_id(build_label: str) -> str:
 
 
 def _point(link: Path, target: Path) -> None:
-    """Point `link` at `target` — try symlink, fall back to .txt if OS refuses."""
+    """Point `link` at `target`: try symlink, fall back to .txt if OS refuses."""
     try:
         if link.is_symlink() or link.exists():
             link.unlink()
@@ -139,7 +139,7 @@ class RunRecorder:
         effective["_provenance"] = _provenance_json(run_resolution.provenance)
         (run_dir / "settings.effective.json").write_text(json.dumps(effective, indent=2, sort_keys=True))
 
-        # host profile — dataclass, use asdict
+        # host profile: dataclass, use asdict
         (run_dir / "host.json").write_text(json.dumps(asdict(host), indent=2, sort_keys=True))
 
         _write_profiles_json(run_dir, workspace, run_resolution, profiles)

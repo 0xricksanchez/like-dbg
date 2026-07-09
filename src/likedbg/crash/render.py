@@ -23,7 +23,7 @@ def _event_md(i: int, ev: CrashEvent, primary: int | None) -> list[str]:
     star = " (primary)" if i == primary else ""
     out = [f"## Event {i}: {ev.kind}{star}", "", f"**{ev.title}**", ""]
     if ev.incomplete:
-        out += ["> ⚠ capture incomplete (guest rebooted mid-dump)", ""]
+        out += ["> WARNING: capture incomplete (guest rebooted mid-dump)", ""]
     if ev.fault_pc:
         out += [f"- Faulting PC: {_frame_line(ev.fault_pc)}"]
     if ev.fault_addr:

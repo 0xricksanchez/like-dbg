@@ -136,7 +136,7 @@ def resolve_for_run(
 def _provenance_nested(prov: dict[tuple[str, str], str]) -> dict[str, dict[str, str]]:
     """Convert flat provenance dict with (section, key) tuples to nested {section: {key: layer}}.
 
-    # NOTE: mirror of run_artifacts._provenance_json — import cycle prevents hoisting.
+    # NOTE: mirror of run_artifacts._provenance_json (import cycle prevents hoisting).
     """
     out: dict[str, dict[str, str]] = {}
     for (section, key), layer in prov.items():
@@ -427,7 +427,7 @@ def build_foreign_pipeline(
     break_on_crash: bool = False,
     crash_breakpoints: tuple[str, ...] = (),
 ) -> Pipeline:
-    # ADR-0010: a foreign guest has no exploit share (no guest-side delivery path) — never mount one,
+    # ADR-0010: a foreign guest has no exploit share (no guest-side delivery path): never mount one,
     # and DebuggerStage below is left at its modules_gdb=None default (no modules.gdb to watch).
     launch_debuggee, run_gdb = _make_pane_launchers(
         session,
@@ -562,7 +562,7 @@ def cmd_foreign(
         scenario=scenario,
         cli_overrides={"general": {"arch": fk.arch}},
     )
-    # ADR-0010: a foreign guest exposes only the serial console — no virtio-net/9p devices the
+    # ADR-0010: a foreign guest exposes only the serial console: no virtio-net/9p devices the
     # CTF challenge never specified, and no run.json `guest` block (which would otherwise make
     # --run/--insmod/--rmmod try to SSH to a nonexistent sshd instead of refusing cleanly).
     # Both RunRecorder.start (run.json `guest` block) and the pipeline's DebuggeeStage (QEMU argv)
@@ -619,7 +619,7 @@ def _require_volume_for_adopt(host: HostProfile) -> None:
     if host.storage_mode != "volume":
         raise HostCapabilityError(
             "--adopt migrates the legacy in-volume tree and is volume-mode only",
-            remedy="bind/Linux builds fresh — just run start_kgdb",
+            remedy="bind/Linux builds fresh, just run start_kgdb",
         )
 
 
@@ -753,7 +753,7 @@ def cmd_restart_debuggee(session: Session) -> int:
 def cmd_analyze_crash(workspace: Path, *, run_id: str) -> int:
     """Pure-host crash analysis: resolve a run dir, run analyze_run, print a summary.
 
-    Docker/tmux-free — safe to dispatch before any container/session setup.
+    Docker/tmux-free: safe to dispatch before any container/session setup.
     """
     runs = workspace / "artifacts" / "runs"
     run_dir = (runs / "latest") if run_id == "latest" else (runs / run_id)
@@ -764,7 +764,7 @@ def cmd_analyze_crash(workspace: Path, *, run_id: str) -> int:
         print("no crash detected")
         return 0
     prim = report.events[report.primary] if report.primary is not None else report.events[0]
-    print(f"crash: {prim.kind} — {prim.title}")
+    print(f"crash: {prim.kind}: {prim.title}")
     print(f"  report: {run_dir / 'crash.md'}")
     print(f"  json:   {run_dir / 'crash.json'}")
     return 0
@@ -787,6 +787,35 @@ def _guest_endpoint(workspace: Path, run_dir: Path, g: dict[str, Any]) -> guest.
     return guest.GuestEndpoint(host=str(g["ssh_host"]), port=int(g["ssh_port"]), key=Path(key))
 
 
+def _read_sections(
+    ep: guest.GuestEndpoint,
+    name: str,
+    *,
+    attempts: int = 3,
+    sleep: Callable[[float], None] | None = None,
+) -> list[tuple[str, str]]:
+    """Read /sys/module/<name>/sections; retry the sysfs-population race after an insmod/reload
+    until `.text` is present and non-zero, up to `attempts`. Modifies no guest state."""
+    # Resolve time.sleep at call time (not as a default arg) so tests can monkeypatch cli.time.sleep.
+    _sleep = sleep if sleep is not None else time.sleep
+    secs: list[tuple[str, str]] = []
+    for i in range(attempts):
+        secs_raw = guest.run(
+            ep, f"for s in /sys/module/{name}/sections/.*; do echo $(basename $s) $(cat $s); done"
+        ).stdout
+        secs = []
+        for ln in secs_raw.replace("\r\n", "\n").split("\n"):
+            f = ln.split()
+            if len(f) == 2 and f[0].startswith("."):
+                secs.append((f[0], f[1]))
+        text = dict(secs).get(".text")
+        if text and int(text, 16):
+            return secs
+        if i + 1 < attempts:
+            _sleep(0.5)
+    return secs
+
+
 def cmd_insmod(workspace: Path, *, run_id: str, path: str, args: str, force_unload: bool) -> int:
     from likedbg.exploit import _resolve_run
 
@@ -799,7 +828,7 @@ def cmd_insmod(workspace: Path, *, run_id: str, path: str, args: str, force_unlo
     share_dir = (workspace / g["share_dir"]).resolve()
     out_dir = share_dir / "modules"
 
-    # build context (kernel tree + toolchain env) — reads the run's build label + host profile + config.
+    # build context (kernel tree + toolchain env): reads the run's build label + host profile + config.
     build_label = run_json.get("build_label", "")
     host_json = json.loads((run_dir / "host.json").read_text())
     arch = host_json["target_arch"]
@@ -850,15 +879,7 @@ def cmd_insmod(workspace: Path, *, run_id: str, path: str, args: str, force_unlo
             force_unload=force_unload,
         )
         # read runtime section addresses from the guest and log a lifecycle `load` event.
-        secs_raw = guest.run(
-            ep,
-            f"for s in /sys/module/{name}/sections/.*; do echo $(basename $s) $(cat $s); done",
-        ).stdout
-        secs = []
-        for ln in secs_raw.replace("\r\n", "\n").split("\n"):
-            f = ln.split()
-            if len(f) == 2 and f[0].startswith("."):
-                secs.append((f[0], f[1]))
+        secs = _read_sections(ep, name)
         text = dict(secs).get(".text")
         modules_gdb = share_dir / "modules.gdb"
         if text and int(text, 16):
@@ -869,7 +890,7 @@ def cmd_insmod(workspace: Path, *, run_id: str, path: str, args: str, force_unlo
             note = f"symbols will load at your next gdb stop (or `source {EXPLOIT_MOUNT}/modules.gdb`)"
         else:
             note = f"no .text section read; add-symbol-file {g['share_mount']}/modules/{ko.name} manually"
-        print(f"[likedbg] loaded {name} (rc={res.rc}) — {g['share_mount']}/modules/{ko.name}; {note}")
+        print(f"[likedbg] loaded {name} (rc={res.rc}): {g['share_mount']}/modules/{ko.name}; {note}")
     return 0
 
 
@@ -899,7 +920,7 @@ def _console_tail_reader(console_path: Path, *, timeout: float = 10.0, poll: flo
 
 
 def cmd_upload(workspace: Path, *, run_id: str, file: str) -> int:
-    """Live exploit delivery over the serial console — see foreign.console_upload. Optional
+    """Live exploit delivery over the serial console (see foreign.console_upload). Optional
     fallback to repack; NEVER runs the uploaded file (delivery only)."""
     from likedbg.exploit import _resolve_run
 

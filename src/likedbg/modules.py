@@ -65,7 +65,7 @@ def module_name(
     *,
     image: str,
 ) -> str:
-    """The loadable module name: `modinfo -F name`, else the .ko stem with `-`→`_`."""
+    """The loadable module name: `modinfo -F name`, else the .ko stem with `-`->`_`."""
     c = container.run_detached(
         image,
         volumes={str(ko.parent): {"bind": _MOD_MOUNT, "mode": "ro"}},
@@ -115,7 +115,7 @@ def load(
         dmesg = client.run(endpoint, "dmesg | tail -n 20").stdout.replace("\r\n", "\n")
         raise ModuleError(
             f"insmod {name} failed (rc={ins.rc}): {ins.stderr.strip()}\n{dmesg}",
-            remedy="vermagic mismatch → rebuild the kernel to match, or build the module from source",
+            remedy="vermagic mismatch -> rebuild the kernel to match, or build the module from source",
         )
     return ins
 
@@ -151,7 +151,7 @@ def stage_module(
     volume: str,
     kernel_label: str,
 ) -> Path:
-    """Bring one custom_modules entry to a staged `.ko` in out_dir. Prebuilt `.ko` → copy it; source dir →
+    """Bring one custom_modules entry to a staged `.ko` in out_dir. Prebuilt `.ko` -> copy it; source dir ->
     build if the content hash (or kernel label) changed, else reuse the staged `.ko` (named after the dir)."""
     if entry.is_file() and entry.suffix == ".ko":
         out_dir.mkdir(parents=True, exist_ok=True)

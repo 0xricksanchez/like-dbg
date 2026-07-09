@@ -29,6 +29,7 @@ from likedbg.input_hash import hash_tree
 from likedbg.toolchain import resolve_toolchain
 
 _SLUG_RE = re.compile(r"[^a-z0-9._-]+")
+_NOT_SET_RE = re.compile(r"^# CONFIG_\w+ is not set$")
 _ROOTFS_SCRIPT = "io/scripts/rootfs.sh"
 
 TREE_ROOT = "ksrc"  # host mirror of the kernel-source mount: artifacts/<TREE_ROOT>/<label>
@@ -37,6 +38,21 @@ TREE_ROOT = "ksrc"  # host mirror of the kernel-source mount: artifacts/<TREE_RO
 def cache_key(inputs: dict[str, str]) -> str:
     blob = json.dumps(inputs, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(blob.encode()).hexdigest()
+
+
+def normalize_fragment(text: str) -> str:
+    """Canonicalize a kconfig fragment for cache keying: drop blank lines, trailing whitespace,
+    and comment lines, but keep every directive including `# CONFIG_X is not set` (a real kconfig
+    line, not a comment). Order is preserved, so doc-only edits no longer change the build key."""
+    kept: list[str] = []
+    for line in text.splitlines():
+        s = line.rstrip()
+        if not s:
+            continue
+        if s.startswith("#") and not _NOT_SET_RE.match(s):
+            continue
+        kept.append(s)
+    return "\n".join(kept)
 
 
 def short_hash(key: str) -> str:
@@ -115,7 +131,10 @@ def build_recipe(
     patch_dirs: tuple[str, ...] = (),
 ) -> BuildRecipe:
     tc = resolve_toolchain(settings.build.compiler, arch)
-    frag_hashes = sorted((rel, hashlib.sha256((workspace / rel).read_bytes()).hexdigest()) for rel in fragments)
+    frag_hashes = sorted(
+        (rel, hashlib.sha256(normalize_fragment((workspace / rel).read_text(encoding="utf-8")).encode()).hexdigest())
+        for rel in fragments
+    )
     patch_hashes = tuple((rel, hash_tree(workspace / rel).aggregate) for rel in patch_dirs)
     return BuildRecipe(
         version=version,
@@ -155,7 +174,7 @@ class Manifest:
     size_bytes: int = 0
 
 
-# Registry sub-directory per artifact kind (spec §4.3). NOT f"{kind}s" — that would
+# Registry sub-directory per artifact kind (spec section 4.3). NOT f"{kind}s": that would
 # pluralize "rootfs" to the wrong "rootfss".
 _KIND_DIR = {"build": "builds", "rootfs": "rootfs"}
 
@@ -213,7 +232,7 @@ class Locations:
 
 
 def tree_mount_source(workspace: Path, *, storage_mode: str, volume: str = KERNEL_VOLUME) -> str:
-    """The kernel tree's mount source — the named volume (volume mode) or the host
+    """The kernel tree's mount source: the named volume (volume mode) or the host
     artifacts/ksrc dir (bind mode). Mounted at VOLUME_MOUNT rw by Build/Unpack, ro by gdb."""
     return volume if storage_mode == "volume" else str(workspace / "artifacts" / TREE_ROOT)
 
@@ -259,7 +278,7 @@ def remove_cached(
             export_dir = workspace / "artifacts" / manifest.label
             if export_dir.is_dir():
                 shutil.rmtree(export_dir)
-        else:  # bind: the tree IS on the host — chown'd to the user at build time, so rmtree just works
+        else:  # bind: the tree IS on the host, chown'd to the user at build time, so rmtree just works
             tree = workspace / "artifacts" / TREE_ROOT / manifest.label
             if tree.is_dir():
                 shutil.rmtree(tree)
