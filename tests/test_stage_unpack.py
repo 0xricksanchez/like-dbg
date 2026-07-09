@@ -165,6 +165,8 @@ def test_unpack_applies_patches_then_mrproper_then_chmod_in_order(tmp_path):
     ).run(ctx)
 
     execs = svc.execs
+    rm_idx = next(i for i, c in enumerate(execs) if c == f"rm -rf {source_root}")
+    mkdir_idx = next(i for i, c in enumerate(execs) if c == f"mkdir -p {source_root}")
     tar_idx = next(i for i, c in enumerate(execs) if c.startswith("tar ") and source_root in c)
     patch_idxs = [i for i, c in enumerate(execs) if c.startswith("patch -p1 -i ")]
     mrproper_idx = next(i for i, c in enumerate(execs) if "mrproper" in c and f"-C {source_root}" in c)
@@ -175,7 +177,10 @@ def test_unpack_applies_patches_then_mrproper_then_chmod_in_order(tmp_path):
     assert "a.diff" in execs[patch_idxs[0]]
     assert "b.patch" in execs[patch_idxs[1]]
     assert not any("ignored.txt" in c for c in execs)
-    assert tar_idx < patch_idxs[0] < patch_idxs[1] < mrproper_idx < chmod_idx
+    # rm -rf (retry atomicity) precedes mkdir -p, then the rest of the pipeline in order.
+    assert rm_idx < mkdir_idx < tar_idx < patch_idxs[0] < patch_idxs[1] < mrproper_idx < chmod_idx
+    # volume mode: no chown should be issued at all.
+    assert not any(c.startswith("chown ") for c in execs)
 
     # source manifest written AFTER the container work, with patch inputs recorded
     assert manifest_exists(tmp_path, "source", recipe.src_label)
@@ -183,6 +188,53 @@ def test_unpack_applies_patches_then_mrproper_then_chmod_in_order(tmp_path):
     assert m.key == recipe.src_key
     assert m.version == recipe.version
     assert m.inputs == {"patch:patches": "deadbeef"}
+
+
+def test_bind_mode_chowns_to_user_after_mrproper_before_chmod(tmp_path):
+    recipe = _recipe()
+    svc = FakeContainerService()
+    ctx = _ctx("bind", tmp_path)
+
+    loc = cache.locations(
+        recipe.label,
+        arch=recipe.arch,
+        storage_mode="bind",
+        workspace=tmp_path,
+        volume="likedbg_ksrc",
+        src_label=recipe.src_label,
+    )
+    source_root = loc.source_root
+
+    UnpackStage(
+        svc,
+        recipe=recipe,
+        kernel_volume="likedbg_ksrc",
+        workspace=tmp_path,
+        chown_to=(1000, 1000),
+    ).run(ctx)
+
+    execs = svc.execs
+    mrproper_idx = next(i for i, c in enumerate(execs) if "mrproper" in c and f"-C {source_root}" in c)
+    chown_idx = next(i for i, c in enumerate(execs) if c == f"chown -R 1000:1000 {source_root}")
+    chmod_idx = next(i for i, c in enumerate(execs) if c == f"chmod -R a-w {source_root}")
+
+    assert mrproper_idx < chown_idx < chmod_idx
+
+
+def test_volume_mode_never_chowns_even_with_chown_to_set(tmp_path):
+    recipe = _recipe()
+    svc = FakeContainerService()
+    ctx = _ctx("volume", tmp_path)
+
+    UnpackStage(
+        svc,
+        recipe=recipe,
+        kernel_volume="likedbg_ksrc",
+        workspace=tmp_path,
+        chown_to=(1000, 1000),
+    ).run(ctx)
+
+    assert not any(c.startswith("chown ") for c in svc.execs)
 
 
 def test_bind_mode_mounts_host_ksrc_dir(tmp_path):

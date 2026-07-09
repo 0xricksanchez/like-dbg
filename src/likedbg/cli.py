@@ -340,6 +340,7 @@ def build_pipeline(
                 kernel_volume=kernel_volume,
                 workspace=workspace,
                 patch_dirs=patch_dirs,
+                chown_to=chown_to,
             ),
             BuildStage(
                 container,

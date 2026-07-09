@@ -1,9 +1,10 @@
 """Unpack stage: source setup. Materializes the SHARED source tree at
-/ksrc/src/<src_label>, in-container: tar-extracts the archive, applies patches, `mrproper`s,
-and locks the tree read-only (`chmod -R a-w`) so every build sharing this src_label builds
-against byte-identical, tamper-evident sources. Content-addressed by src_key (ADR pending):
-independent of arch/compiler/make_vars, so many builds of the same (version, patches) share
-one source tree."""
+/ksrc/src/<src_label>, in-container: wipes any leftover partial tree, tar-extracts the archive,
+applies patches, `mrproper`s, chowns to the invoking user in bind mode (the container runs as
+root, so the host-visible tree would otherwise be root-owned and un-removable later), and locks
+the tree read-only (`chmod -R a-w`) so every build sharing this src_label builds against
+byte-identical, tamper-evident sources. Content-addressed by src_key (ADR pending): independent
+of arch/compiler/make_vars, so many builds of the same (version, patches) share one source tree."""
 
 from __future__ import annotations
 
@@ -33,12 +34,14 @@ class UnpackStage:
         kernel_volume: str,
         workspace: Path,
         patch_dirs: tuple[str, ...] = (),
+        chown_to: tuple[int, int] | None = None,
     ) -> None:
         self._c = container
         self._recipe = recipe
         self._volume = kernel_volume
         self._workspace = workspace
         self._patch_dirs = patch_dirs
+        self._chown_to = chown_to
 
     def should_skip(self, ctx: PipelineContext) -> bool:
         return False
@@ -85,6 +88,10 @@ class UnpackStage:
         }
         container = self._c.run_detached(BASE_IMAGE, volumes=volumes, detach=True, tty=True)
         try:
+            # Wipe any leftover partial tree from a crashed prior attempt (we only reach this
+            # point when the source manifest is absent, i.e. not-ready) so tar/patches never
+            # apply on top of stale files; rm -rf tolerates a missing path.
+            self._c.exec(container, f"rm -rf {source_root}")
             self._c.exec(container, f"mkdir -p {source_root}")
             self._c.exec(container, f"tar -C {source_root} --strip-components=1 -xf {archive_in}")
             # Apply patches against the freshly unpacked source tree (TOML list order; files sorted).
@@ -95,6 +102,9 @@ class UnpackStage:
                     self._c.exec(container, f"patch -p1 -i {container_patch}", workdir=source_root)
             make_vars = " ".join(f"{k}={v}" for k, v in recipe.make_vars)
             self._c.exec(container, f"make {make_vars} -C {source_root} mrproper")
+            if self._chown_to is not None and ctx.host.storage_mode != "volume":
+                uid, gid = self._chown_to
+                self._c.exec(container, f"chown -R {uid}:{gid} {source_root}")
             self._c.exec(container, f"chmod -R a-w {source_root}")
         finally:
             self._c.stop(container)
