@@ -80,3 +80,25 @@ def test_rootfs_recipe_tracks_rootfs_script_content(tmp_path):
 
     assert "script:io/scripts/rootfs.sh" in first.cache_inputs()
     assert first.label != second.label
+
+
+def test_normalize_fragment_keeps_directives_drops_comments():
+    from likedbg.cache import normalize_fragment
+
+    raw = "# header note\n\nCONFIG_FOO=y   \n# a comment\n# CONFIG_BAR is not set\n"
+    assert normalize_fragment(raw) == "CONFIG_FOO=y\n# CONFIG_BAR is not set"
+
+
+def test_fragment_hash_ignores_comment_only_edits(tmp_path):
+    from likedbg.cache import build_recipe
+    from likedbg.config import Settings
+
+    rel = _frag(tmp_path, "x.config", "CONFIG_FOO=y\n# note A\n")
+    s = Settings()
+    h1 = build_recipe(s, version="6.6.30", arch="x86_64", workspace=tmp_path, fragments=[rel]).frag_hashes
+    (tmp_path / rel).write_text("CONFIG_FOO=y\n# note B, only a comment changed\n")
+    h2 = build_recipe(s, version="6.6.30", arch="x86_64", workspace=tmp_path, fragments=[rel]).frag_hashes
+    assert h1 == h2
+    (tmp_path / rel).write_text("CONFIG_FOO=n\n")
+    h3 = build_recipe(s, version="6.6.30", arch="x86_64", workspace=tmp_path, fragments=[rel]).frag_hashes
+    assert h3 != h1
