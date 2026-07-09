@@ -520,6 +520,7 @@ def cmd_use(
     if not cache.manifest_exists(workspace, "build", label):
         raise CacheError(f"no cached build labelled {label!r}", remedy="run `start_kgdb --list`")
     bm = cache.load_manifest(workspace, "build", label)
+    cache.touch_last_used(workspace, label)
     # Build identity (arch) is authoritative; reload config with the arch override so the
     # host profile / QEMU follow the cached build, keeping runtime+debugger prefs from config.
     scenario = _scenario_path(workspace, str(custom_ini) if custom_ini is not None else "")

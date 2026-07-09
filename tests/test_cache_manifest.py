@@ -114,3 +114,22 @@ def test_manifest_last_used_roundtrips(tmp_path):
     write_manifest(tmp_path, m)
     loaded = load_manifest(tmp_path, "build", "lbl-last-used")
     assert loaded.last_used == "2026-01-01T00:00:00+00:00"
+
+
+def test_touch_last_used_refreshes_timestamp(tmp_path):
+    from likedbg.cache import touch_last_used
+
+    old_timestamp = "2020-01-01T00:00:00+00:00"
+    m = Manifest(
+        kind="build",
+        label="lbl-touch",
+        key="k",
+        version="6.6.30",
+        arch="arm64",
+        last_used=old_timestamp,
+    )
+    write_manifest(tmp_path, m)
+    touch_last_used(tmp_path, "lbl-touch")
+    loaded = load_manifest(tmp_path, "build", "lbl-touch")
+    assert loaded.last_used != old_timestamp
+    assert loaded.last_used != ""

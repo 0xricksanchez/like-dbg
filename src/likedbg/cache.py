@@ -8,6 +8,7 @@ identity (ADR-0003).
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import json
 import os
@@ -16,6 +17,8 @@ import shutil
 import tempfile
 from dataclasses import dataclass
 from dataclasses import field
+from datetime import UTC
+from datetime import datetime
 from pathlib import Path
 
 from likedbg.config import Arch
@@ -251,6 +254,12 @@ def load_manifest(workspace: Path, kind: str, label: str) -> Manifest:
         return Manifest(**data)
     except (ValueError, TypeError) as exc:
         raise CacheError(f"corrupt manifest {path}", remedy=f"`start_kgdb --clean {label}` and rebuild") from exc
+
+
+def touch_last_used(workspace: Path, label: str) -> None:
+    """Refresh a build manifest's last_used to now (LRU recency on --use/boot)."""
+    m = load_manifest(workspace, "build", label)
+    write_manifest(workspace, dataclasses.replace(m, last_used=datetime.now(UTC).isoformat()))
 
 
 def list_manifests(workspace: Path, kind: str) -> list[Manifest]:
