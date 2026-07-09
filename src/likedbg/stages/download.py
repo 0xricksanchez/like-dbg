@@ -49,7 +49,7 @@ class DownloadStage:
 
     def should_skip(self, ctx: PipelineContext) -> bool:
         # Never skip: a cached archive still has to be recorded in the context for the
-        # Unpack stage. run() is idempotent — it sets ctx.kernel_archive and only
+        # Unpack stage. run() is idempotent: it sets ctx.kernel_archive and only
         # fetches when the file is missing.
         return False
 

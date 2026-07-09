@@ -1,4 +1,4 @@
-"""Debuggee stage: launch QEMU — native host process (arm64-on-Mac HVF) or inside the debuggee
+"""Debuggee stage: launch QEMU, native host process (arm64-on-Mac HVF) or inside the debuggee
 container (x86_64-on-Mac TCG / Linux KVM), chosen by host.debuggee_mode."""
 
 from __future__ import annotations

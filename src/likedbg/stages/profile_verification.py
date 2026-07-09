@@ -25,7 +25,7 @@ from likedbg.pipeline import PipelineContext
 def read_built_config(manifest: Manifest, *, container: ContainerService | None, workspace: Path) -> tuple[str, str]:
     """Return ``(config_text, kernel_release)`` for *manifest*.
 
-    Happy path: reads the host-captured ``.config`` written by BuildStage (Task 9) — no
+    Happy path: reads the host-captured ``.config`` written by BuildStage (Task 9): no
     container needed.  Legacy path: falls back to a one-time helper-container read (volume or
     bind mount) and backfills the export path for next time.
     """

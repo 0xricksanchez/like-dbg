@@ -10,7 +10,7 @@ from likedbg.constants import CRASH_DROP_MOUNT
 from likedbg.host_profile import HostProfile
 
 # Both extensions are installed in the debugger image; exactly one is sourced per run
-# (gef and pwndbg conflict if both load). ~/.gdbinit no longer auto-loads either —
+# (gef and pwndbg conflict if both load). ~/.gdbinit no longer auto-loads either:
 # the requested extension is sourced explicitly here.
 _EXT_SOURCE = {"gef": "/opt/gef/gef.py", "pwndbg": "/opt/pwndbg/gdbinit.py"}
 
@@ -186,7 +186,7 @@ def _reconcile_modules(
 
 def _module_symbols_source(modules_gdb_path: str) -> str:
     # Inline the pure `_reconcile_modules` source (dedented, renamed to `_reconcile`) so the payload's
-    # reconcile logic and the unit-tested pure function are literally the same code — no drift between
+    # reconcile logic and the unit-tested pure function are literally the same code: no drift between
     # what pytest exercises and what gdb executes. Placeholder substitution (not f-string/%-formatting),
     # same rationale as `_crash_capture_source`: the inlined body's own `%s`/`{}` must survive unescaped.
     reconcile_def = textwrap.dedent(inspect.getsource(_reconcile_modules)).replace("_reconcile_modules", "_reconcile")
@@ -272,7 +272,7 @@ def build_gdb_args(
         args += ["-ex", _crash_capture_source(crash_breakpoints, f"{crash_drop_path}/crash.gdb.json")]
     if modules_gdb is not None:
         # Stop-driven reconcile: fires on every gdb stop (breakpoints, signals, manual interrupt),
-        # never on its own — loads/reloads/unloads module symbols non-disruptively at the operator's
+        # never on its own: loads/reloads/unloads module symbols non-disruptively at the operator's
         # next stop instead of interrupting a running target.
         args += ["-ex", _module_symbols_source(modules_gdb)]
     return args

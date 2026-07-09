@@ -174,7 +174,7 @@ class Manifest:
     size_bytes: int = 0
 
 
-# Registry sub-directory per artifact kind (spec §4.3). NOT f"{kind}s" — that would
+# Registry sub-directory per artifact kind (spec §4.3). NOT f"{kind}s": that would
 # pluralize "rootfs" to the wrong "rootfss".
 _KIND_DIR = {"build": "builds", "rootfs": "rootfs"}
 
@@ -232,7 +232,7 @@ class Locations:
 
 
 def tree_mount_source(workspace: Path, *, storage_mode: str, volume: str = KERNEL_VOLUME) -> str:
-    """The kernel tree's mount source — the named volume (volume mode) or the host
+    """The kernel tree's mount source: the named volume (volume mode) or the host
     artifacts/ksrc dir (bind mode). Mounted at VOLUME_MOUNT rw by Build/Unpack, ro by gdb."""
     return volume if storage_mode == "volume" else str(workspace / "artifacts" / TREE_ROOT)
 
@@ -278,7 +278,7 @@ def remove_cached(
             export_dir = workspace / "artifacts" / manifest.label
             if export_dir.is_dir():
                 shutil.rmtree(export_dir)
-        else:  # bind: the tree IS on the host — chown'd to the user at build time, so rmtree just works
+        else:  # bind: the tree IS on the host, chown'd to the user at build time, so rmtree just works
             tree = workspace / "artifacts" / TREE_ROOT / manifest.label
             if tree.is_dir():
                 shutil.rmtree(tree)

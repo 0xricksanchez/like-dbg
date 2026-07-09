@@ -35,7 +35,7 @@ class RootfsStage:
 
     def should_skip(self, ctx: PipelineContext) -> bool:
         # Never skip: a cached image still has to be recorded in the context so the
-        # Debuggee stage can attach it as the root disk. run() is idempotent — it
+        # Debuggee stage can attach it as the root disk. run() is idempotent: it
         # records the path and only rebuilds when the manifest is missing.
         return False
 

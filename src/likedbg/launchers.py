@@ -1,5 +1,5 @@
 """Wrap the stage-built argv into the shell commands that run in tmux panes: native
-QEMU on the host, gdb inside the debugger container. Pure string construction — the
+QEMU on the host, gdb inside the debugger container. Pure string construction: the
 Debuggee/Debugger stages build the argv from the live context and pass it here; the
 Session sends the result to a tmux pane."""
 

@@ -236,7 +236,7 @@ class RunResolution:
 def _expand(
     profile_names: tuple[str, ...], registry: dict[str, ProfileDef]
 ) -> tuple[list[str], str, dict[str, list[str]]]:
-    """Return (ordered resolved names, base, implied_by) — base first, implied add-ons, explicit add-ons."""
+    """Return (ordered resolved names, base, implied_by): base first, implied add-ons, explicit add-ons."""
     for n in profile_names:
         if n not in registry:
             choices = ", ".join(sorted(registry))
@@ -304,7 +304,7 @@ def resolve_run(
     fragments = tuple(f for d in defs for f in d.fragments)
     expectations = tuple(e for d in defs for e in d.expect)
 
-    # Profile runtime defaults (layer 4) — later profiles win on conflict.
+    # Profile runtime defaults (layer 4): later profiles win on conflict.
     runtime_defaults: dict[str, str] = {}
     for d in defs:
         for k, v in d.runtime_defaults.debuggee.items():
@@ -349,7 +349,7 @@ def resolve_run(
         if wants_on and forbidden_hard:
             # Only EXPLICIT (user/scenario/CLI) requests are hard errors (Q12). When the toggle is on
             # via a profile default with no build symbol, the runtime kaslr boot arg is a harmless no-op,
-            # so we silently pass — this is intentional, not a missing else.
+            # so we silently pass: this is intentional, not a missing else.
             if explicit:
                 raise ConfigError(
                     f"[debuggee] {toggle}=on is impossible: active profiles build {symbol} disabled",

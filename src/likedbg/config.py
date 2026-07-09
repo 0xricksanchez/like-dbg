@@ -40,7 +40,7 @@ def _reject_traversal(p: str) -> None:
     """Raise ConfigError only on '..' traversal; absolute paths are allowed.
 
     Foreign inputs are read-only external artifacts a CTF challenge ships anywhere
-    (e.g. ~/ctf/<name>/), so absolute paths are permitted here — unlike _reject_unsafe_path.
+    (e.g. ~/ctf/<name>/), so absolute paths are permitted here, unlike _reject_unsafe_path.
     """
     if ".." in Path(p).parts:
         raise ConfigError(

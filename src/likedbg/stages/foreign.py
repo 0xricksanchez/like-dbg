@@ -68,7 +68,7 @@ class ForeignRepackStage:
     def should_skip(self, ctx: PipelineContext) -> bool:
         if self._exploit is not None and self._foreign.initramfs is None:
             logger.warning(
-                "foreign kernel has no initramfs to repack — exploit "
+                "foreign kernel has no initramfs to repack: exploit "
                 f"{self._exploit} will NOT be delivered into the guest"
             )
         return self._exploit is None or self._foreign.initramfs is None

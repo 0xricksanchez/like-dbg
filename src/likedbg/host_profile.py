@@ -122,7 +122,7 @@ class HostProfile:
     @staticmethod
     def _resolve_accel(requested: str, native_hvf: bool, kvm: bool, os_name: str) -> tuple[Accel, DebuggeeMode]:
         if requested == "auto":
-            # HVF requires macOS, KVM requires Linux — the two are mutually exclusive, so check order is irrelevant.
+            # HVF requires macOS, KVM requires Linux: the two are mutually exclusive, so check order is irrelevant.
             if native_hvf:
                 return "hvf", "native-host"
             if kvm:

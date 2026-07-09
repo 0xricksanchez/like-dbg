@@ -80,7 +80,7 @@ def wait_ready(
     runner: Callable[..., Any] = subprocess.run,
     sleep: Callable[[float], None] = time.sleep,
 ) -> bool:
-    """Poll `ssh … true` until it answers or the timeout elapses. First attempt always runs."""
+    """Poll `ssh ... true` until it answers or the timeout elapses. First attempt always runs."""
     deadline = timeout
     while True:
         proc = runner(ssh_argv(endpoint, "true"), capture_output=True, text=True, check=False)

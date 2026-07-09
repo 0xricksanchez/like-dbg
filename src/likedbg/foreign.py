@@ -85,7 +85,7 @@ def extract_vmlinux(container: Any, image_path: Path, out: Path, *, image: str) 
     """Carve an uncompressed vmlinux ELF from a boot image inside the like_musl container.
 
     Returns `out` on success. Note: a vmlinux carved from a bzImage is fully stripped
-    (kallsyms only, no ELF .symtab) — good for arch-detect, but gdb gets no function symbols
+    (kallsyms only, no ELF .symtab): good for arch-detect, but gdb gets no function symbols
     (see ADR-0010). Raises ForeignError if extraction produces no file.
     """
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -292,5 +292,5 @@ def console_upload(
     if f"size={want_size}" not in echoed or f"sha={want_sha}" not in echoed:
         raise ForeignError(
             "console-upload verification failed (size/hash mismatch)",
-            remedy="chunking corrupted the transfer — retry or use repack",
+            remedy="chunking corrupted the transfer: retry or use repack",
         )
