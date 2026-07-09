@@ -288,13 +288,14 @@ def test_module_symbols_payload_execs_and_reconciles_against_a_fake_gdb(tmp_path
 
 
 class _FakeBP:
-    """Subclassable stand-in for gdb.Breakpoint; records every instance's spec."""
+    """Subclassable stand-in for gdb.Breakpoint; records every instance's spec and enabled state."""
 
     created: list = []
 
     def __init__(self, spec):
         self.spec = spec
         self.deleted = False
+        self.enabled = True
         _FakeBP.created.append(self)
 
     def delete(self):
@@ -303,6 +304,8 @@ class _FakeBP:
 
 class _FakeGdbBP:
     Breakpoint = _FakeBP
+    # Symbols the fake kernel "has": kasan_report resolves, ubsan_epilogue does not.
+    _PRESENT = {"kasan_report"}
 
     def __init__(self):
         self.calls = []
@@ -319,6 +322,12 @@ class _FakeGdbBP:
     def post_event(self, fn):
         self.posted.append(fn)
 
+    def lookup_global_symbol(self, name, *a):
+        return object() if name in self._PRESENT else None
+
+    def lookup_static_symbol(self, name, *a):
+        return None
+
 
 def test_crash_capture_gates_sanitizer_breakpoints_until_userspace(monkeypatch):
     import ast
@@ -327,7 +336,10 @@ def test_crash_capture_gates_sanitizer_breakpoints_until_userspace(monkeypatch):
     from likedbg.gdbcmd import _crash_capture_source
 
     payload = _crash_capture_source(
-        ("panic",), ("kasan_report",), ("run_init_process", "kernel_init"), "/crash/crash.gdb.json"
+        ("panic",),
+        ("kasan_report", "ubsan_epilogue"),
+        ("run_init_process", "kernel_init"),
+        "/crash/crash.gdb.json",
     )
     source = ast.literal_eval(payload[len("python exec(") : -1])
 
@@ -336,22 +348,23 @@ def test_crash_capture_gates_sanitizer_breakpoints_until_userspace(monkeypatch):
     monkeypatch.setitem(sys.modules, "gdb", fake)
     exec(compile(source, "<crash_payload>", "exec"), {})  # noqa: S102
 
-    specs = [b.spec for b in _FakeBP.created]
-    # Fatal armed immediately; the gate is set; the sanitizer breakpoint is NOT yet armed.
-    assert "panic" in specs
-    assert "run_init_process" in specs
-    assert "kasan_report" not in specs
-    assert "set breakpoint pending off" in fake.calls
+    by_spec = {b.spec: b for b in _FakeBP.created}
+    # Fatal armed and enabled immediately; the gate is set.
+    assert by_spec["panic"].enabled is True
+    assert "run_init_process" in by_spec
+    # kasan_report is created but DORMANT (disabled) at load; ubsan_epilogue is absent, so skipped
+    # (no benign pending breakpoint left behind).
+    assert by_spec["kasan_report"].enabled is False
+    assert "ubsan_epilogue" not in by_spec
 
-    # Fire the gate: it arms the sanitizer breakpoint, deletes itself, and does not halt.
-    gate = next(b for b in _FakeBP.created if b.spec == "run_init_process")
-    halted = gate.stop()
-    assert halted is False
-    # Deferred: the sanitizer breakpoint is NOT armed synchronously; a post_event was queued.
-    assert "kasan_report" not in [b.spec for b in _FakeBP.created]
-    assert fake.posted, "gate should defer arming via gdb.post_event"
+    # Fire the gate: it defers via post_event; nothing is created or enabled inside stop(). Running
+    # the queued event enables the dormant breakpoint and removes the gate.
+    gate = by_spec["run_init_process"]
+    assert gate.stop() is False
+    assert by_spec["kasan_report"].enabled is False
+    assert fake.posted, "gate should defer via gdb.post_event"
     fake.posted[0]()  # simulate gdb running the posted event
-    assert "kasan_report" in [b.spec for b in _FakeBP.created]
+    assert by_spec["kasan_report"].enabled is True
     assert gate.deleted is True
 
 
@@ -368,14 +381,14 @@ def test_crash_capture_falls_back_to_kernel_init_when_run_init_process_absent(mo
 
     _FakeBP.created = []
 
-    class _NoRunInit(_FakeGdbBP):
+    class _NoRunInitGdb(_FakeGdbBP):
         class Breakpoint(_FakeBP):
             def __init__(self, spec):
                 if spec == "run_init_process":
                     raise RuntimeError("no symbol run_init_process")
                 super().__init__(spec)
 
-    fake = _NoRunInit()
+    fake = _NoRunInitGdb()
     monkeypatch.setitem(sys.modules, "gdb", fake)
     exec(compile(source, "<crash_payload>", "exec"), {})  # noqa: S102
 

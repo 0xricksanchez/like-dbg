@@ -148,13 +148,36 @@ for _s in _FATAL:
 
 
 # Sanitizer reports (KASAN/UBSAN) fire benignly during boot (the x86 alternatives/text-poke path),
-# so arm them only once the guest reaches userspace, via a one-shot gate on run_init_process (else
-# kernel_init). If neither resolves (stripped kernel), they stay unarmed and KASAN is captured from
-# the console instead. The gate never halts and removes itself after arming.
-def _arm_sanitizers(gate):
-    for _s in _SANITIZER:
+# so create their breakpoints DISABLED now (the symbols resolve at start_kernel) and enable them only
+# once the guest reaches userspace, via a one-shot gate on run_init_process (else kernel_init).
+# Creating them now but dormant avoids the boot stall AND avoids creating breakpoints from within the
+# gate's stop() (which crashes gdb). Symbols not present (e.g. ubsan_epilogue on a KASAN-only kernel)
+# are skipped, so no benign pending breakpoint is left behind.
+_SAN_BPS = []
+for _s in _SANITIZER:
+    try:
+        _present = gdb.lookup_global_symbol(_s) is not None
+    except Exception:
+        _present = False
+    if not _present:
         try:
-            _LikedbgCrash(_s)
+            _present = gdb.lookup_static_symbol(_s) is not None
+        except Exception:
+            _present = False
+    if not _present:
+        continue
+    try:
+        _bp = _LikedbgCrash(_s)
+        _bp.enabled = False
+        _SAN_BPS.append(_bp)
+    except Exception:
+        pass
+
+
+def _enable_sanitizers(gate):
+    for _bp in _SAN_BPS:
+        try:
+            _bp.enabled = True
         except Exception:
             pass
     try:
@@ -165,17 +188,13 @@ def _arm_sanitizers(gate):
 
 class _LikedbgGate(gdb.Breakpoint):
     def stop(self):
-        # Defer arming + self-delete to outside stop(): creating or deleting breakpoints from
-        # within a stop() handler crashes gdb (it is mid-breakpoint-processing).
-        gdb.post_event(lambda: _arm_sanitizers(self))
+        # Enable the dormant sanitizer breakpoints and remove this gate AFTER stop() returns:
+        # mutating breakpoint state from within stop() is unsafe, so defer via gdb.post_event.
+        gdb.post_event(lambda: _enable_sanitizers(self))
         return False
 
 
-if _SANITIZER:
-    try:
-        gdb.execute("set breakpoint pending off", to_string=True)
-    except Exception:
-        pass
+if _SAN_BPS:
     for _g in _GATES:
         try:
             _LikedbgGate(_g)
