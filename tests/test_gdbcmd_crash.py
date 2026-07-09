@@ -25,10 +25,10 @@ def test_crash_breakpoints_injected_when_enabled():
         ext="pwndbg",
         breakpoint="start_kernel",
         break_on_crash=True,
-        crash_breakpoints=("panic", "die", "kasan_report"),
+        crash_breakpoints=("panic", "die", "oops_enter"),
     )
     joined = "\n".join(args)
-    assert "panic" in joined and "die" in joined and "kasan_report" in joined
+    assert "panic" in joined and "die" in joined and "oops_enter" in joined
     assert f"{CRASH_DROP_MOUNT}/crash.gdb.json" in joined
     assert "gdb.Breakpoint" in joined
 
@@ -46,7 +46,7 @@ def test_crash_breakpoints_installed_after_reaching_start_kernel():
         ext="pwndbg",
         breakpoint="start_kernel",
         break_on_crash=True,
-        crash_breakpoints=("panic", "die", "kasan_report"),
+        crash_breakpoints=("panic", "die", "oops_enter"),
     )
     crash_idx = next(i for i, a in enumerate(args) if "crash.gdb.json" in a)
     hbreak_idx = args.index("hbreak start_kernel")
@@ -66,3 +66,37 @@ def test_no_crash_breakpoints_when_disabled():
         crash_breakpoints=("panic",),
     )
     assert "crash.gdb.json" not in "\n".join(args)
+
+
+def test_sanitizer_breakpoints_threaded_into_payload():
+    # sanitizer_breakpoints (empty by default) must reach the payload as a gated list distinct from the
+    # immediately-armed fatal breakpoints. The payload gates them behind run_init_process/kernel_init.
+    args = build_gdb_args(
+        _host(),
+        arch="x86_64",
+        vmlinux=Path("/w/vmlinux"),
+        ext="pwndbg",
+        breakpoint="start_kernel",
+        break_on_crash=True,
+        crash_breakpoints=("panic",),
+        sanitizer_breakpoints=("kasan_report",),
+    )
+    joined = "\n".join(args)
+    assert "kasan_report" in joined
+    assert "run_init_process" in joined and "kernel_init" in joined
+
+
+def test_sanitizer_list_empty_by_default():
+    # With sanitizer_breakpoints omitted, the payload carries an empty sanitizer list, so at runtime
+    # _SAN_BPS stays empty and no gate is armed (fatal-only, boots clean). The gate SYMBOLS are always
+    # present in the payload text; whether a gate is created is decided at exec (see test_gdbcmd.py).
+    args = build_gdb_args(
+        _host(),
+        arch="x86_64",
+        vmlinux=Path("/w/vmlinux"),
+        ext="pwndbg",
+        breakpoint="start_kernel",
+        break_on_crash=True,
+        crash_breakpoints=("panic", "die", "oops_enter"),
+    )
+    assert "_SANITIZER = []" in "\n".join(args)

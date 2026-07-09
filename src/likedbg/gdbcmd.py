@@ -128,6 +128,21 @@ def _bt():
         return []
 
 
+def _sym_present(_s):
+    # gdb.Breakpoint ignores `set breakpoint pending off`, so creating one on an absent symbol leaves a
+    # benign PENDING breakpoint instead of raising. Resolve the symbol first and skip anything the
+    # kernel does not export, so a missing sanitizer or gate symbol is dropped rather than left pending.
+    try:
+        if gdb.lookup_global_symbol(_s) is not None:
+            return True
+    except Exception:
+        pass
+    try:
+        return gdb.lookup_static_symbol(_s) is not None
+    except Exception:
+        return False
+
+
 class _LikedbgCrash(gdb.Breakpoint):
     def stop(self):
         try:
@@ -152,19 +167,10 @@ for _s in _FATAL:
 # once the guest reaches userspace, via a one-shot gate on run_init_process (else kernel_init).
 # Creating them now but dormant avoids the boot stall AND avoids creating breakpoints from within the
 # gate's stop() (which crashes gdb). Symbols not present (e.g. ubsan_epilogue on a KASAN-only kernel)
-# are skipped, so no benign pending breakpoint is left behind.
+# are skipped via _sym_present, so no benign pending breakpoint is left behind.
 _SAN_BPS = []
 for _s in _SANITIZER:
-    try:
-        _present = gdb.lookup_global_symbol(_s) is not None
-    except Exception:
-        _present = False
-    if not _present:
-        try:
-            _present = gdb.lookup_static_symbol(_s) is not None
-        except Exception:
-            _present = False
-    if not _present:
+    if not _sym_present(_s):
         continue
     try:
         _bp = _LikedbgCrash(_s)
@@ -196,6 +202,10 @@ class _LikedbgGate(gdb.Breakpoint):
 
 if _SAN_BPS:
     for _g in _GATES:
+        # Same presence check as the sanitizers: without it an absent lead gate (run_init_process on a
+        # stripped kernel) would be left pending rather than cascading to the guaranteed kernel_init.
+        if not _sym_present(_g):
+            continue
         try:
             _LikedbgGate(_g)
             break
