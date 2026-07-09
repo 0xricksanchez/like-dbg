@@ -24,4 +24,5 @@ DEBUGGEE_IMAGE = "like_debuggee:latest"
 MUSL_IMAGE = "like_musl:latest"
 
 CRASH_DROP_MOUNT = "/likedbg-crash"
+DEBUGINFOD_CACHE_MOUNT = "/debuginfod-cache"  # container path for the persistent debuginfod cache
 EXPLOIT_MOUNT = "/exploit"
