@@ -147,12 +147,17 @@ uv run ./start_kgdb --use <build-label>        # reuse a cached build (builds th
 uv run ./start_kgdb --use <build-label> --rootfs <rootfs-label>
 uv run ./start_kgdb --clean <label>            # remove one cached artifact
 uv run ./start_kgdb --clean-all                # clear the cache
+uv run ./start_kgdb --prune [SIZE]             # evict least-recently-used builds to fit SIZE (or [cache] max_size)
 uv run ./start_kgdb --force-rebuild            # rebuild the current configuration
 ```
 
 Kernel source trees are shared across builds with the same (version, patches): `--list` shows
-each source with a refcount of the builds referencing it, and `--clean`/`--clean-all` auto-remove
-a source once its last referencing build is cleaned.
+each source with a refcount of the builds referencing it plus each build's last-used time, and
+`--clean`/`--clean-all` auto-remove a source once its last referencing build is cleaned.
+
+To bound total cache disk, set `[cache] max_size` (see [configuration.md](configuration.md#cache)):
+when set, an automatic least-recently-used sweep runs after each new build, keeping the cache under
+the cap (the build you just made is never evicted). `--prune [SIZE]` does the same on demand.
 
 ## Limitations
 
