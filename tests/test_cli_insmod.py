@@ -138,11 +138,36 @@ def test_cmd_insmod_zeroed_text_falls_back_no_load_event(tmp_path, monkeypatch, 
         "run",
         lambda ep, cmd, **k: types.SimpleNamespace(rc=0, stdout=".text 0x0000000000000000\n.data 0x0\n", stderr=""),
     )
+    monkeypatch.setattr(cli.time, "sleep", lambda *_a, **_k: None)
     assert cli.cmd_insmod(tp, run_id="latest", path=str(ko.relative_to(tp)), args="", force_unload=False) == 0
     modules_gdb = tp / "exploit" / "modules.gdb"
     assert not modules_gdb.exists() or "load lk01" not in modules_gdb.read_text()
     out = capsys.readouterr().out
     assert "no .text section read" in out
+
+
+def test_read_sections_retries_until_text_populated(monkeypatch):
+    results = iter(
+        [
+            types.SimpleNamespace(rc=0, stdout=".data 0xffffffffc0003000\n", stderr=""),  # race: .text absent
+            types.SimpleNamespace(
+                rc=0, stdout=".text 0xffffffffc0001000\n.data 0xffffffffc0003000\n", stderr=""
+            ),
+        ]
+    )
+    monkeypatch.setattr(cli.guest, "run", lambda ep, cmd, **k: next(results))
+    secs = cli._read_sections("ep", "lk01", attempts=3, sleep=lambda _s: None)
+    assert (".text", "0xffffffffc0001000") in secs
+
+
+def test_read_sections_gives_up_after_attempts(monkeypatch):
+    monkeypatch.setattr(
+        cli.guest,
+        "run",
+        lambda ep, cmd, **k: types.SimpleNamespace(rc=0, stdout=".data 0xffffffffc0003000\n", stderr=""),
+    )
+    secs = cli._read_sections("ep", "lk01", attempts=3, sleep=lambda _s: None)
+    assert dict(secs).get(".text") is None
 
 
 def test_cmd_rmmod_appends_unload_event(tmp_path, monkeypatch):

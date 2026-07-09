@@ -787,6 +787,35 @@ def _guest_endpoint(workspace: Path, run_dir: Path, g: dict[str, Any]) -> guest.
     return guest.GuestEndpoint(host=str(g["ssh_host"]), port=int(g["ssh_port"]), key=Path(key))
 
 
+def _read_sections(
+    ep: guest.GuestEndpoint,
+    name: str,
+    *,
+    attempts: int = 3,
+    sleep: Callable[[float], None] | None = None,
+) -> list[tuple[str, str]]:
+    """Read /sys/module/<name>/sections; retry the sysfs-population race after an insmod/reload
+    until `.text` is present and non-zero, up to `attempts`. Modifies no guest state."""
+    # Resolve time.sleep at call time (not as a default arg) so tests can monkeypatch cli.time.sleep.
+    _sleep = sleep if sleep is not None else time.sleep
+    secs: list[tuple[str, str]] = []
+    for i in range(attempts):
+        secs_raw = guest.run(
+            ep, f"for s in /sys/module/{name}/sections/.*; do echo $(basename $s) $(cat $s); done"
+        ).stdout
+        secs = []
+        for ln in secs_raw.replace("\r\n", "\n").split("\n"):
+            f = ln.split()
+            if len(f) == 2 and f[0].startswith("."):
+                secs.append((f[0], f[1]))
+        text = dict(secs).get(".text")
+        if text and int(text, 16):
+            return secs
+        if i + 1 < attempts:
+            _sleep(0.5)
+    return secs
+
+
 def cmd_insmod(workspace: Path, *, run_id: str, path: str, args: str, force_unload: bool) -> int:
     from likedbg.exploit import _resolve_run
 
@@ -850,15 +879,7 @@ def cmd_insmod(workspace: Path, *, run_id: str, path: str, args: str, force_unlo
             force_unload=force_unload,
         )
         # read runtime section addresses from the guest and log a lifecycle `load` event.
-        secs_raw = guest.run(
-            ep,
-            f"for s in /sys/module/{name}/sections/.*; do echo $(basename $s) $(cat $s); done",
-        ).stdout
-        secs = []
-        for ln in secs_raw.replace("\r\n", "\n").split("\n"):
-            f = ln.split()
-            if len(f) == 2 and f[0].startswith("."):
-                secs.append((f[0], f[1]))
+        secs = _read_sections(ep, name)
         text = dict(secs).get(".text")
         modules_gdb = share_dir / "modules.gdb"
         if text and int(text, 16):
