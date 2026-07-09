@@ -160,6 +160,8 @@ configuration error, not a silent no-op.
 | `break_on_crash` | `true` | Auto-break GDB at a fault to capture a symbolized backtrace. |
 | `crash_breakpoints` | `panic`, `die`, `oops_enter` | Fatal-fault symbols the auto-break halts on immediately. |
 | `sanitizer_breakpoints` | (empty) | Opt-in KASAN/UBSAN symbols (e.g. `kasan_report`) to halt on, armed only after the guest reaches userspace via a one-shot gate. Empty by default: a KASAN kernel with the text-poke false positive floods `kasan_report`, so prefer a manual `break kasan_report` right before the exploit. KASAN is captured from the console into `crash.md` regardless. |
+| `debuginfod` | `auto` | `auto`, `on`, `off`. Fetch debug info by build-id. `auto` is on for `[foreign]` runs and off for self-built kernels (which already carry their symtab). |
+| `debuginfod_urls` | elfutils server | Space-separated debuginfod server URLs. Default is the federated `https://debuginfod.elfutils.org`. |
 
 ### `[debugging]`
 

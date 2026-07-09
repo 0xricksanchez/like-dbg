@@ -41,6 +41,9 @@ crash_breakpoints = ["panic", "die", "oops_enter"]
 # userspace via the gate). On a KASAN kernel with the text_poke false positive it floods, so prefer a
 # manual `break kasan_report` right before the exploit. KASAN is captured into crash.md regardless.
 sanitizer_breakpoints = []
+# debuginfod: fetch debug info by build-id (auto = on for foreign kernels, off for self-built).
+debuginfod = "auto"
+debuginfod_urls = "https://debuginfod.elfutils.org"
 
 [debugging]
 profiles = ["exploit-dev"]
