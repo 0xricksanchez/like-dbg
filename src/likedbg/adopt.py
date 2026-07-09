@@ -1,5 +1,5 @@
 """One-time migration of the legacy unkeyed /ksrc/linux-<version> tree into the Build Cache,
-verified against the active config (version + compiler family) before adoption. See spec §4.5."""
+verified against the active config (version + compiler family) before adoption. See spec section 4.5."""
 
 from __future__ import annotations
 

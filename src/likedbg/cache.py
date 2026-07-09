@@ -132,7 +132,7 @@ def build_recipe(
 ) -> BuildRecipe:
     tc = resolve_toolchain(settings.build.compiler, arch)
     frag_hashes = sorted(
-        (rel, hashlib.sha256(normalize_fragment((workspace / rel).read_text()).encode()).hexdigest())
+        (rel, hashlib.sha256(normalize_fragment((workspace / rel).read_text(encoding="utf-8")).encode()).hexdigest())
         for rel in fragments
     )
     patch_hashes = tuple((rel, hash_tree(workspace / rel).aggregate) for rel in patch_dirs)
@@ -174,7 +174,7 @@ class Manifest:
     size_bytes: int = 0
 
 
-# Registry sub-directory per artifact kind (spec §4.3). NOT f"{kind}s": that would
+# Registry sub-directory per artifact kind (spec section 4.3). NOT f"{kind}s": that would
 # pluralize "rootfs" to the wrong "rootfss".
 _KIND_DIR = {"build": "builds", "rootfs": "rootfs"}
 

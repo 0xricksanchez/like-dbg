@@ -54,7 +54,7 @@ def qemu_container_command(
 ) -> str:
     # In-container QEMU. Bind each artifact at its identical host path so the argv's embedded
     # paths resolve unchanged (kernel :ro, rootfs disk :rw). Network mode: host net (Linux,
-    # gdb→localhost) or a published gdbstub port (macOS / forced, gdb→host.docker.internal).
+    # gdb->localhost) or a published gdbstub port (macOS / forced, gdb->host.docker.internal).
     q = shlex.quote
     mounts = [f"-v {q(str(p))}:{q(str(p))}:ro" for p in ro_mounts]
     mounts += [f"-v {q(str(p))}:{q(str(p))}:rw" for p in rw_mounts]

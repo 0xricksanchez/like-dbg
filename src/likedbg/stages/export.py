@@ -3,7 +3,7 @@ to the host workspace, so native (host) QEMU can read them. No-op in bind mode.
 
 Only ``Image`` is exported to the host.  ``vmlinux`` stays inside the volume:
 the debugger container mounts the volume read-only and reads vmlinux directly
-from there (spec §4.6), so exporting it to a host path would make it
+from there (spec section 4.6), so exporting it to a host path would make it
 unreachable to in-container gdb."""
 
 from __future__ import annotations

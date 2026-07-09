@@ -37,7 +37,7 @@ class _PBase(BaseModel):
 
 class Expect(_PBase):
     symbol: str
-    value: Literal["y", "m", "n"]  # "n" → "# CONFIG_FOO is not set"
+    value: Literal["y", "m", "n"]  # "n" -> "# CONFIG_FOO is not set"
     severity: Literal["hard", "soft"]
     arch: tuple[str, ...] | None = None
     kernel_min: str | None = None
@@ -213,7 +213,7 @@ def verify_config(
 
 
 _EXPLICIT_LAYERS: frozenset[str] = frozenset({LAYER_LOCAL, LAYER_SCENARIO, LAYER_CLI})
-# Runtime toggle → build symbol it requires to be enable-able.
+# Runtime toggle -> build symbol it requires to be enable-able.
 _TOGGLE_REQUIRES: dict[str, str] = {"kaslr": "CONFIG_RANDOMIZE_BASE"}
 
 
@@ -356,7 +356,7 @@ def resolve_run(
                     remedy="remove the explicit toggle, or switch to a base profile that builds it in (e.g. hardened)",
                 )
         if not wants_on and prov == LAYER_PROFILE:
-            overrides.append(f"runtime override: {toggle} off → adds nokaslr (profile default was on)")
+            overrides.append(f"runtime override: {toggle} off -> adds nokaslr (profile default was on)")
 
     resolved = ResolvedDebugProfiles(
         names=tuple(ordered), base=base, expected_config=expectations, future_breakpoint_groups=()
