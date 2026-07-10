@@ -4,6 +4,7 @@ initramfs repack, and live console upload. See ADR-0010."""
 from __future__ import annotations
 
 import base64
+import json
 import shlex
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -12,10 +13,19 @@ from pathlib import Path
 from typing import Any
 from typing import Literal
 
+from loguru import logger
+
 from likedbg.config import ForeignCfg
+from likedbg.constants import V2E_VERSION
+from likedbg.errors import ContainerError
 from likedbg.errors import LikeDbgError
 
 _EM_TO_ARCH = {62: "x86_64", 183: "arm64"}  # EM_X86_64, EM_AARCH64
+
+# Kallsyms recovery trust gate: a real x86_64 kernel symtab has tens of thousands of symbols with
+# `_stext` in the top-of-VA kernel text range; a wrong-base or garbage recovery fails one of these.
+_V2E_MIN_SYMBOLS = 1000
+_X86_KTEXT_LO = 0xFFFFFFFF80000000
 
 
 def _dedup_mounts(specs: list[tuple[str, Path, str, str]]) -> tuple[dict[str, dict[str, str]], list[str]]:
@@ -81,19 +91,91 @@ def detect_arch(vmlinux: Path) -> str:
     return arch
 
 
-def extract_vmlinux(container: Any, image_path: Path, out: Path, *, image: str) -> Path:
-    """Carve an uncompressed vmlinux ELF from a boot image inside the like_musl container.
+@dataclass(frozen=True)
+class RecoveryResult:
+    ok: bool
+    reason: str
+    symbol_count: int
 
-    Returns `out` on success. Note: a vmlinux carved from a bzImage is fully stripped
-    (kallsyms only, no ELF .symtab): good for arch-detect, but gdb gets no function symbols
-    (see ADR-0010). Raises ForeignError if extraction produces no file.
-    """
+
+def _elf_magic(path: Path) -> bool:
+    try:
+        with path.open("rb") as f:
+            return f.read(4) == b"\x7fELF"
+    except OSError:
+        return False
+
+
+def _is_x86_bzimage(image_path: Path) -> bool:
+    """True if the boot image is an x86 bzImage (the boot-protocol 'HdrS' magic at offset 0x202).
+    Kallsyms recovery is x86-only this round; an arm64 Image has no such header, so it falls through
+    to the decompress-only carve / today's behavior (arm64 recovery is a follow-up, see ADR-0015)."""
+    try:
+        with image_path.open("rb") as f:
+            f.seek(0x202)
+            return f.read(4) == b"HdrS"
+    except OSError:
+        return False
+
+
+def _trust_gate(nm_output: str) -> tuple[bool, str, int]:
+    """Decide whether a recovered vmlinux's symbol table is trustworthy enough to hand gdb. A
+    confidently-wrong recovery (garbage, or a wrong guessed base that offsets every symbol) is worse
+    than no symbols, so accept only a real kernel symtab. Returns (ok, reason, symbol_count)."""
+    lines = [ln for ln in nm_output.splitlines() if ln.strip()]
+    count = len(lines)
+    if count < _V2E_MIN_SYMBOLS:
+        return False, f"thin symtab ({count} symbols)", count
+    stext_addr: int | None = None
+    for ln in lines:
+        parts = ln.split()
+        # nm line is "<addr> <type> <name>"; an undefined symbol (type U) has no address.
+        if len(parts) >= 3 and parts[-1] == "_stext":
+            try:
+                stext_addr = int(parts[0], 16)
+            except ValueError:
+                stext_addr = None
+            break
+    if stext_addr is None:
+        return False, "no _stext", count
+    if stext_addr < _X86_KTEXT_LO:
+        return False, f"_stext out of range (0x{stext_addr:x})", count
+    return True, "", count
+
+
+def recover_vmlinux(container: Any, image_path: Path, out: Path, *, image: str) -> RecoveryResult:
+    """Attempt kallsyms symbol recovery on an x86 bzImage: run vmlinux-to-elf in the like_musl
+    container, then validate its symtab through _trust_gate. Writes `out` iff a candidate ELF was
+    produced (it may exist yet fail the gate). Never raises; a failure returns ok=False so the
+    caller can fall back."""
+    if not _is_x86_bzimage(image_path):
+        return RecoveryResult(ok=False, reason="not an x86 bzImage", symbol_count=0)
     out.parent.mkdir(parents=True, exist_ok=True)
     volumes, (in_path, out_path) = _dedup_mounts(
-        [
-            ("/in", image_path.parent, "ro", image_path.name),
-            ("/out", out.parent, "rw", out.name),
-        ]
+        [("/in", image_path.parent, "ro", image_path.name), ("/out", out.parent, "rw", out.name)]
+    )
+    c = container.run_detached(image, volumes=volumes, detach=True, tty=True)
+    nm_output: str | None = None
+    try:
+        container.exec(c, f"vmlinux-to-elf {shlex.quote(in_path)} {shlex.quote(out_path)}")
+        if _elf_magic(out):
+            nm_output = container.exec(c, f"nm {shlex.quote(out_path)}").output
+    except ContainerError:
+        nm_output = None
+    finally:
+        container.stop(c)
+    if nm_output is None:
+        return RecoveryResult(ok=False, reason="vmlinux-to-elf produced no usable ELF", symbol_count=0)
+    ok, reason, count = _trust_gate(nm_output)
+    return RecoveryResult(ok=ok, reason=reason, symbol_count=count)
+
+
+def _carve_vmlinux(container: Any, image_path: Path, out: Path, *, image: str) -> Path:
+    """Decompress-only carve (the kernel's own extract-vmlinux.sh): recovers a stripped vmlinux,
+    good for arch-detect but no function symbols. Raises ForeignError if it produces no file."""
+    out.parent.mkdir(parents=True, exist_ok=True)
+    volumes, (in_path, out_path) = _dedup_mounts(
+        [("/in", image_path.parent, "ro", image_path.name), ("/out", out.parent, "rw", out.name)]
     )
     c = container.run_detached(image, volumes=volumes, detach=True, tty=True)
     try:
@@ -105,6 +187,57 @@ def extract_vmlinux(container: Any, image_path: Path, out: Path, *, image: str) 
             f"could not extract vmlinux from {image_path}",
             remedy="provide [foreign].vmlinux explicitly (arm64 Image / unknown compression)",
         )
+    return out
+
+
+def _image_sha256(path: Path) -> str:
+    h = sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _read_stamp(stamp: Path) -> dict[str, str] | None:
+    try:
+        data = json.loads(stamp.read_text())
+        return data if isinstance(data, dict) else None
+    except (OSError, ValueError):
+        return None
+
+
+def extract_vmlinux(container: Any, image_path: Path, out: Path, *, image: str) -> Path:
+    """Resolve a vmlinux for an adopted kernel, best symbols first: reuse a cached result, else
+    recover kernel symbols from the bzImage's kallsyms (x86, vmlinux-to-elf in like_musl), else fall
+    back to a decompress-only carve (arch-detect only). The outcome is cached under out.stamp
+    (keyed by image hash + pinned vmlinux-to-elf version) and logged. Raises ForeignError only when
+    nothing produces an ELF (arm64 Image / exotic packing). See ADR-0015."""
+    out.parent.mkdir(parents=True, exist_ok=True)
+    stamp = out.parent / (out.name + ".stamp")
+    image_hash = _image_sha256(image_path)
+
+    cached = _read_stamp(stamp)
+    if (
+        out.is_file()
+        and cached is not None
+        and cached.get("image_sha256") == image_hash
+        and cached.get("v2e_version") == V2E_VERSION
+    ):
+        logger.info(f"foreign vmlinux: reusing cached {cached.get('state', '?')} symbols ({out})")
+        return out
+
+    rec = recover_vmlinux(container, image_path, out, image=image)
+    if rec.ok:
+        state = "RECOVERED"
+        logger.info(f"foreign vmlinux: recovered {rec.symbol_count} symbols from kallsyms")
+    else:
+        _carve_vmlinux(container, image_path, out, image=image)  # raises ForeignError if nothing carves
+        state = "DECOMPRESSED"
+        logger.warning(
+            f"foreign vmlinux: kallsyms recovery failed ({rec.reason}), no kernel symbols; "
+            "set [foreign] vmlinux to supply them"
+        )
+    stamp.write_text(json.dumps({"image_sha256": image_hash, "v2e_version": V2E_VERSION, "state": state}))
     return out
 
 

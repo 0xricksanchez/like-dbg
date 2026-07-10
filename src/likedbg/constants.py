@@ -27,6 +27,12 @@ DEBUGGEE_IMAGE = "like_debuggee:latest"
 # the exploit to the foreign arch, and carves vmlinux from a bzImage.
 MUSL_IMAGE = "like_musl:latest"
 
+# Pinned vmlinux-to-elf: kallsyms symbol recovery for adopted (CTF/foreign) kernels. Lives ONLY in
+# the like_musl image and is invoked as a subprocess (GPL-3.0, never imported into like-dbg's MIT
+# code; see ADR-0015). Threaded into the image build AND stamped into the foreign vmlinux cache, so
+# bumping it both rebuilds the image and invalidates stale recoveries.
+V2E_VERSION = "1.3.6"
+
 CRASH_DROP_MOUNT = "/likedbg-crash"
 DEBUGINFOD_CACHE_MOUNT = "/debuginfod-cache"  # container path for the persistent debuginfod cache
 EXPLOIT_MOUNT = "/exploit"

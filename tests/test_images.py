@@ -48,7 +48,7 @@ def test_images_manifest_shape():
     }
     for s in images.IMAGES:
         assert s.build_inputs[0] == s.dockerfile  # dockerfile is always input[0]
-        assert s.buildargs == {"USER": "user"}
+        assert s.buildargs.get("USER") == "user"  # every image threads USER
     rootfs = next(s for s in images.IMAGES if s.tag == ROOTFS_IMAGE)
     assert "io/scripts/rootfs.sh" in rootfs.build_inputs  # the baked script (prior-bug file)
     debuggee = next(s for s in images.IMAGES if s.tag == DEBUGGEE_IMAGE)
@@ -61,6 +61,10 @@ def test_musl_image_registered() -> None:
     musl = next(s for s in images.IMAGES if s.tag == MUSL_IMAGE)
     assert musl.dockerfile == ".dockerfile_musl"
     assert "io/scripts/extract-vmlinux.sh" in musl.build_inputs
+    # the pinned vmlinux-to-elf is threaded as a build-arg (single source of truth with the cache stamp)
+    from likedbg.constants import V2E_VERSION
+
+    assert musl.buildargs.get("V2E_VERSION") == V2E_VERSION
 
 
 def test_foreign_prep_images_are_base_and_musl() -> None:

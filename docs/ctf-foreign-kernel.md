@@ -58,12 +58,17 @@ and the gdbstub option are appended.
 
 ## Symbols
 
-With a `vmlinux`, GDB gets full function symbols. Without one:
+With an explicit `vmlinux`, GDB gets whatever symbols it carries (full DWARF if present). Without
+one:
 
-- An **x86** kernel auto-extracts a `vmlinux` carved from the boot image. It is fully stripped
-  (kallsyms only, no ELF symbol table), which is enough for architecture detection but gives GDB
-  no function symbols.
-- An **arm64** `Image` cannot be auto-extracted; provide `vmlinux` explicitly.
+- An **x86** `bzImage` gets **function symbols recovered automatically** from its kallsyms table
+  (via `vmlinux-to-elf` inside the `like_musl` container), so `kmod`, kernel-symbol breakpoints,
+  and backtraces work with no setup. The recovery is trusted only if it passes a sanity gate (a
+  real symbol table with `_stext` in the kernel address range); otherwise LIKE-DBG falls back to a
+  stripped, decompress-only carve (architecture detection only, no function symbols) and logs a
+  warning. Source-level (line/type) debugging still needs a real `vmlinux`. The recovered `vmlinux`
+  is cached per challenge, so only the first boot pays for it.
+- An **arm64** `Image` is not yet auto-recovered; provide `vmlinux` explicitly (see Limitations).
 
 If architecture detection fails or is wrong (an unusual image, or no usable `vmlinux`), set
 `[foreign] arch` to `x86_64` or `arm64`.
@@ -141,17 +146,19 @@ add-symbol-file <your-build>/vuln.ko <.text load address>
 break module_write
 ```
 
-No `vmlinux` ships with the challenge, so kernel function symbols come only from the stripped
-auto-extract; for full kernel-source debugging, build a matching 5.10.7 `vmlinux` and point
-`[foreign] vmlinux` at it. Writing the exploit is left to you, as the challenge intends.
+No `vmlinux` ships with the challenge, but LIKE-DBG recovers kernel function symbols from the
+`bzImage`'s kallsyms automatically, so `kmod` and kernel breakpoints work out of the box. For
+source-level kernel debugging, build a matching 5.10.7 `vmlinux` and point `[foreign] vmlinux` at
+it. Writing the exploit is left to you, as the challenge intends.
 
 ## Limitations
 
 - **Serial-only transport.** No SSH, no 9p share, and therefore no `--run` and no `--insmod`.
   Exploit delivery is repack or console-upload, and the exploit is run by hand from the console.
-- **Symbols depend on `vmlinux`.** A bare `bzImage` without `vmlinux` gives GDB no function
-  symbols; fall back to pwndbg's kallsyms-based introspection. An arm64 `Image` always needs a
-  provided `vmlinux`.
+- **x86 symbols are auto-recovered; arm64 is not yet.** A bare x86 `bzImage` gets function symbols
+  recovered from kallsyms automatically; an arm64 `Image` still needs an explicit `vmlinux` (arm64
+  kallsyms recovery is a planned follow-up). Source-level (line/type) debugging on any arch still
+  needs a real `vmlinux`.
 - **Repack needs the `like_musl` container,** which is built on first use.
 - **Crash capture still works, symbolization does not always.** The serial console is captured to
   the run's `logs/console.raw`, so `--analyze-crash` produces a report from console output. A

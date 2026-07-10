@@ -31,6 +31,18 @@ RUN for t in x86_64 aarch64; do \
         chmod +x "/usr/local/bin/${t}-linux-musl-gcc"; \
     done
 
+# Kallsyms symbol recovery for adopted (CTF/foreign) kernels: vmlinux-to-elf rebuilds an ELF symbol
+# table from a stripped bzImage's kallsyms, so gdb gets function symbols (kmod, crash breakpoints,
+# add-symbol-file) instead of the decompress-only carve below. Invoked as a subprocess (GPL-3.0,
+# never imported into like-dbg's MIT code; see ADR-0015). Pinned via V2E_VERSION (constants.py) so
+# the foreign vmlinux cache stamp matches; a PEP 668 external-managed base needs break-system-packages.
+ARG V2E_VERSION
+# python3-dev + gcc: some vmlinux-to-elf deps (e.g. minilzo) ship no wheel for a bleeding-edge base
+# Python and compile a C extension from source, which needs the Python headers and a compiler.
+RUN apt-get update && apt-get install -yq --no-install-recommends python3 python3-pip python3-dev gcc && \
+    pip3 install --no-cache-dir --break-system-packages "vmlinux-to-elf==${V2E_VERSION}" && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
 COPY io/scripts/extract-vmlinux.sh /opt/extract-vmlinux.sh
 RUN chmod +x /opt/extract-vmlinux.sh
 

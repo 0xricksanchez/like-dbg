@@ -1,12 +1,18 @@
+import json
 from dataclasses import FrozenInstanceError
 from pathlib import Path
 
 import pytest
 
+from likedbg.constants import V2E_VERSION
+from likedbg.errors import ContainerError
 from likedbg.errors import LikeDbgError
 from likedbg.foreign import ForeignError
 from likedbg.foreign import ForeignKernel
+from likedbg.foreign import _image_sha256
+from likedbg.foreign import _trust_gate
 from likedbg.foreign import detect_arch
+from likedbg.foreign import extract_vmlinux
 
 
 def _elf_header(e_machine: bytes) -> bytes:
@@ -447,3 +453,163 @@ def test_extract_vmlinux_quotes_filename_with_space(tmp_path: Path) -> None:
 
     cmd = " ".join(c.execs)
     assert "'/in/my image.bzImage'" in cmd
+
+
+# ---- kallsyms symbol recovery (ADR-0015) ----
+
+
+def _write_bzimage(path: Path) -> None:
+    """A minimal x86 bzImage: the boot-protocol 'HdrS' magic at offset 0x202 (what the recovery
+    path's _is_x86_bzimage sniff checks); an arm64 Image or junk lacks it."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    buf = bytearray(0x210)
+    buf[0:2] = b"MZ"
+    buf[0x202:0x206] = b"HdrS"
+    path.write_bytes(bytes(buf))
+
+
+def _nm_kernel(n: int = 1500, *, stext: str = "ffffffff81000000") -> str:
+    body = "\n".join(f"ffffffff8100{i:04x} T sym{i}" for i in range(n))
+    return f"{body}\n{stext} T _stext\n"
+
+
+def _exec_result(output: str):
+    return type("R", (), {"exit_code": 0, "output": output})()
+
+
+class _RecoverFake:
+    """Fake like_musl container: vmlinux-to-elf writes an ELF (or raises), nm returns configured
+    output, extract-vmlinux.sh writes carve bytes. Records the ordered exec commands."""
+
+    def __init__(self, *, v2e_elf=b"\x7fELFrecovered", nm_output="", carve_bytes=None, fail_v2e=False):
+        self.execs: list[str] = []
+        self.run_kwargs: dict | None = None
+        self._v2e_elf = v2e_elf
+        self._nm = nm_output
+        self._carve = carve_bytes
+        self._fail_v2e = fail_v2e
+        self._outdir: Path | None = None
+
+    def run_detached(self, image, *, volumes=None, **kwargs):
+        self.run_kwargs = {"image": image, "volumes": volumes, **kwargs}
+        for hd, spec in (volumes or {}).items():
+            if spec.get("bind") == "/out":
+                self._outdir = Path(hd)
+        return "CID"
+
+    def exec(self, container, cmd, *, workdir=None):
+        self.execs.append(cmd)
+        if "vmlinux-to-elf" in cmd:
+            if self._fail_v2e:
+                raise ContainerError("vmlinux-to-elf failed")
+            if self._v2e_elf is not None and self._outdir is not None:
+                (self._outdir / "vmlinux").write_bytes(self._v2e_elf)
+        elif cmd.split()[0] == "nm":
+            return _exec_result(self._nm)
+        elif "extract-vmlinux.sh" in cmd:
+            if self._carve is not None and self._outdir is not None:
+                (self._outdir / "vmlinux").write_bytes(self._carve)
+        return _exec_result("")
+
+    def stop(self, container):
+        self.stopped = True
+
+
+def _stamp(out: Path) -> dict:
+    return json.loads((out.parent / (out.name + ".stamp")).read_text())
+
+
+def test_trust_gate_accepts_real_symtab() -> None:
+    ok, reason, count = _trust_gate(_nm_kernel(1500))
+    assert ok and reason == "" and count == 1501
+
+
+def test_trust_gate_rejects_thin_symtab() -> None:
+    ok, reason, _ = _trust_gate(_nm_kernel(10))
+    assert not ok and "thin symtab" in reason
+
+
+def test_trust_gate_rejects_missing_stext() -> None:
+    body = "\n".join(f"ffffffff8100{i:04x} T sym{i}" for i in range(1500))
+    ok, reason, _ = _trust_gate(body)
+    assert not ok and reason == "no _stext"
+
+
+def test_trust_gate_rejects_out_of_range_stext() -> None:
+    # 1500 symbols but _stext in userspace VA -> wrong base -> every symbol would be offset -> reject.
+    ok, reason, _ = _trust_gate(_nm_kernel(1500, stext="0000000000401000"))
+    assert not ok and "out of range" in reason
+
+
+def test_recovery_success_is_recovered_and_cached(tmp_path: Path) -> None:
+    img = tmp_path / "in" / "bzImage"
+    _write_bzimage(img)
+    out = tmp_path / "out" / "vmlinux"
+    c = _RecoverFake(nm_output=_nm_kernel(1500))
+    result = extract_vmlinux(c, img, out, image="like_musl:latest")
+    assert result == out and out.read_bytes().startswith(b"\x7fELF")
+    joined = " ".join(c.execs)
+    assert "vmlinux-to-elf" in joined and joined.count("nm ") >= 1 and "extract-vmlinux.sh" not in joined
+    assert _stamp(out)["state"] == "RECOVERED"
+
+
+def test_recovery_thin_symtab_falls_back_to_carve(tmp_path: Path) -> None:
+    img = tmp_path / "in" / "bzImage"
+    _write_bzimage(img)
+    out = tmp_path / "out" / "vmlinux"
+    c = _RecoverFake(nm_output=_nm_kernel(5), carve_bytes=b"\x7fELFcarved")
+    extract_vmlinux(c, img, out, image="like_musl:latest")
+    joined = " ".join(c.execs)
+    assert "vmlinux-to-elf" in joined and "extract-vmlinux.sh" in joined  # recovery attempted, then carve
+    assert _stamp(out)["state"] == "DECOMPRESSED"
+
+
+def test_recovery_v2e_failure_falls_back_to_carve(tmp_path: Path) -> None:
+    img = tmp_path / "in" / "bzImage"
+    _write_bzimage(img)
+    out = tmp_path / "out" / "vmlinux"
+    c = _RecoverFake(fail_v2e=True, carve_bytes=b"\x7fELFcarved")
+    extract_vmlinux(c, img, out, image="like_musl:latest")
+    assert "extract-vmlinux.sh" in " ".join(c.execs)
+    assert _stamp(out)["state"] == "DECOMPRESSED"
+
+
+def test_non_bzimage_skips_recovery(tmp_path: Path) -> None:
+    img = tmp_path / "in" / "Image"
+    img.parent.mkdir()
+    img.write_bytes(b"not an x86 bzimage")
+    out = tmp_path / "out" / "vmlinux"
+    c = _RecoverFake(carve_bytes=b"\x7fELFcarved")
+    extract_vmlinux(c, img, out, image="like_musl:latest")
+    joined = " ".join(c.execs)
+    assert "vmlinux-to-elf" not in joined and "extract-vmlinux.sh" in joined
+    assert _stamp(out)["state"] == "DECOMPRESSED"
+
+
+def test_cache_hit_reuses_without_container(tmp_path: Path) -> None:
+    img = tmp_path / "in" / "bzImage"
+    _write_bzimage(img)
+    out = tmp_path / "out" / "vmlinux"
+    out.parent.mkdir(parents=True)
+    out.write_bytes(b"\x7fELFcached")
+    (out.parent / "vmlinux.stamp").write_text(
+        json.dumps({"image_sha256": _image_sha256(img), "v2e_version": V2E_VERSION, "state": "RECOVERED"})
+    )
+    c = _RecoverFake()
+    extract_vmlinux(c, img, out, image="like_musl:latest")
+    assert c.execs == []  # cache hit: no container work at all
+
+
+def test_cache_miss_on_image_change_regenerates(tmp_path: Path) -> None:
+    img = tmp_path / "in" / "bzImage"
+    _write_bzimage(img)
+    out = tmp_path / "out" / "vmlinux"
+    out.parent.mkdir(parents=True)
+    out.write_bytes(b"\x7fELFold")
+    (out.parent / "vmlinux.stamp").write_text(
+        json.dumps({"image_sha256": "stale-hash", "v2e_version": V2E_VERSION, "state": "RECOVERED"})
+    )
+    c = _RecoverFake(nm_output=_nm_kernel(1500))
+    extract_vmlinux(c, img, out, image="like_musl:latest")
+    assert "vmlinux-to-elf" in " ".join(c.execs)  # stale hash -> regenerated
+    assert _stamp(out)["state"] == "RECOVERED"

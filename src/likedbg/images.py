@@ -22,6 +22,7 @@ from likedbg.constants import DEBUGGER_IMAGE
 from likedbg.constants import KBUILDER_IMAGE
 from likedbg.constants import MUSL_IMAGE
 from likedbg.constants import ROOTFS_IMAGE
+from likedbg.constants import V2E_VERSION
 from likedbg.container_service import ContainerService
 from likedbg.host_profile import HostProfile
 
@@ -43,7 +44,7 @@ IMAGES: tuple[ImageSpec, ...] = (
         MUSL_IMAGE,
         ".dockerfile_musl",
         (".dockerfile_musl", "io/scripts/extract-vmlinux.sh"),
-        {"USER": "user"},
+        {"USER": "user", "V2E_VERSION": V2E_VERSION},
     ),
     ImageSpec(KBUILDER_IMAGE, ".dockerfile_kbuilder", (".dockerfile_kbuilder",), {"USER": "user"}),
     ImageSpec(ROOTFS_IMAGE, ".dockerfile_rootfs", (".dockerfile_rootfs", "io/scripts/rootfs.sh"), {"USER": "user"}),
