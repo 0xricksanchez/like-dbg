@@ -5,10 +5,10 @@ is a self-contained out-of-tree module source tree (an `obj-m` `Makefile` plus i
 built against the already-built kernel tree (`make -C /ksrc/<label> M=<modsrc> modules`) and
 loaded into a live guest on command.
 
-This replaces the older in-tree module injection (`examples/legacy-intree/`): copying a module
-into the kernel source tree, wiring a Kconfig entry, and rebuilding the whole kernel to pick it
-up. Out-of-tree modules build in seconds against the existing tree, with no kernel rebuild and no
-cache invalidation from a module edit.
+This replaces the older in-tree module injection (copying a module into the kernel source tree,
+wiring a Kconfig entry, and rebuilding the whole kernel to pick it up). Out-of-tree modules build
+in seconds against the existing tree, with no kernel rebuild and no cache invalidation from a
+module edit.
 
 ## Convention: directory name is the `.ko` name
 
