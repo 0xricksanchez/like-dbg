@@ -213,8 +213,39 @@ def verify_config(
 
 
 _EXPLICIT_LAYERS: frozenset[str] = frozenset({LAYER_LOCAL, LAYER_SCENARIO, LAYER_CLI})
+
+
 # Runtime toggle -> build symbol it requires to be enable-able.
-_TOGGLE_REQUIRES: dict[str, str] = {"kaslr": "CONFIG_RANDOMIZE_BASE"}
+@dataclass(frozen=True)
+class _ToggleGate:
+    """How a [debuggee] runtime mitigation toggle is validated. `symbols` are the kconfig options whose
+    hard-expected-OFF makes the toggle impossible (any match triggers; a tuple handles version renames,
+    e.g. CONFIG_PAGE_TABLE_ISOLATION -> CONFIG_MITIGATION_PAGE_TABLE_ISOLATION in 6.9+). `arches`, when
+    set, are the architectures the toggle is meaningful on: explicitly requesting it ON for another
+    target is impossible (SMEP/SMAP are x86_64-only CPU features, not wired for arm64 - see qemu.py).
+    Empty `symbols` means no build-time kconfig gate (SMEP/SMAP have none: SMAP's CONFIG_X86_SMAP was
+    removed in 5.19 and it is now always compiled in, so only the arch gate applies)."""
+
+    symbols: tuple[str, ...] = ()
+    arches: tuple[str, ...] | None = None
+    arch_note: str = ""
+
+
+# Every [debuggee] runtime mitigation gets the same treatment as kaslr: an EXPLICIT request to enable
+# one is a hard error when the kernel/arch cannot support it (a runtime toggle can only turn ON what
+# was built/wired in). Build-time kconfig gates (kaslr/kpti) fire when an active profile hard-builds a
+# required symbol OFF; arch gates (smep/smap/fgkaslr) fire when the toggle is an x86_64-only feature
+# requested for another target (`arch_note` names the equivalent the target does have). A toggle on via
+# a profile/config default is a harmless no-op (not explicit), so it passes silently.
+_TOGGLE_GATES: dict[str, _ToggleGate] = {
+    "kaslr": _ToggleGate(symbols=("CONFIG_RANDOMIZE_BASE",)),
+    "kpti": _ToggleGate(symbols=("CONFIG_PAGE_TABLE_ISOLATION", "CONFIG_MITIGATION_PAGE_TABLE_ISOLATION")),
+    "smap": _ToggleGate(arches=("x86_64",), arch_note="arm64 uses PAN, enabled by default"),
+    "smep": _ToggleGate(arches=("x86_64",), arch_note="arm64 uses PXN, enabled by default"),
+    "fgkaslr": _ToggleGate(
+        symbols=("CONFIG_FG_KASLR",), arches=("x86_64",), arch_note="arm64 has no function-granular KASLR"
+    ),
+}
 
 
 @dataclass(frozen=True)
@@ -333,30 +364,44 @@ def resolve_run(
             if _selectors_match(arch=ba.arch, profiles=ba.profiles, active=active, host=host):
                 boot_args.append(ba.value)
 
-    # Compatibility: resolution-time contradictions (Q12).
+    # Compatibility: resolution-time contradictions (Q12). Only EXPLICIT (user/scenario/CLI) requests
+    # are hard errors; a toggle on via a profile/config default is a harmless no-op, so it passes.
     overrides: list[str] = []
-    for toggle, symbol in _TOGGLE_REQUIRES.items():
+    for toggle, gate in _TOGGLE_GATES.items():
         wants_on = bool(getattr(effective_debuggee, toggle))
-        forbidden_hard = any(
-            e.symbol == symbol
-            and e.value == "n"
-            and e.severity == "hard"
-            and _expect_applies(e, target_arch=host.target_arch, kernel_release=None)
-            for e in expectations
-        )
         prov = eff_prov.get(("debuggee", toggle))
         explicit = prov in _EXPLICIT_LAYERS
-        if wants_on and forbidden_hard:
-            # Only EXPLICIT (user/scenario/CLI) requests are hard errors (Q12). When the toggle is on
-            # via a profile default with no build symbol, the runtime kaslr boot arg is a harmless no-op,
-            # so we silently pass: this is intentional, not a missing else.
-            if explicit:
+        if wants_on and explicit:
+            # Arch gate: the mitigation is a CPU feature not wired for this target (e.g. SMEP/SMAP on arm64,
+            # where PXN/PAN are the equivalents the kernel enables by default; see arch_note).
+            if gate.arches is not None and host.target_arch not in gate.arches:
+                arches = "/".join(gate.arches)
+                note = f" ({gate.arch_note})" if gate.arch_note else ""
                 raise ConfigError(
-                    f"[debuggee] {toggle}=on is impossible: active profiles build {symbol} disabled",
+                    f"[debuggee] {toggle}=on is impossible on {host.target_arch}: "
+                    f"{toggle} is an {arches}-only feature{note}",
+                    remedy=f"remove the explicit {toggle} toggle, or target {arches}",
+                )
+            # Build-time gate: an active profile hard-builds a required kconfig symbol OFF.
+            forbidden = next(
+                (
+                    sym
+                    for sym in gate.symbols
+                    for e in expectations
+                    if e.symbol == sym
+                    and e.value == "n"
+                    and e.severity == "hard"
+                    and _expect_applies(e, target_arch=host.target_arch, kernel_release=None)
+                ),
+                None,
+            )
+            if forbidden is not None:
+                raise ConfigError(
+                    f"[debuggee] {toggle}=on is impossible: active profiles build {forbidden} disabled",
                     remedy="remove the explicit toggle, or switch to a base profile that builds it in (e.g. hardened)",
                 )
         if not wants_on and prov == LAYER_PROFILE:
-            overrides.append(f"runtime override: {toggle} off -> adds nokaslr (profile default was on)")
+            overrides.append(f"runtime override: {toggle} disabled (profile default was on)")
 
     resolved = ResolvedDebugProfiles(
         names=tuple(ordered), base=base, expected_config=expectations, future_breakpoint_groups=()

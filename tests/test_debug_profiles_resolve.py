@@ -104,3 +104,78 @@ def test_two_base_profiles_is_exclusivity_error(tmp_path: Path) -> None:
     cfg = load_config(tmp_path)
     with pytest.raises(ConfigError):
         resolve_run(profile_names=("exploit-dev", "hardened"), config=cfg, host=_host(tmp_path), workspace=tmp_path)
+
+
+def _host_arm64(tmp_path):
+    return HostProfile.detect(Settings(general=GeneralCfg(arch="arm64")), tmp_path, _probes(machine="arm64"))
+
+
+def _write_profile(tmp_path: Path, name: str, expect_symbol: str) -> None:
+    (tmp_path / "configs" / "profiles" / f"{name}.toml").write_text(
+        f'name="{name}"\nkind="addon"\ndescription="d"\n'
+        f'fragments=["configs/fragments/profiles/{name}.config"]\n'
+        f'[[expect]]\nsymbol="{expect_symbol}"\nvalue="n"\nseverity="hard"\n'
+    )
+
+
+def test_explicit_kpti_on_with_renamed_symbol_built_off_is_contradiction(tmp_path: Path) -> None:
+    # kconfig gate exercises the 6.8+ symbol rename alias (CONFIG_MITIGATION_PAGE_TABLE_ISOLATION).
+    _scaffold(tmp_path)
+    _write_profile(tmp_path, "no-kpti", "CONFIG_MITIGATION_PAGE_TABLE_ISOLATION")
+    (tmp_path / "configs" / "local.toml").write_text("[debuggee]\nkpti = true\n")
+    cfg = load_config(tmp_path)
+    with pytest.raises(ConfigError, match="CONFIG_MITIGATION_PAGE_TABLE_ISOLATION"):
+        resolve_run(profile_names=("exploit-dev", "no-kpti"), config=cfg, host=_host(tmp_path), workspace=tmp_path)
+
+
+def test_explicit_smep_on_arm64_is_arch_error(tmp_path: Path) -> None:
+    # arch gate: SMEP is an x86_64-only CPU feature, so an explicit smep=on for an arm64 target is impossible.
+    _scaffold(tmp_path)
+    (tmp_path / "configs" / "local.toml").write_text("[debuggee]\nsmep = true\n")
+    cfg = load_config(tmp_path)
+    with pytest.raises(ConfigError, match="x86_64-only"):
+        resolve_run(profile_names=("exploit-dev",), config=cfg, host=_host_arm64(tmp_path), workspace=tmp_path)
+
+
+def test_explicit_smap_on_arm64_is_arch_error(tmp_path: Path) -> None:
+    _scaffold(tmp_path)
+    (tmp_path / "configs" / "local.toml").write_text("[debuggee]\nsmap = true\n")
+    cfg = load_config(tmp_path)
+    with pytest.raises(ConfigError, match="x86_64-only"):
+        resolve_run(profile_names=("exploit-dev",), config=cfg, host=_host_arm64(tmp_path), workspace=tmp_path)
+
+
+def test_default_smep_smap_on_arm64_is_fine(tmp_path: Path) -> None:
+    # smep/smap default on but are NOT explicit, so the arch gate must not fire (harmless no-op on arm64).
+    _scaffold(tmp_path)
+    cfg = load_config(tmp_path)
+    rr = resolve_run(profile_names=("exploit-dev",), config=cfg, host=_host_arm64(tmp_path), workspace=tmp_path)
+    assert rr.effective_debuggee.smep is True
+    assert rr.effective_debuggee.smap is True
+
+
+def test_explicit_smep_smap_on_x86_is_fine(tmp_path: Path) -> None:
+    # x86_64 target and no profile disables them, so an explicit smep/smap=on is allowed.
+    _scaffold(tmp_path)
+    (tmp_path / "configs" / "local.toml").write_text("[debuggee]\nsmep = true\nsmap = true\n")
+    cfg = load_config(tmp_path)
+    rr = resolve_run(profile_names=("exploit-dev",), config=cfg, host=_host(tmp_path), workspace=tmp_path)
+    assert rr.effective_debuggee.smep is True
+    assert rr.effective_debuggee.smap is True
+
+
+def test_explicit_fgkaslr_on_arm64_is_arch_error(tmp_path: Path) -> None:
+    # FG-KASLR is x86_64-only, so an explicit fgkaslr=on for an arm64 target is impossible.
+    _scaffold(tmp_path)
+    (tmp_path / "configs" / "local.toml").write_text("[debuggee]\nfgkaslr = true\n")
+    cfg = load_config(tmp_path)
+    with pytest.raises(ConfigError, match="x86_64-only"):
+        resolve_run(profile_names=("exploit-dev",), config=cfg, host=_host_arm64(tmp_path), workspace=tmp_path)
+
+
+def test_default_fgkaslr_on_arm64_is_fine(tmp_path: Path) -> None:
+    # fgkaslr defaults on but is NOT explicit, so the arch gate must not fire on an arm64 target.
+    _scaffold(tmp_path)
+    cfg = load_config(tmp_path)
+    rr = resolve_run(profile_names=("exploit-dev",), config=cfg, host=_host_arm64(tmp_path), workspace=tmp_path)
+    assert rr.effective_debuggee.fgkaslr is True

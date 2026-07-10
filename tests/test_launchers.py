@@ -12,8 +12,8 @@ def test_qemu_pane_command_joins_argv():
 
 def test_qemu_pane_command_quotes_multiword_append():
     # A multi-word -append value must stay a single shell token through tmux send-keys.
-    cmd = qemu_pane_command(["qemu-system-aarch64", "-append", "console=ttyAMA0 nokaslr pti=on"])
-    assert "'console=ttyAMA0 nokaslr pti=on'" in cmd
+    cmd = qemu_pane_command(["qemu-system-aarch64", "-append", "console=ttyAMA0 nokaslr net.ifnames=0"])
+    assert "'console=ttyAMA0 nokaslr net.ifnames=0'" in cmd
 
 
 def test_gdb_pane_command_wraps_docker_run_with_addhost_and_volume():

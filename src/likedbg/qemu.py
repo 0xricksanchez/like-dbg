@@ -10,14 +10,35 @@ from likedbg.host_profile import HostProfile
 _QEMU_BIN = {"arm64": "qemu-system-aarch64", "x86_64": "qemu-system-x86_64"}
 
 
-def _mitigations(d: DebuggeeCfg) -> list[str]:
-    out: list[str] = []
-    out.append("nokaslr" if not d.kaslr else "kaslr")
-    if not d.smep:
-        out.append("nosmep")
-    if not d.smap:
-        out.append("nosmap")
-    out.append("pti=on" if d.kpti else "nopti")
+def _mitigations(d: DebuggeeCfg, arch: str) -> list[str]:
+    out: list[str] = ["nokaslr" if not d.kaslr else "kaslr"]
+    # SMEP/SMAP are controlled purely via the x86_64 -cpu feature flags (see build_qemu_argv); the
+    # mainline nosmep/nosmap boot args were removed in 5.18/5.19, so no cmdline token is emitted here.
+    if arch == "x86_64":
+        # KPTI on x86 uses pti=/nopti. Skip it when mitigations=off is requested: that master switch
+        # already disables PTI, and an explicit pti=on would override it (arch/x86/mm/pti.c precedence).
+        if d.mitigations is not False:
+            out.append("pti=on" if d.kpti else "nopti")
+        # FG-KASLR (x86_64-only, out-of-tree/CTF): disable with nofgkaslr; ignored on kernels without it.
+        if not d.fgkaslr:
+            out.append("nofgkaslr")
+    else:
+        # arm64 KPTI is on by default; its param is kpti=, not the x86 pti=/nopti pair.
+        if not d.kpti:
+            out.append("kpti=off")
+    # Tri-state cmdline hints valid on both arches; None leaves the kernel default untouched.
+    if d.mitigations is not None:
+        out.append("mitigations=auto" if d.mitigations else "mitigations=off")
+    if d.slab_merge is not None:
+        out.append("slab_merge" if d.slab_merge else "slab_nomerge")
+    if d.init_on_alloc is not None:
+        out.append(f"init_on_alloc={1 if d.init_on_alloc else 0}")
+    if d.init_on_free is not None:
+        out.append(f"init_on_free={1 if d.init_on_free else 0}")
+    if d.randomize_kstack_offset is not None:
+        out.append("randomize_kstack_offset=" + ("on" if d.randomize_kstack_offset else "off"))
+    if d.hardened_usercopy is not None:
+        out.append("hardened_usercopy=" + ("on" if d.hardened_usercopy else "off"))
     return out
 
 
@@ -85,7 +106,7 @@ def build_qemu_argv(
                 root,
                 "earlyprintk=serial",
                 "net.ifnames=0",
-                *_mitigations(debuggee),
+                *_mitigations(debuggee, target_arch),
                 *extra_boot_args,
                 "oops=panic",
                 _panic(debuggee),

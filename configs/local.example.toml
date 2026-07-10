@@ -10,5 +10,14 @@
 # extra_fragments = ["configs/fragments/my-feature.config"]  # must live under configs/fragments/
 # patch_dirs = ["patches/my-fix"]                             # applied -p1, alphabetical within a dir
 
+[debuggee]
+# Runtime mitigation toggles. The tri-state hints default to unset (nothing injected); set one only
+# to override the kernel default. See docs/configuration.md#debuggee for the full set and the gate.
+# kaslr = true            # base KASLR on (default off for exploit-dev)
+# fgkaslr = false         # x86_64 only; emits nofgkaslr (base KASLR can stay on)
+# mitigations = false     # emits mitigations=off (disable CPU speculative-exec mitigations)
+# slab_merge = false      # emits slab_nomerge (keep kmalloc caches unmerged for heap work)
+# init_on_alloc = false   # emits init_on_alloc=0 (leave freshly-allocated memory uninitialized)
+
 [debugger]
 # ext = "gef"        # pwndbg is the default; opt into gef here

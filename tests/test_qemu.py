@@ -256,3 +256,97 @@ def test_qemu_extra_appended_to_argv():
 def test_qemu_extra_empty_by_default_keeps_existing_argv():
     argv = build_qemu_argv(_debuggee(), _host(), target_arch="arm64", kernel_image=Path("/w/Image"), rootfs=None)
     assert "nokaslr" in argv[argv.index("-append") + 1]  # normal path unchanged
+
+
+def _append(debuggee, target_arch):
+    argv = build_qemu_argv(
+        debuggee, _host(target_arch=target_arch), target_arch=target_arch, kernel_image=Path("/w/Image"), rootfs=None
+    )
+    return argv[argv.index("-append") + 1]
+
+
+def test_x86_64_default_append_is_byte_identical_baseline():
+    # fgkaslr defaults on and the tri-state hints default unset, so the x86_64 default cmdline is unchanged.
+    ap = _append(_debuggee(), "x86_64")
+    assert "pti=on" in ap  # kpti default on
+    assert "nofgkaslr" not in ap and "nosmep" not in ap and "nosmap" not in ap
+    for tok in ("mitigations=", "slab_nomerge", "slab_merge", "init_on_alloc", "init_on_free", "hardened_usercopy"):
+        assert tok not in ap
+
+
+def test_arm64_default_append_omits_x86_only_params():
+    ap = _append(_debuggee(), "arm64")
+    assert "nokaslr" in ap
+    # pti=/nopti, nosmep/nosmap and nofgkaslr are x86-only; kpti default on emits nothing on arm64.
+    for tok in ("pti=on", "nopti", "nosmep", "nosmap", "nofgkaslr"):
+        assert tok not in ap
+
+
+def test_kpti_disable_is_arch_correct():
+    assert "nopti" in _append(_debuggee(kpti=False), "x86_64")
+    ap_arm = _append(_debuggee(kpti=False), "arm64")
+    assert "kpti=off" in ap_arm and "nopti" not in ap_arm and "pti=on" not in ap_arm
+
+
+def test_fgkaslr_disable_is_x86_only():
+    assert "nofgkaslr" in _append(_debuggee(fgkaslr=False), "x86_64")
+    assert "nofgkaslr" not in _append(_debuggee(fgkaslr=False), "arm64")
+
+
+def test_smep_smap_controlled_via_cpu_flags_not_boot_args():
+    # SMEP/SMAP are x86_64 -cpu features; the nosmep/nosmap boot args were removed from mainline (5.18/5.19).
+    off = build_qemu_argv(
+        _debuggee(smep=False, smap=False),
+        _host(target_arch="x86_64"),
+        target_arch="x86_64",
+        kernel_image=Path("/w/bzImage"),
+        rootfs=None,
+    )
+    s_off = _argstr(off)
+    assert "+smep" not in s_off and "+smap" not in s_off  # dropped from the -cpu model
+    ap_off = off[off.index("-append") + 1]
+    assert "nosmep" not in ap_off and "nosmap" not in ap_off  # no dead boot args
+    on = build_qemu_argv(
+        _debuggee(smep=True, smap=True),
+        _host(target_arch="x86_64"),
+        target_arch="x86_64",
+        kernel_image=Path("/w/bzImage"),
+        rootfs=None,
+    )
+    assert "+smep" in _argstr(on) and "+smap" in _argstr(on)
+
+
+def test_mitigations_off_suppresses_forced_pti_on_x86():
+    # mitigations=off is the master switch; an explicit pti=on would override it, so it is not emitted.
+    ap = _append(_debuggee(mitigations=False), "x86_64")  # kpti default on
+    assert "mitigations=off" in ap
+    assert "pti=on" not in ap and "nopti" not in ap
+    # arm64 has no conflicting pti= token; mitigations=off stands alone.
+    assert "mitigations=off" in _append(_debuggee(mitigations=False), "arm64")
+
+
+def test_tristate_hints_emit_when_set():
+    ap = _append(
+        _debuggee(
+            mitigations=False,
+            slab_merge=False,
+            init_on_alloc=True,
+            init_on_free=False,
+            randomize_kstack_offset=True,
+            hardened_usercopy=False,
+        ),
+        "x86_64",
+    )
+    assert "mitigations=off" in ap
+    assert "slab_nomerge" in ap
+    assert "init_on_alloc=1" in ap
+    assert "init_on_free=0" in ap
+    assert "randomize_kstack_offset=on" in ap
+    assert "hardened_usercopy=off" in ap
+
+
+def test_tristate_true_forces_on_variants():
+    ap = _append(_debuggee(mitigations=True, slab_merge=True, randomize_kstack_offset=False), "arm64")
+    assert "mitigations=auto" in ap
+    assert "slab_merge" in ap and "slab_nomerge" not in ap
+    assert "randomize_kstack_offset=off" in ap

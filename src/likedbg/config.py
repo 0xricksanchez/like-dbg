@@ -145,6 +145,15 @@ class DebuggeeCfg(_Base):
     smep: bool = True
     smap: bool = True
     kpti: bool = True
+    fgkaslr: bool = True  # x86_64-only (out-of-tree/CTF); disabled at runtime with nofgkaslr
+    # Tri-state cmdline mitigation hints: None leaves the kernel default untouched (no boot arg emitted),
+    # so a default run's cmdline is byte-identical to a build without these knobs set.
+    mitigations: bool | None = None
+    slab_merge: bool | None = None
+    init_on_alloc: bool | None = None
+    init_on_free: bool | None = None
+    randomize_kstack_offset: bool | None = None
+    hardened_usercopy: bool | None = None
     panic: str = "halt"
     capture_console: bool = True
     ssh_port: int = 2222

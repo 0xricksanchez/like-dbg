@@ -157,9 +157,16 @@ for both live in [build-your-own-kernel.md](build-your-own-kernel.md#customize-t
 | `gdb` | `true` | Expose the QEMU gdbstub. |
 | `gdb_port` | `1234` | gdbstub TCP port. |
 | `kaslr` | `false` | Enable KASLR at runtime (only if the built kernel supports it). |
-| `smep` | `true` | Enable SMEP at runtime. |
-| `smap` | `true` | Enable SMAP at runtime. |
-| `kpti` | `true` | Enable KPTI at runtime. |
+| `smep` | `true` | Enable SMEP at runtime (x86_64 only). |
+| `smap` | `true` | Enable SMAP at runtime (x86_64 only). |
+| `kpti` | `true` | Enable KPTI at runtime (`pti=on`/`nopti` on x86_64, `kpti=off` on arm64). |
+| `fgkaslr` | `true` | Enable FG-KASLR at runtime (x86_64 only; `false` emits `nofgkaslr`). For kernels built with the out-of-tree FG-KASLR patchset or CTF kernels that ship it. |
+| `mitigations` | unset | Tri-state. `false` emits `mitigations=off`; `true` forces `mitigations=auto`; unset leaves the kernel default. |
+| `slab_merge` | unset | Tri-state. `false` emits `slab_nomerge`; `true` emits `slab_merge`; unset leaves the kernel default. |
+| `init_on_alloc` | unset | Tri-state `init_on_alloc=1/0`; unset leaves the kernel default. |
+| `init_on_free` | unset | Tri-state `init_on_free=1/0`; unset leaves the kernel default. |
+| `randomize_kstack_offset` | unset | Tri-state `randomize_kstack_offset=on/off`; unset leaves the kernel default. |
+| `hardened_usercopy` | unset | Tri-state `hardened_usercopy=on/off`; unset leaves the kernel default. |
 | `panic` | `halt` | `halt` (stay stopped), `reboot`, or another value for a timed reboot. |
 | `capture_console` | `true` | Tee the guest serial console to `logs/console.raw`. |
 | `ssh_port` | `2222` | Host-side SSH port forwarded into the guest. |
@@ -167,21 +174,45 @@ for both live in [build-your-own-kernel.md](build-your-own-kernel.md#customize-t
 | `guest_net` | `true` | Enable guest networking (the SSH transport for `--run` and `--insmod`). |
 | `share` | `true` | Enable the 9p live share. |
 
-The runtime mitigation toggles (`kaslr`, `smep`, `smap`, `kpti`) may only turn on behavior the
-built kernel actually supports, but today only `kaslr` is actually checked against a kconfig
-expectation (`CONFIG_RANDOMIZE_BASE`). For example, `exploit-dev` builds KASLR disabled, so
-setting `[debuggee] kaslr = true` explicitly (in `local.toml`, a scenario, or on the CLI) while
-`exploit-dev` is active fails fast with:
+LIKE-DBG validates the mitigation toggles at config-resolution time and injects the matching kernel
+command-line arguments at boot. Two principles govern them:
+
+- **The tool never silently changes the guest.** The tri-state hints (`mitigations`, `slab_merge`,
+  `init_on_alloc`, `init_on_free`, `randomize_kstack_offset`, `hardened_usercopy`) default to *unset*
+  and emit no boot argument, so a default run's kernel command line is identical to one built without
+  these knobs. A knob only ever reaches the guest when you explicitly set it, in `local.toml`, a
+  scenario, or on the CLI. This is the same "you tweak it yourself" stance the tool takes toward
+  sysctls, which it does not touch at all.
+- **An impossible request fails fast, symmetrically.** An *explicit* request to enable a mitigation
+  the kernel or architecture cannot provide is a hard error, not a silent no-op. Two checks apply:
+    - *Build-time (kconfig) gate.* `kaslr` requires `CONFIG_RANDOMIZE_BASE` and `kpti` requires
+      `CONFIG_PAGE_TABLE_ISOLATION` (renamed `CONFIG_MITIGATION_PAGE_TABLE_ISOLATION` on 6.9+). If an
+      active profile hard-builds the required symbol *off*, enabling the toggle is impossible.
+    - *Architecture gate.* `smep`, `smap`, and `fgkaslr` are x86_64-only, so requesting them for an
+      arm64 target is impossible; arm64 uses PXN and PAN (enabled by default) and has no
+      function-granular KASLR.
+
+For example, `exploit-dev` builds KASLR disabled, so setting `[debuggee] kaslr = true` explicitly
+while `exploit-dev` is active fails fast with:
 
 ```text
 [debuggee] kaslr=on is impossible: active profiles build CONFIG_RANDOMIZE_BASE disabled
 ```
 
-The fix is to drop the explicit toggle, or switch to a base profile that builds KASLR in, e.g.
-`--profile hardened`. `smep`, `smap`, and `kpti` are not currently checked against any kconfig
-expectation, so setting them is only meaningful when the kernel actually supports them (true for
-stock kernels, but not verified by the tool). Note also that `smep`/`smap` are wired as
-x86_64-only QEMU `-cpu` feature flags; the arm64 guest path does not add them.
+The fix is to drop the explicit toggle, or switch to a base profile that builds the mitigation in
+(e.g. `--profile hardened`). The gate only *validates* the request; it never changes what the kernel
+is built with.
+
+A few wiring details. `smep`/`smap` are controlled purely through the x86_64 QEMU `-cpu` feature
+flags (`+smep`/`+smap`), not boot arguments: the mainline `nosmep`/`nosmap` params and the
+`CONFIG_X86_SMAP` symbol were removed in 5.18/5.19, so disabling one simply drops it from the guest
+CPU model. `kpti` is architecture-correct: `pti=on`/`nopti` on x86_64 and `kpti=off` on arm64.
+Setting `mitigations = false` is the master switch (`mitigations=off`); on x86_64 the tool then omits
+its own `pti=on`, since an explicit `pti=on` would otherwise override the master switch and leave PTI
+on. So an explicit `kpti = true` together with `mitigations = false` resolves to PTI off, the master
+switch winning. `fgkaslr` only emits `nofgkaslr` (to disable); it is meaningful on kernels actually built with the
+out-of-tree FG-KASLR patchset (or CTF kernels that ship it) and is harmlessly ignored elsewhere. Since
+`nokaslr` also disables FG-KASLR, a dedicated `fgkaslr = false` matters mainly when base KASLR is on.
 
 ### `[debugger]`
 
