@@ -22,7 +22,7 @@ requests = "^2.32.3"
 
 [tool.poetry.group.dev.dependencies]
 black = "^24.4.2"
-pytest = "^8.2.2"
+pytest = ">=8.2.2,<10.0.0"
 pytest-cov = "^5.0.0"
 ruff = "^0.4.10"
 
