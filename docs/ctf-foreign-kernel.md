@@ -109,6 +109,42 @@ Match the challenge's runtime so your exploit behaves as it does on the remote:
 - `qemu_extra` adds QEMU flags, for example a specific CPU baseline with `-cpu
   qemu64,+smep,+smap`, so the guest's mitigations and instruction set match the target.
 
+## Worked example: Pawnyable LK01
+
+Pawnyable's LK01 ("Holstein v1", by ptr-yudai) is a good first foreign target: a stack buffer
+overflow in a char driver with every mitigation off. LIKE-DBG ships a ready-made scenario
+([`configs/scenarios/pawnyable-lk01.toml`](../configs/scenarios/pawnyable-lk01.toml)); you supply
+the challenge artifacts. Get `bzImage` and `rootfs.cpio` from the challenge's `LK01/qemu/`
+directory and drop them where the scenario expects them (under gitignored `ctf/`, so they are
+never committed):
+
+```sh
+mkdir -p ctf/pawnyable-lk01
+cp <pawnyable>/learn/linux-kernel/LK01/qemu/{bzImage,rootfs.cpio} ctf/pawnyable-lk01/
+uv run ./start_kgdb -c pawnyable-lk01
+```
+
+The scenario reproduces the challenge's `run.sh` exactly: a Linux 5.10.7 `bzImage`, `-m 64M`, a
+bare `-cpu qemu64` (no SMEP/SMAP), and the verbatim `nopti nokaslr` command line, so KASLR, KPTI,
+SMEP, and SMAP are all off. The challenge's own initramfs loads the `vuln.ko` driver at boot,
+creates `/dev/holstein`, and drops you to an unprivileged (uid 1337) shell; the goal is local
+privilege escalation to root.
+
+The bug is a classic stack overflow: the driver's `read`/`write` handlers copy a user-controlled
+`count` into a fixed `char kbuf[0x400]` on the stack. GDB attaches at the gdbstub with full access
+to kernel memory. To debug the driver by name, use pwndbg's `kmod` to find where the module loaded.
+For source-level symbols, build the driver from the challenge's `vuln.c` (in its `src/`) with `-g`
+and point `add-symbol-file` at the resulting `vuln.ko` in the GDB pane:
+
+```gdb
+add-symbol-file <your-build>/vuln.ko <.text load address>
+break module_write
+```
+
+No `vmlinux` ships with the challenge, so kernel function symbols come only from the stripped
+auto-extract; for full kernel-source debugging, build a matching 5.10.7 `vmlinux` and point
+`[foreign] vmlinux` at it. Writing the exploit is left to you, as the challenge intends.
+
 ## Limitations
 
 - **Serial-only transport.** No SSH, no 9p share, and therefore no `--run` and no `--insmod`.
