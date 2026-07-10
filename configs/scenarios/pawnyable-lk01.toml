@@ -21,7 +21,7 @@ image = "ctf/pawnyable-lk01/bzImage"           # presence selects the foreign pa
 initramfs = "ctf/pawnyable-lk01/rootfs.cpio"   # the challenge's own busybox rootfs (raw cpio)
 cmdline = "console=ttyS0 loglevel=3 oops=panic panic=-1 nopti nokaslr"  # used verbatim
 arch = "x86_64"
-# Kernel symbols (kmod, crash breakpoints, add-symbol-file). A bare bzImage carries no ELF symtab;
-# recover one from its kallsyms and uncomment to use it (stays commented so `-c` still works without it):
-#   pip install vmlinux-to-elf && vmlinux-to-elf ctf/pawnyable-lk01/bzImage ctf/pawnyable-lk01/vmlinux
+# Kernel symbols (kmod, crash breakpoints, add-symbol-file) are recovered automatically from the
+# bzImage's kallsyms (see docs/ctf-foreign-kernel.md#symbols). Only set vmlinux to override that with
+# a real vmlinux for source-level kernel debugging:
 # vmlinux = "ctf/pawnyable-lk01/vmlinux"
