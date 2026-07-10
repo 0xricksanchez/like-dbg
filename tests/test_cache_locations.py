@@ -20,9 +20,7 @@ def test_volume_mode_footprint():
 def test_volume_mode_source_root_with_src_label():
     label = "linux-6.6.30-gef-a1b2c3d4"
     src_label = "linux-6.6.30-gef-deadbeef"
-    loc = locations(
-        label, arch="arm64", storage_mode="volume", workspace=Path("/ws"), src_label=src_label
-    )
+    loc = locations(label, arch="arm64", storage_mode="volume", workspace=Path("/ws"), src_label=src_label)
     assert loc.source_root == f"/ksrc/src/{src_label}"
     assert loc.objdir == f"/ksrc/obj/{label}"
 
@@ -49,9 +47,7 @@ def test_bind_mode_footprint_is_symmetric_and_host_in_tree():
 def test_bind_mode_source_root_with_src_label():
     label = "linux-6.6.30-gef-a1b2c3d4"
     src_label = "linux-6.6.30-gef-deadbeef"
-    loc = locations(
-        label, arch="x86_64", storage_mode="bind", workspace=Path("/ws"), src_label=src_label
-    )
+    loc = locations(label, arch="x86_64", storage_mode="bind", workspace=Path("/ws"), src_label=src_label)
     assert loc.source_root == f"/ksrc/src/{src_label}"
     assert loc.objdir == f"/ksrc/obj/{label}"
 

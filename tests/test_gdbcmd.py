@@ -376,9 +376,7 @@ def test_crash_capture_falls_back_to_kernel_init_when_run_init_process_absent(mo
 
     from likedbg.gdbcmd import _crash_capture_source
 
-    payload = _crash_capture_source(
-        (), ("kasan_report",), ("run_init_process", "kernel_init"), "/crash/crash.gdb.json"
-    )
+    payload = _crash_capture_source((), ("kasan_report",), ("run_init_process", "kernel_init"), "/crash/crash.gdb.json")
     source = ast.literal_eval(payload[len("python exec(") : -1])
 
     _FakeBP.created = []
@@ -406,9 +404,7 @@ def test_crash_capture_no_gate_when_sanitizer_list_empty(monkeypatch):
 
     # The default path: empty sanitizer list -> _SAN_BPS stays empty -> NO gate breakpoint is created,
     # even though the gate symbols are embedded in the payload text. Only the fatal breakpoint is armed.
-    payload = _crash_capture_source(
-        ("panic",), (), ("run_init_process", "kernel_init"), "/crash/crash.gdb.json"
-    )
+    payload = _crash_capture_source(("panic",), (), ("run_init_process", "kernel_init"), "/crash/crash.gdb.json")
     source = ast.literal_eval(payload[len("python exec(") : -1])
 
     _FakeBP.created = []

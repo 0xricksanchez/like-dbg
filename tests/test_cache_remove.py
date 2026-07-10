@@ -27,6 +27,7 @@ class FakeC(ContainerService):
 
 class FakeCWithMissingPathError(ContainerService):
     """FakeC that raises ContainerError when unguarded chmod is called on a missing path."""
+
     def __init__(self, missing_path: str):
         self.execs: list[str] = []
         self.missing_path = missing_path

@@ -90,7 +90,9 @@ def test_volume_mode_mounts_named_volume(tmp_path):
 def test_extract_command_issued_and_source_root_set(tmp_path):
     svc = FakeContainerService()
     recipe = _recipe()
-    out = UnpackStage(svc, recipe=recipe, kernel_volume="likedbg_ksrc", workspace=tmp_path).run(_ctx("volume", tmp_path))
+    out = UnpackStage(svc, recipe=recipe, kernel_volume="likedbg_ksrc", workspace=tmp_path).run(
+        _ctx("volume", tmp_path)
+    )
     assert any("tar" in c for c in svc.execs)
     assert out.source_root is not None and recipe.src_label in str(out.source_root)
     assert out.srckey == recipe.src_key

@@ -150,9 +150,7 @@ def test_read_sections_retries_until_text_populated(monkeypatch):
     results = iter(
         [
             types.SimpleNamespace(rc=0, stdout=".data 0xffffffffc0003000\n", stderr=""),  # race: .text absent
-            types.SimpleNamespace(
-                rc=0, stdout=".text 0xffffffffc0001000\n.data 0xffffffffc0003000\n", stderr=""
-            ),
+            types.SimpleNamespace(rc=0, stdout=".text 0xffffffffc0001000\n.data 0xffffffffc0003000\n", stderr=""),
         ]
     )
     monkeypatch.setattr(cli.guest, "run", lambda ep, cmd, **k: next(results))

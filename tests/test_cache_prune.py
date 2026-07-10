@@ -204,7 +204,9 @@ def test_drop_orphaned_source_returns_none_when_still_referenced(tmp_path):
 
 
 def test_drop_orphaned_source_returns_none_when_no_srckey(tmp_path):
-    build = Manifest(kind="build", label="A", key="key-A", version="6.6.30", arch="arm64", srckey="", storage_mode="bind")
+    build = Manifest(
+        kind="build", label="A", key="key-A", version="6.6.30", arch="arm64", srckey="", storage_mode="bind"
+    )
     c = FakeC()
 
     assert drop_orphaned_source(c, tmp_path, build, volume="likedbg_ksrc") is None

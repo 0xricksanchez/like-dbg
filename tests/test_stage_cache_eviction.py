@@ -71,9 +71,7 @@ def test_run_prunes_to_90_percent_low_water_and_protects_current_build(tmp_path,
     out = stage.run(ctx)
 
     assert out is ctx
-    assert calls == [
-        {"target": int(0.9 * 10 * G), "protect": {"current-build"}, "volume": "likedbg_ksrc"}
-    ]
+    assert calls == [{"target": int(0.9 * 10 * G), "protect": {"current-build"}, "volume": "likedbg_ksrc"}]
 
 
 def test_run_falls_back_to_empty_protect_when_no_build_label(tmp_path, monkeypatch):

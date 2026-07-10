@@ -15,7 +15,9 @@ def _cmd(**kw):
 
 
 def test_debuginfod_env_and_mount_when_set():
-    cmd = _cmd(debuginfod_urls="https://debuginfod.elfutils.org", debuginfod_cache=Path("/w/artifacts/cache/debuginfod"))
+    cmd = _cmd(
+        debuginfod_urls="https://debuginfod.elfutils.org", debuginfod_cache=Path("/w/artifacts/cache/debuginfod")
+    )
     assert "-e DEBUGINFOD_URLS=https://debuginfod.elfutils.org" in cmd
     assert f"-e DEBUGINFOD_CACHE_PATH={DEBUGINFOD_CACHE_MOUNT}" in cmd
     assert f"/w/artifacts/cache/debuginfod:{DEBUGINFOD_CACHE_MOUNT}:rw" in cmd

@@ -143,9 +143,7 @@ def test_make_command_includes_arch_llvm_and_nproc():
 
 
 def test_make_command_out_of_tree_includes_dash_c_and_o():
-    cmd = make_command(
-        {"ARCH": "arm64"}, "defconfig", source_root="/ksrc/src/linux-x", objdir="/ksrc/obj/linux-y"
-    )
+    cmd = make_command({"ARCH": "arm64"}, "defconfig", source_root="/ksrc/src/linux-x", objdir="/ksrc/obj/linux-y")
     assert "-C /ksrc/src/linux-x" in cmd
     assert "O=/ksrc/obj/linux-y" in cmd
     assert cmd.endswith("defconfig")

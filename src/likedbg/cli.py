@@ -221,7 +221,7 @@ def explain_config(
 # tmux layout: the host CLI (top-left) and the Debuggee/QEMU console (bottom-left) share the left
 # column; the Debugger (pwndbg/GEF) takes the full-height right column, where it needs the vertical
 # room for registers, disassembly, source, and backtrace. See run_in_new_pane's `full` (-f).
-_DEBUGGER_WIDTH_PCT = 62   # Debugger share of the full window width (spans the full height, on the right)
+_DEBUGGER_WIDTH_PCT = 62  # Debugger share of the full window width (spans the full height, on the right)
 _DEBUGGEE_HEIGHT_PCT = 50  # Debuggee (QEMU) share of the left column height, below the host CLI
 
 
@@ -254,9 +254,7 @@ def _make_pane_launchers(
         nonlocal debuggee_pane
         session.set_option("@likedbg_debuggee_cmd", cmd)
         # Debuggee (QEMU) below the host CLI, in the left column.
-        debuggee_pane = session.run_in_new_pane(
-            target=base_pane, direction="v", percent=_DEBUGGEE_HEIGHT_PCT, cmd=cmd
-        )
+        debuggee_pane = session.run_in_new_pane(target=base_pane, direction="v", percent=_DEBUGGEE_HEIGHT_PCT, cmd=cmd)
         session.set_option("@likedbg_debuggee_pane", debuggee_pane)
         if recorder is not None:
             session.set_option("@likedbg_debuggee_pane_log", str(recorder.debuggee_pane_log))
@@ -586,7 +584,9 @@ def cmd_use(
     debuginfod_enabled = resolve_debuginfod_enabled(use_settings.debugger.debuginfod, is_foreign=False)
     debuginfod_cache = workspace / "artifacts" / "cache" / "debuginfod"
     if debuginfod_enabled:
-        debuginfod_cache.mkdir(parents=True, exist_ok=True)  # pre-create the leaf so docker bind-mounts a host-owned dir, not a root-owned new one
+        debuginfod_cache.mkdir(
+            parents=True, exist_ok=True
+        )  # pre-create the leaf so docker bind-mounts a host-owned dir, not a root-owned new one
     pipeline = build_use_pipeline(
         container,
         session,
@@ -672,7 +672,9 @@ def cmd_foreign(
     debuginfod_enabled = resolve_debuginfod_enabled(cfg.settings.debugger.debuginfod, is_foreign=True)
     debuginfod_cache = workspace / "artifacts" / "cache" / "debuginfod"
     if debuginfod_enabled:
-        debuginfod_cache.mkdir(parents=True, exist_ok=True)  # pre-create the leaf so docker bind-mounts a host-owned dir, not a root-owned new one
+        debuginfod_cache.mkdir(
+            parents=True, exist_ok=True
+        )  # pre-create the leaf so docker bind-mounts a host-owned dir, not a root-owned new one
     pipeline = build_foreign_pipeline(
         container,
         session,
@@ -803,10 +805,7 @@ def summarize_cache(workspace: Path, *, container: ContainerService | None = Non
             size = _build_size(workspace, m, container=container)
             # Only show last_used for builds (rootfs doesn't have it)
             last_used_val = m.last_used if m.kind == "build" else "-"
-            lines.append(
-                f"{m.kind}  {m.label}  {m.version or '-'}  {m.arch}  "
-                f"{size}  {created}  {last_used_val}"
-            )
+            lines.append(f"{m.kind}  {m.label}  {m.version or '-'}  {m.arch}  {size}  {created}  {last_used_val}")
     if sources:
         lines.append("shared sources:")
         for s in sources:
@@ -1326,7 +1325,9 @@ def main(argv: list[str] | None = None) -> int:
         debuginfod_enabled = resolve_debuginfod_enabled(cfg.settings.debugger.debuginfod, is_foreign=False)
         debuginfod_cache = workspace / "artifacts" / "cache" / "debuginfod"
         if debuginfod_enabled:
-            debuginfod_cache.mkdir(parents=True, exist_ok=True)  # pre-create the leaf so docker bind-mounts a host-owned dir, not a root-owned new one
+            debuginfod_cache.mkdir(
+                parents=True, exist_ok=True
+            )  # pre-create the leaf so docker bind-mounts a host-owned dir, not a root-owned new one
         pipeline = build_pipeline(
             container,
             session,
