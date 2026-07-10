@@ -1233,6 +1233,21 @@ def test_explain_config_json_schema_version(tmp_path: Path, monkeypatch) -> None
     assert data["schema_version"] == 1
 
 
+def test_explain_config_surfaces_extra_fragments_and_patch_dirs(tmp_path: Path, monkeypatch) -> None:
+    """--explain-config must show the user's [build] extra_fragments + patch_dirs, not only profile fragments."""
+    _make_explain_project(tmp_path)
+    (tmp_path / "configs" / "default.toml").write_text(
+        '[source]\nkind="mmp"\nvalue="6.6.30"\n'
+        '[build]\nextra_fragments=["configs/fragments/my-feature.config"]\npatch_dirs=["patches/my-fix"]\n'
+    )
+    monkeypatch.chdir(tmp_path)
+    data = json.loads(cli.explain_config(tmp_path, profile_arg="exploit-dev", scenario=None, fmt="json"))
+    assert data["extra_fragments"] == ["configs/fragments/my-feature.config"]
+    assert data["patch_dirs"] == ["patches/my-fix"]
+    text = cli.explain_config(tmp_path, profile_arg="exploit-dev", scenario=None, fmt="text")
+    assert "configs/fragments/my-feature.config" in text and "patches/my-fix" in text
+
+
 # ---------------------------------------------------------------------------
 # FIX 1: patch_dirs wiring through build_pipeline
 # ---------------------------------------------------------------------------

@@ -151,7 +151,7 @@ def explain_config(
     fmt: str,
 ) -> str:
     """Dry-run inspection: resolve profiles and render config summary without touching Docker/tmux/run-dirs."""
-    _cfg, _host, rr = resolve_for_run(workspace, profile_arg=profile_arg, scenario=scenario, cli_overrides=None)
+    cfg, _host, rr = resolve_for_run(workspace, profile_arg=profile_arg, scenario=scenario, cli_overrides=None)
     eff = rr.effective_debuggee
     payload: dict[str, object] = {
         "target_arch": rr.target_arch,
@@ -161,7 +161,11 @@ def explain_config(
             "resolved": list(rr.profiles.names),
             "implied_by": {k: list(v) for k, v in rr.implied_by.items()},
         },
+        # rr.fragments is the profile-resolved set; extra_fragments are appended after it at build time
+        # (profile fragments first, extra_fragments last, later wins on conflicting symbols).
         "fragments": list(rr.fragments),
+        "extra_fragments": list(cfg.settings.build.extra_fragments),
+        "patch_dirs": list(cfg.settings.build.patch_dirs),
         "effective_debuggee": eff.model_dump(),
         "provenance": _provenance_nested(rr.provenance),
         "runtime_notes": list(rr.runtime_notes) + list(rr.runtime_overrides),
@@ -189,6 +193,10 @@ def explain_config(
     base = profiles_info["base"]
     fragments = payload["fragments"]
     assert isinstance(fragments, list)
+    extra_fragments = payload["extra_fragments"]
+    assert isinstance(extra_fragments, list)
+    patch_dirs = payload["patch_dirs"]
+    assert isinstance(patch_dirs, list)
     warnings = payload["warnings"]
     assert isinstance(warnings, list)
     expected = payload["expected_config"]
@@ -196,8 +204,12 @@ def explain_config(
     lines = [
         f"target arch: {payload['target_arch']}",
         f"profiles:    {', '.join(str(p) for p in resolved)} (base {base})",
-        "fragments:",
+        "fragments (from profiles):",
         *[f"  {f}" for f in fragments],
+        "extra fragments (from [build] extra_fragments):",
+        *(([f"  {f}" for f in extra_fragments]) if extra_fragments else ["  (none)"]),
+        "patches (from [build] patch_dirs):",
+        *(([f"  {p}" for p in patch_dirs]) if patch_dirs else ["  (none)"]),
         "warnings:",
         *(([f"  {w}" for w in warnings]) if warnings else ["  (none)"]),
         "expected config (pending build):",
