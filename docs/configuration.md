@@ -134,12 +134,17 @@ workspace-root `patches/` directory, e.g. `patches/my-fix/0001-thing.patch`. A `
 produces a new cached source tree, since patches are part of the source cache key. Worked examples
 for both live in [build-your-own-kernel.md](build-your-own-kernel.md#customize-the-build).
 
-`exploit_flags` are appended to the exploit auto-compile
-(`{arch}-linux-musl-gcc -static <src> {exploit_flags} -o <out>`), after the source so libraries
-(`-l...`) resolve in link order. They apply when LIKE-DBG compiles a flag-less single `.c` delivered
-via `[foreign] exploit`, `--run`, or `--upload`; a prebuilt binary is passed through unchanged, so
-flags do not apply to it. musl folds pthread/rt/dl into libc, so most `-l` flags are no-ops, but
-they are accepted so a challenge's build line copies over verbatim. **macOS note:** the auto-compile
+`exploit_flags` reach a single `zig cc` (gcc-driver) invocation for the one `.c`, so they take
+**both** compile-time flags (`-D...`, `-I...`, `-O2`, `-std=...`, `-g`) **and** linker flags
+(`-lpthread`, `-lm`, `-L...`, `-Wl,...`). Write each as the full flag with its prefix, one token per
+list element (`-lpthread`, not `pthread`; `-D_GNU_SOURCE`, not `_GNU_SOURCE`); a space-separated
+option must be two elements or joined, e.g. `["-I", "/path"]` or `["-I/path"]`, not `["-I /path"]`.
+LIKE-DBG appends them after the source
+(`{arch}-linux-musl-gcc -static <src> {exploit_flags} -o <out>`) so libraries resolve in link order;
+`-D`/`-I` are position-independent, so they still apply. They are used only when LIKE-DBG compiles a
+flag-less single `.c` (via `[foreign] exploit`, `--run`, or `--upload`); a prebuilt binary is passed
+through unchanged. musl folds pthread/rt/dl into libc, so most `-l` flags are no-ops, but they are
+accepted so a challenge's build line copies over verbatim. **macOS note:** the auto-compile
 is reliable on a Linux runtime; on Docker Desktop for macOS, libc-heavy sources (for example
 pthread) can intermittently fail to compile (a zig cache quirk in the LinuxKit VM), so on a Mac
 prefer a prebuilt binary or simply retry. See
