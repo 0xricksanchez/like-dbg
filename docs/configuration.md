@@ -73,6 +73,8 @@ Rules:
   so a profile that silently did not take is caught before you debug.
 - **Custom profiles.** Add a TOML file under `configs/profiles/` to define your own; add-ons may
   declare `implies`, `[[warning]]` blocks, `[[expect]]` checks, and `[runtime_defaults.debuggee]`.
+  See [build-your-own-kernel.md](build-your-own-kernel.md#customize-the-build) for a worked
+  `exploit-dev` excerpt and a minimal custom-profile example.
 
 ## Host-detected settings
 
@@ -122,6 +124,15 @@ to cross-build and boot a foreign-architecture guest.
 | `ccache` | `true` | Cache compilation via ccache (persistent, capped) for fast rebuilds. |
 | `ccache_max_size` | `5G` | Max ccache size (ccache size syntax, e.g. `5G`, `500M`). |
 
+`extra_fragments` entries must live under `configs/fragments/` (a path outside that tree is a
+config error); they are merged over `make defconfig` after the active profiles' own fragments, so
+an extra fragment wins on a conflicting symbol. `patch_dirs` entries are applied with `patch -p1`
+against the pristine, freshly-untarred source, restricted to `.patch`/`.diff` files, in the given
+directory order and alphabetically within a directory; the convention is a gitignored
+workspace-root `patches/` directory, e.g. `patches/my-fix/0001-thing.patch`. A `patch_dirs` change
+produces a new cached source tree, since patches are part of the source cache key. Worked examples
+for both live in [build-your-own-kernel.md](build-your-own-kernel.md#customize-the-build).
+
 ### `[cache]`
 
 | Key | Default | Values and meaning |
@@ -157,8 +168,20 @@ to cross-build and boot a foreign-architecture guest.
 | `share` | `true` | Enable the 9p live share. |
 
 The runtime mitigation toggles (`kaslr`, `smep`, `smap`, `kpti`) may only turn on behavior the
-built kernel actually supports. Asking for a toggle the kernel was not built for is a
-configuration error, not a silent no-op.
+built kernel actually supports, but today only `kaslr` is actually checked against a kconfig
+expectation (`CONFIG_RANDOMIZE_BASE`). For example, `exploit-dev` builds KASLR disabled, so
+setting `[debuggee] kaslr = true` explicitly (in `local.toml`, a scenario, or on the CLI) while
+`exploit-dev` is active fails fast with:
+
+```text
+[debuggee] kaslr=on is impossible: active profiles build CONFIG_RANDOMIZE_BASE disabled
+```
+
+The fix is to drop the explicit toggle, or switch to a base profile that builds KASLR in, e.g.
+`--profile hardened`. `smep`, `smap`, and `kpti` are not currently checked against any kconfig
+expectation, so setting them is only meaningful when the kernel actually supports them (true for
+stock kernels, but not verified by the tool). Note also that `smep`/`smap` are wired as
+x86_64-only QEMU `-cpu` feature flags; the arm64 guest path does not add them.
 
 ### `[debugger]`
 

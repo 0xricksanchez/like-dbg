@@ -56,6 +56,110 @@ uv run ./start_kgdb --explain-config
 uv run ./start_kgdb --explain-config json
 ```
 
+### Customize the build
+
+Beyond version, compiler, and profile, two extension points let you reach further without writing
+a new profile.
+
+**Add a custom kconfig fragment.** A fragment is a partial `.config`: plain kconfig lines, for
+example `CONFIG_FOO=y` or `# CONFIG_BAR is not set`. Create one under `configs/fragments/`:
+
+```sh
+mkdir -p configs/fragments
+cat > configs/fragments/my-feature.config <<'EOF'
+CONFIG_FOO=y
+# CONFIG_BAR is not set
+EOF
+```
+
+Then point `[build] extra_fragments` at it, in `configs/local.toml` or a scenario:
+
+```toml
+[build]
+extra_fragments = ["configs/fragments/my-feature.config"]
+```
+
+Every `extra_fragments` path must live under `configs/fragments/`; a path outside that tree is a
+config error. Fragments are applied over `make defconfig` via `scripts/kconfig/merge_config.sh -m`,
+then `make olddefconfig` resolves newly-enabled dependencies. Merge order is the active profiles'
+fragments first, then `extra_fragments` last, so your fragment wins on a conflicting symbol.
+Verify what actually applied without rebuilding:
+
+```sh
+uv run ./start_kgdb --explain-config
+```
+
+which lists profile fragments, extra fragments, and patches for the resolved config.
+
+**Patch the kernel source.** `[build] patch_dirs` applies patch files to the freshly-untarred,
+pristine source before the build starts. Put personal patches under a workspace-root `patches/`
+directory (gitignored):
+
+```sh
+mkdir -p patches/my-fix
+# drop 0001-thing.patch (or a .diff) into patches/my-fix/
+```
+
+```toml
+[build]
+patch_dirs = ["patches/my-fix"]
+```
+
+Only files ending `.patch` or `.diff` are applied, found recursively; directories apply in the
+list order given, and files within a directory apply in alphabetical order. Each patch is applied
+with `patch -p1 -i <file>`, so it must apply cleanly at `-p1` against a stock upstream tree.
+Changing `patch_dirs` changes the source identity (patches are part of the cache key), so it
+produces a new shared source tree, which `--list`/`--clean` account for separately.
+
+**Define a debug profile.** A profile bundles fragments plus post-build `.config` checks, warnings,
+implied profiles, and runtime defaults under one name, so `--profile <name>` captures a whole
+debugging intent instead of a loose list of fragments. The shipped profiles live in
+`configs/profiles/` (`exploit-dev`, `hardened`, `crash-debug`, `kasan`, `ubsan`, ...); read those
+for real examples. `exploit-dev`, the default, is a `base` profile:
+
+```toml
+# configs/profiles/exploit-dev.toml (excerpt)
+name = "exploit-dev"
+kind = "base"                         # exactly one base is active; base profiles set KASLR policy
+description = "Convenient exploit research baseline."
+fragments = ["configs/fragments/no-kaslr.config", "configs/fragments/debug.config"]
+
+[[expect]]                            # verified against the built .config
+symbol = "CONFIG_RANDOMIZE_BASE"
+value = "n"
+severity = "hard"                     # hard aborts the boot; soft only warns
+```
+
+To add your own, drop a TOML file in `configs/profiles/`. A minimal add-on (add-ons stack on the
+base and may pull in others):
+
+```toml
+# configs/profiles/my-debug.toml
+name = "my-debug"
+kind = "addon"
+description = "My extra debug knobs."
+implies = ["crash-debug"]                                  # optional: pull in another profile
+fragments = ["configs/fragments/profiles/my-debug.config"]
+
+[[expect]]
+symbol = "CONFIG_PROVE_LOCKING"
+value = "y"
+severity = "soft"
+
+[[warning]]                                                # optional advisory shown at resolve time
+message = "my-debug is slow under TCG."
+accel = ["tcg"]
+
+[runtime_defaults.debuggee]                                # optional [debuggee] defaults this profile sets
+smap = false
+```
+
+Then select it (comma-separated, one base plus any add-ons) and inspect the result:
+
+```sh
+uv run ./start_kgdb --profile exploit-dev,my-debug --explain-config
+```
+
 ## 2. Build and boot
 
 ```sh

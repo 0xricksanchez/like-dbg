@@ -6,5 +6,9 @@
 # kind = "tag"
 # value = "v6.9"
 
+[build]
+# extra_fragments = ["configs/fragments/my-feature.config"]  # must live under configs/fragments/
+# patch_dirs = ["patches/my-fix"]                             # applied -p1, alphabetical within a dir
+
 [debugger]
 # ext = "gef"        # pwndbg is the default; opt into gef here

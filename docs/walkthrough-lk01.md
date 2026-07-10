@@ -213,6 +213,7 @@ the report.
   standard use-after-free-to-arbitrary-read/write path.
 - **Change the difficulty with mitigations.** Rebuild with `--profile hardened`, or toggle
   `kaslr`, `smep`, `smap`, and `kpti` at runtime (see [configuration.md](configuration.md)), and
-  watch how each one changes the work.
+  watch how each one changes the work. This walkthrough's `exploit-dev` kernel leaves SMEP, SMAP,
+  and KPTI on by default; only KASLR is off.
 - **Iterate.** Edit `exploit/expl.c` and `--run` it again; module symbols and the crash loop stay
   wired up, so each attempt lands you back at the fault with full context.

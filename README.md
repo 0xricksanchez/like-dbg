@@ -49,8 +49,9 @@ There are two ways to get a kernel:
 - **TOML config with debug profiles.** A layered TOML stack (project defaults, personal local
   overrides, named scenarios, CLI) plus named profiles (`exploit-dev`, `hardened`, `kasan`,
   `ubsan`, `lockdep`, and more) that resolve to kernel config fragments and runtime defaults.
-  Post-build `.config` verification catches a profile that did not take. See
-  [docs/configuration.md](docs/configuration.md).
+  Post-build `.config` verification catches a profile that did not take. Note that `exploit-dev`
+  (the default) only turns KASLR off; SMEP, SMAP, and KPTI stay on unless you switch profiles or
+  toggle them yourself (see [docs/configuration.md](docs/configuration.md#debuggee)).
 - **Modern debugger.** Kernel runs default to pwndbg for its kernel command set (KASLR base,
   slab, `current`, task and module walking, symbol lookup); GEF is a one-line switch.
 - **Exploit-dev inner loop.** `--run` and `--upload` deliver an exploit to the live guest over a
