@@ -613,3 +613,55 @@ def test_cache_miss_on_image_change_regenerates(tmp_path: Path) -> None:
     extract_vmlinux(c, img, out, image="like_musl:latest")
     assert "vmlinux-to-elf" in " ".join(c.execs)  # stale hash -> regenerated
     assert _stamp(out)["state"] == "RECOVERED"
+
+
+# ---- [build] exploit_flags (extra compile/link flags for the exploit auto-compile) ----
+
+
+def test_musl_compile_places_flags_after_source_for_link_order() -> None:
+    from likedbg.foreign import _musl_compile
+
+    cmd = _musl_compile("x86_64", "'/src/e.c'", "'/out/e'", ("-lpthread", "-D_GNU_SOURCE"))
+    assert cmd == "x86_64-linux-musl-gcc -static '/src/e.c' -lpthread -D_GNU_SOURCE -o '/out/e'"
+    # libraries (-l...) must come AFTER the source and before -o so they resolve in link order
+    assert cmd.index("/src/e.c") < cmd.index("-lpthread") < cmd.index("-o '/out/e'")
+
+
+def test_musl_compile_quotes_each_flag() -> None:
+    from likedbg.foreign import _musl_compile
+
+    cmd = _musl_compile("x86_64", "s", "o", ("-D X=1 2",))
+    assert "'-D X=1 2'" in cmd  # a flag with spaces stays a single token
+
+
+def test_musl_compile_no_flags_unchanged() -> None:
+    from likedbg.foreign import _musl_compile
+
+    assert _musl_compile("arm64", "s", "o") == "aarch64-linux-musl-gcc -static s -o o"
+
+
+def test_compile_exploit_threads_exploit_flags(tmp_path: Path) -> None:
+    from likedbg.foreign import compile_exploit
+
+    src = tmp_path / "s" / "e.c"
+    src.parent.mkdir()
+    src.write_text("int main(void){return 0;}\n")
+    out = tmp_path / "o" / "e"
+    c = _FakeContainer(make_out=out, out_bytes=b"\x7fELF")
+    compile_exploit(c, src=src, arch="x86_64", out=out, image="like_musl:latest", extra_flags=("-lpthread",))
+    assert "-lpthread" in " ".join(c.execs)
+
+
+def test_repack_threads_exploit_flags(tmp_path: Path) -> None:
+    from likedbg.foreign import repack_initramfs
+
+    initramfs = tmp_path / "in" / "rootfs.cpio"
+    initramfs.parent.mkdir()
+    initramfs.write_bytes(b"cpio")
+    src = tmp_path / "s" / "e.c"
+    src.parent.mkdir()
+    src.write_text("int main(void){return 0;}\n")
+    out = tmp_path / "o" / "rootfs.cpio"
+    c = _FakeContainer(make_out=out, out_bytes=b"cpio")
+    repack_initramfs(c, initramfs=initramfs, exploit=src, arch="x86_64", out=out, image="m", extra_flags=("-lm",))
+    assert "-lm" in " ".join(c.execs)

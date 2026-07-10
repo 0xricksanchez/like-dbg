@@ -53,6 +53,7 @@ from likedbg.foreign import ForeignError
 from likedbg.foreign import ForeignKernel
 from likedbg.foreign import compile_exploit
 from likedbg.foreign import console_upload
+from likedbg.foreign import exploit_flags_for
 from likedbg.foreign import resolve_foreign
 from likedbg.foreign import resolve_input_path
 from likedbg.gdbcmd import resolve_debuginfod_enabled
@@ -486,6 +487,7 @@ def build_foreign_pipeline(
     debuginfod_enabled: bool = False,
     debuginfod_urls: str = "",
     debuginfod_cache: Path | None = None,
+    exploit_flags: tuple[str, ...] = (),
 ) -> Pipeline:
     # ADR-0010: a foreign guest has no exploit share (no guest-side delivery path): never mount one,
     # and DebuggerStage below is left at its modules_gdb=None default (no modules.gdb to watch).
@@ -504,7 +506,14 @@ def build_foreign_pipeline(
     return Pipeline(
         [
             ForeignAdoptStage(foreign=foreign, qemu_extra=qemu_extra),
-            ForeignRepackStage(container, foreign=foreign, exploit=exploit, image=musl_image, out_dir=out_dir),
+            ForeignRepackStage(
+                container,
+                foreign=foreign,
+                exploit=exploit,
+                image=musl_image,
+                out_dir=out_dir,
+                exploit_flags=exploit_flags,
+            ),
             DebuggeeStage(launch=launch_debuggee, debuggee_image=debuggee_image, workspace=workspace),
             DebuggerStage(
                 ext=ext,
@@ -696,6 +705,7 @@ def cmd_foreign(
         debuginfod_enabled=debuginfod_enabled,
         debuginfod_urls=cfg.settings.debugger.debuginfod_urls,
         debuginfod_cache=debuginfod_cache,
+        exploit_flags=cfg.settings.build.exploit_flags,
     )
     pipeline.run(ctx)
     return 0
@@ -1131,7 +1141,12 @@ def cmd_upload(workspace: Path, *, run_id: str, file: str) -> int:
         container = ContainerService(docker_env.make_client(host=docker_env.resolve_docker_host(env=os.environ)))
         _ensure_images(container, workspace, specs=images.foreign_prep_images())
         f = compile_exploit(
-            container, src=f, arch=host_json["target_arch"], out=run_dir / "exploit" / f.stem, image=MUSL_IMAGE
+            container,
+            src=f,
+            arch=host_json["target_arch"],
+            out=run_dir / "exploit" / f.stem,
+            image=MUSL_IMAGE,
+            extra_flags=exploit_flags_for(workspace),
         )
     console_upload(
         session,

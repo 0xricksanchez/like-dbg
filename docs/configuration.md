@@ -123,6 +123,7 @@ to cross-build and boot a foreign-architecture guest.
 | `extra_fragments` | empty | Extra kconfig fragments (must live under `configs/fragments/`). |
 | `ccache` | `true` | Cache compilation via ccache (persistent, capped) for fast rebuilds. |
 | `ccache_max_size` | `5G` | Max ccache size (ccache size syntax, e.g. `5G`, `500M`). |
+| `exploit_flags` | empty | Extra flags for the exploit auto-compile, e.g. `["-lpthread", "-D_GNU_SOURCE"]`. |
 
 `extra_fragments` entries must live under `configs/fragments/` (a path outside that tree is a
 config error); they are merged over `make defconfig` after the active profiles' own fragments, so
@@ -132,6 +133,17 @@ directory order and alphabetically within a directory; the convention is a gitig
 workspace-root `patches/` directory, e.g. `patches/my-fix/0001-thing.patch`. A `patch_dirs` change
 produces a new cached source tree, since patches are part of the source cache key. Worked examples
 for both live in [build-your-own-kernel.md](build-your-own-kernel.md#customize-the-build).
+
+`exploit_flags` are appended to the exploit auto-compile
+(`{arch}-linux-musl-gcc -static <src> {exploit_flags} -o <out>`), after the source so libraries
+(`-l...`) resolve in link order. They apply when LIKE-DBG compiles a flag-less single `.c` delivered
+via `[foreign] exploit`, `--run`, or `--upload`; a prebuilt binary is passed through unchanged, so
+flags do not apply to it. musl folds pthread/rt/dl into libc, so most `-l` flags are no-ops, but
+they are accepted so a challenge's build line copies over verbatim. **macOS note:** the auto-compile
+is reliable on a Linux runtime; on Docker Desktop for macOS, libc-heavy sources (for example
+pthread) can intermittently fail to compile (a zig cache quirk in the LinuxKit VM), so on a Mac
+prefer a prebuilt binary or simply retry. See
+[ctf-foreign-kernel.md](ctf-foreign-kernel.md#deliver-an-exploit).
 
 ### `[cache]`
 

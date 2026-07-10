@@ -105,6 +105,16 @@ uv run ./start_kgdb --upload ./exploit/poc      # a prebuilt binary is streamed 
 The auto-compile boundary and the prebuilt-binary escape hatch are the same as for a self-built
 kernel; see [exploit/README.md](../exploit/README.md).
 
+To pass extra compiler/linker flags to that auto-compile (for example a challenge's `-lpthread`),
+set `[build] exploit_flags` (see [configuration.md](configuration.md#build)). They are appended
+after the source so libraries resolve in link order; musl folds most system libraries into libc, so
+many `-l` flags are no-ops, but a challenge's build line still copies over verbatim.
+
+**macOS note.** The auto-compile is reliable on a Linux runtime; on Docker Desktop for macOS,
+libc-heavy sources (for example pthread) can intermittently fail with a zig cache error
+(`CacheCheckFailed`) inside its LinuxKit VM. On a Mac, retry, or deliver a prebuilt static binary
+(cross-compiled on your host) instead.
+
 ## Mirror the challenge's QEMU setup
 
 Match the challenge's runtime so your exploit behaves as it does on the remote:

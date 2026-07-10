@@ -88,6 +88,8 @@ class BuildCfg(_Base):
     extra_fragments: tuple[str, ...] = ()
     ccache: bool = True
     ccache_max_size: str = "5G"
+    # extra flags for the exploit auto-compile (e.g. ["-lpthread", "-D_GNU_SOURCE"])
+    exploit_flags: tuple[str, ...] = ()
 
     @field_validator("patch_dirs", "custom_modules", mode="before")
     @classmethod

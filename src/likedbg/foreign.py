@@ -16,6 +16,7 @@ from typing import Literal
 from loguru import logger
 
 from likedbg.config import ForeignCfg
+from likedbg.config import load_config
 from likedbg.constants import V2E_VERSION
 from likedbg.errors import ContainerError
 from likedbg.errors import LikeDbgError
@@ -290,18 +291,27 @@ def resolve_foreign(
 _MUSL_GCC = {"x86_64": "x86_64-linux-musl-gcc", "arm64": "aarch64-linux-musl-gcc"}
 
 
-def _musl_compile(arch: str, src_q: str, out_q: str) -> str:
+def _musl_compile(arch: str, src_q: str, out_q: str, extra_flags: tuple[str, ...] = ()) -> str:
     """The musl-static cross-compile command fragment (shared by repack + compile_exploit).
-    Relies on the like_musl image pre-warming zig's global cache (a cold cache build races under
-    concurrent load -> zig 'CacheCheckFailed'; see .dockerfile_musl and the x86 live gate)."""
+    `extra_flags` are the user's [build] exploit_flags; they are quoted here and placed AFTER the
+    source so libraries (-l...) resolve in link order (musl folds pthread/rt/dl into libc, so most
+    are no-ops, but a challenge's verbatim build line still works). `src_q`/`out_q` arrive quoted.
+
+    Reliable on native Linux; on Docker Desktop for macOS the LinuxKit VM's virtualized filesystem
+    intermittently fails zig's from-source musl-build cache check ('CacheCheckFailed') for libc-heavy
+    programs (e.g. pthread) - a Mac-only quirk, see docs/ctf-foreign-kernel.md and ADR-0016."""
     if arch not in _MUSL_GCC:
         raise ForeignError(f"unsupported arch {arch!r}", remedy="use x86_64 or arm64")
-    return f"{_MUSL_GCC[arch]} -static {src_q} -o {out_q}"
+    flags = "".join(f" {shlex.quote(f)}" for f in extra_flags)
+    return f"{_MUSL_GCC[arch]} -static {src_q}{flags} -o {out_q}"
 
 
-def compile_exploit(container: Any, *, src: Path, arch: str, out: Path, image: str) -> Path:
-    """Cross-compile a single `.c` to a static musl binary for `arch` in the like_musl container.
-    Raises ForeignError on an unknown arch or if no output is produced.
+def compile_exploit(
+    container: Any, *, src: Path, arch: str, out: Path, image: str, extra_flags: tuple[str, ...] = ()
+) -> Path:
+    """Cross-compile a single `.c` to a static musl binary for `arch` in the like_musl container,
+    with the user's [build] exploit_flags. Raises ForeignError on an unknown arch or if no output is
+    produced.
 
     Paths are resolved to ABSOLUTE before mounting: a relative host path (e.g. `--run exploit/x.c`)
     would be treated by Docker as a NAMED VOLUME, not a bind mount, so `/src/<file>` would not exist
@@ -312,7 +322,7 @@ def compile_exploit(container: Any, *, src: Path, arch: str, out: Path, image: s
     volumes, (src_path, out_path) = _dedup_mounts(
         [("/src", src.parent, "ro", src.name), ("/out", out.parent, "rw", out.name)]
     )
-    cmd = _musl_compile(arch, shlex.quote(src_path), shlex.quote(out_path))
+    cmd = _musl_compile(arch, shlex.quote(src_path), shlex.quote(out_path), extra_flags)
     c = container.run_detached(image, volumes=volumes, detach=True, tty=True)
     try:
         container.exec(c, cmd)
@@ -326,12 +336,21 @@ def compile_exploit(container: Any, *, src: Path, arch: str, out: Path, image: s
     return out
 
 
-def _repack_command(in_path: str, src_path: str, arch: str, out_path: str) -> str:
+def exploit_flags_for(workspace: Path) -> tuple[str, ...]:
+    """The user's [build] exploit_flags, or () when the workspace has no project config -- the
+    --run/--upload paths are config-optional (they read only the run's host.json/run.json), so a
+    missing config must not make them fail; a present-but-malformed config still errors via load_config."""
+    if not (workspace / "configs" / "default.toml").exists():
+        return ()
+    return load_config(workspace).settings.build.exploit_flags
+
+
+def _repack_command(in_path: str, src_path: str, arch: str, out_path: str, extra_flags: tuple[str, ...] = ()) -> str:
     in_q = shlex.quote(in_path)
     src_q = shlex.quote(src_path)
     out_q = shlex.quote(out_path)
     if src_path.endswith(".c"):
-        inject = _musl_compile(arch, src_q, "/work/rootfs/exploit")
+        inject = _musl_compile(arch, src_q, "/work/rootfs/exploit", extra_flags)
     else:
         inject = f"cp {src_q} /work/rootfs/exploit && chmod +x /work/rootfs/exploit"
     unpack = f"if gzip -t {in_q} 2>/dev/null; then gzip -dc {in_q} | cpio -idm; else cpio -idm < {in_q}; fi"
@@ -351,10 +370,12 @@ def repack_initramfs(
     arch: str,
     out: Path,
     image: str,
+    extra_flags: tuple[str, ...] = (),
 ) -> Path:
     """Unpack the foreign initramfs, inject the exploit at /exploit (musl-static compile of a
-    .c, else copy a prebuilt static binary), repack (newc [+gzip]) to `out` in the like_musl
-    container. Compiling to the FOREIGN arch is why `arch` is threaded in."""
+    .c with the user's [build] exploit_flags, else copy a prebuilt static binary), repack
+    (newc [+gzip]) to `out` in the like_musl container. Compiling to the FOREIGN arch is why
+    `arch` is threaded in."""
     out.parent.mkdir(parents=True, exist_ok=True)
     volumes, (in_path, src_path, out_path) = _dedup_mounts(
         [
@@ -363,7 +384,7 @@ def repack_initramfs(
             ("/out", out.parent, "rw", out.name),
         ]
     )
-    cmd = _repack_command(in_path, src_path, arch, out_path)
+    cmd = _repack_command(in_path, src_path, arch, out_path, extra_flags)
     c = container.run_detached(image, volumes=volumes, detach=True, tty=True)
     try:
         container.exec(c, cmd)

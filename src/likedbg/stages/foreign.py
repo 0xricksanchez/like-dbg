@@ -58,12 +58,14 @@ class ForeignRepackStage:
         exploit: Path | None,
         image: str,
         out_dir: Path,
+        exploit_flags: tuple[str, ...] = (),
     ) -> None:
         self._c = container
         self._foreign = foreign
         self._exploit = exploit
         self._image = image
         self._out_dir = out_dir
+        self._exploit_flags = exploit_flags
 
     def should_skip(self, ctx: PipelineContext) -> bool:
         if self._exploit is not None and self._foreign.initramfs is None:
@@ -82,6 +84,7 @@ class ForeignRepackStage:
             arch=ctx.host.target_arch,
             out=self._out_dir / "initramfs.repacked.cpio.gz",
             image=self._image,
+            extra_flags=self._exploit_flags,
         )
         ctx.rootfs_image = repacked
         return ctx

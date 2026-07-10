@@ -263,10 +263,10 @@ def test_cmd_upload_compiles_c_before_console_upload(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "ContainerService", lambda *a, **k: object())
     monkeypatch.setattr(cli.docker_env, "make_client", lambda **k: object())
 
-    def fake_compile(container, *, src, arch, out, image):
+    def fake_compile(container, *, src, arch, out, image, extra_flags=()):
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_bytes(b"\x7fELF")
-        seen.update(arch=arch)
+        seen.update(arch=arch, extra_flags=extra_flags)
         return out
 
     monkeypatch.setattr(cli, "compile_exploit", fake_compile)
