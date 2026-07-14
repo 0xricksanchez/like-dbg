@@ -1,67 +1,91 @@
 # Contributing to LIKE-DBG
 
-I'd love your input!
-Contributing to this project should be as easy and transparent as possible, whether it's:
+Thanks for taking an interest in LIKE-DBG. Contributions that make kernel debugging,
+exploit development, and CTF workflows clearer, more reliable, or easier to use are welcome.
 
-- Reporting a bug
-- Discussing the current state of the code
-- Submitting a fix
-- Proposing new features
-- Becoming a maintainer
+For questions, early ideas, and design discussions, use
+[GitHub Discussions](https://github.com/0xricksanchez/like-dbg/discussions). For a reproducible
+problem or a scoped proposal, open an
+[issue](https://github.com/0xricksanchez/like-dbg/issues). Please read the
+[Code of Conduct](CODE_OF_CONDUCT.md) before participating.
 
+## Before you start
 
-## Code of Conduct
-I have adopted a Code of Conduct that I expect project participants to adhere to. 
-Please [read the full text](https://github.com/0xricksanchez/like-dbg/blob/main/CODE_OF_CONDUCT.md) so that you can understand what actions will and will not be tolerated.
+LIKE-DBG is a Python 3.12+ project that runs its build and test tooling through
+[uv](https://docs.astral.sh/uv/). The lab itself also needs Docker and tmux. See the
+[README](README.md#requirements) for the full host requirements and setup instructions.
 
-## Discussions
-If you're curious about a feature, the state of development, want to adapt this project for another use-case, or have anything else on your mind feel free to head over to the [discussions page](https://github.com/0xricksanchez/like-dbg/discussions).
-This will be the best place to discuss topics in detail.
+Fork the repository, create a branch from `main`, then install the development environment:
 
-## Developing with Github
+```sh
+uv sync
+```
 
-The typical [Github Flow](https://docs.github.com/en/get-started/quickstart/github-flow) is employed here.
-So, all code changes happen through pull requests.
-Pull requests are the best way to propose changes to the codebase. I'll actively welcome your pull requests:
+The main Python package is in `src/likedbg/`; tests live in `tests/`. Configuration defaults,
+profiles, scenarios, and kernel config fragments live in `configs/`. The project documentation
+in `docs/` describes the supported workflows and should stay in step with user-facing changes.
 
-1. Fork the repo and create your branch from `main`.
-2. If you've added code that should be tested, add tests.
-3. If you've changed APIs, update the documentation.
-4. Ensure the test suite passes.
-5. Make sure your code lints.
-6. Issue that pull request!
+## Making a change
 
-## Any contributions you make will be under the MIT Software License
-In short, when you submit code changes, your submissions are understood to be under the same [MIT License](http://choosealicense.com/licenses/mit/) that covers the project. 
-Feel free to contact the maintainers if that's a concern.
+Keep each pull request focused. Explain the problem it solves, describe the approach, and call
+out any changes to configuration, host requirements, Docker images, or guest behaviour.
 
-## Report bugs using Github's [issues](https://github.com/0xricksanchez/like-dbg/issues)
-GitHub issues is used to track bugs. Report a bug by [opening a new issue](https://github.com/0xricksanchez/like-dbg/issues/new/choose); it's that easy!
+Add or update tests for behaviour changes. Update the relevant documentation when a command,
+configuration option, profile, workflow, or supported platform changes. Changes to Dockerfiles or
+baked scripts require rebuilding the images before a live test:
 
-## Write bug reports with detail, background, and sample code
+```sh
+just build-images
+```
 
-**Great Bug Reports** tend to have:
+Do not include generated run artifacts, local configuration, caches, or unrelated formatting
+changes in a pull request.
 
-- A quick summary and/or background
-- Steps to reproduce
-  - Be specific!
-  - Give sample code if you can.
-- What you expected would happen
-- What actually happens
-- Notes (possibly including why you think this might be happening, or stuff you tried that didn't work)
+## Checks
 
-People *love* thorough bug reports. I'm not even kidding.
+Run these checks before opening a pull request:
 
-## Use a Consistent Coding Style
+```sh
+just test
+just lint
+```
 
-This project employs several linters to ensure a consistent coding style:
+`just test` runs the pytest suite. `just lint` runs Ruff's lint and format checks, followed by
+strict mypy checks for `src/likedbg`. The continuous integration workflow runs the same quality
+checks and collects test coverage.
 
- - [black](https://black.readthedocs.io/en/stable/index.html)
- - [shellcheck](https://www.shellcheck.net/)
+For a small, isolated change, start by running the affected test file while you work, then run
+the full checks before submitting:
 
+```sh
+uv run pytest tests/test_config_loader.py -q
+```
+
+## Reporting bugs
+
+Please include enough detail for someone else to reproduce the issue:
+
+- A short description of the problem and the expected result.
+- The command and relevant configuration or scenario.
+- Host operating system, architecture, Docker runtime, and Python version.
+- The relevant logs, error output, or a minimal reproducer.
+- Whether the issue occurs with a self-built kernel, a foreign kernel, or both.
+
+Remove credentials, private images, challenge files, and other sensitive material before posting.
+
+## Pull requests
+
+Pull requests are reviewed through the usual GitHub flow:
+
+1. Fork the repository and branch from `main`.
+2. Make a focused change with tests and documentation where needed.
+3. Run `just test` and `just lint`.
+4. Open a pull request that explains what changed and how you verified it.
+
+Maintainers may ask for changes, suggest a different direction, or close a proposal that does not
+fit the project's goals. That is part of keeping the project maintainable.
 
 ## License
-By contributing, you agree that your contributions will be licensed under its MIT License.
 
-## References
-This document was adapted from the open-source contribution guidelines for [Facebook's Draft](https://github.com/facebook/draft-js/blob/main/CONTRIBUTING.md)
+By contributing, you agree that your contributions are licensed under the repository's
+[MIT License](LICENSE).
