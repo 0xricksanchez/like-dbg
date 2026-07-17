@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from likedbg.constants import LIKEDBG_ZIG_CACHE_VOLUME
 from likedbg.constants import V2E_VERSION
 from likedbg.errors import ContainerError
 from likedbg.errors import LikeDbgError
@@ -159,7 +160,9 @@ def test_compile_exploit_resolves_relative_src_to_absolute_mount(tmp_path, monke
     c = _FakeContainer(make_out=out, out_bytes=b"\x7fELF")
     compile_exploit(c, src=Path("exploit/e.c"), arch="x86_64", out=out, image="like_musl:latest")
     for host_path in c.run_kwargs["volumes"]:
-        assert host_path.startswith("/"), f"non-absolute mount host path: {host_path}"
+        if host_path == LIKEDBG_ZIG_CACHE_VOLUME:
+            continue  # the persistent zig cache is a legitimate named volume, not a bind mount
+        assert host_path.startswith("/")
     assert str((tmp_path / "exploit").resolve()) in c.run_kwargs["volumes"]
 
 
@@ -359,7 +362,7 @@ def test_repack_initramfs_same_dir_initramfs_and_exploit_shares_one_mount(tmp_pa
     assert "/in" in binds  # the /in bind must not be dropped
     assert vols[str(challenge_dir)]["bind"] == "/in"
     assert vols[str(out.parent)] == {"bind": "/out", "mode": "rw"}
-    assert len(vols) == 2  # challenge dir shares one mount, out gets its own
+    assert len(vols) == 3  # challenge dir shares one mount, out gets its own, zig cache is third
 
     cmd = " ".join(c.execs)
     assert "/in/initramfs.cpio.gz" in cmd  # both files referenced under the shared /in mount
@@ -622,7 +625,8 @@ def test_musl_compile_places_flags_after_source_for_link_order() -> None:
     from likedbg.foreign import _musl_compile
 
     cmd = _musl_compile("x86_64", "'/src/e.c'", "'/out/e'", ("-lpthread", "-D_GNU_SOURCE"))
-    assert cmd == "x86_64-linux-musl-gcc -static '/src/e.c' -lpthread -D_GNU_SOURCE -o '/out/e'"
+    # The command is prefixed with ZIG_GLOBAL_CACHE_DIR env var, but the gcc invocation remains
+    assert "x86_64-linux-musl-gcc -static '/src/e.c' -lpthread -D_GNU_SOURCE -o '/out/e'" in cmd
     # libraries (-l...) must come AFTER the source and before -o so they resolve in link order
     assert cmd.index("/src/e.c") < cmd.index("-lpthread") < cmd.index("-o '/out/e'")
 
@@ -637,7 +641,9 @@ def test_musl_compile_quotes_each_flag() -> None:
 def test_musl_compile_no_flags_unchanged() -> None:
     from likedbg.foreign import _musl_compile
 
-    assert _musl_compile("arm64", "s", "o") == "aarch64-linux-musl-gcc -static s -o o"
+    cmd = _musl_compile("arm64", "s", "o")
+    # The command is prefixed with ZIG_GLOBAL_CACHE_DIR env var, but the gcc invocation remains
+    assert "aarch64-linux-musl-gcc -static s -o o" in cmd
 
 
 def test_compile_exploit_threads_exploit_flags(tmp_path: Path) -> None:
@@ -665,3 +671,49 @@ def test_repack_threads_exploit_flags(tmp_path: Path) -> None:
     c = _FakeContainer(make_out=out, out_bytes=b"cpio")
     repack_initramfs(c, initramfs=initramfs, exploit=src, arch="x86_64", out=out, image="m", extra_flags=("-lm",))
     assert "-lm" in " ".join(c.execs)
+
+
+# ---- persistent zig cache for warm musl compiles (Part A, 2026-07; ADR-0016) ----
+
+
+def test_musl_compile_sets_persistent_zig_cache_env():
+    from likedbg.foreign import _musl_compile
+
+    cmd = _musl_compile("x86_64", "'/src/e.c'", "'/out/e'")
+    assert cmd.startswith("ZIG_GLOBAL_CACHE_DIR=/zig-cache ")
+    assert "x86_64-linux-musl-gcc -static '/src/e.c' -o '/out/e'" in cmd
+
+
+def test_compile_exploit_mounts_zig_cache_volume(tmp_path):
+    from likedbg.constants import LIKEDBG_ZIG_CACHE_VOLUME
+    from likedbg.foreign import compile_exploit
+
+    src = tmp_path / "src" / "e.c"
+    src.parent.mkdir()
+    src.write_text("int main(void){return 0;}\n")
+    out = tmp_path / "out" / "e"
+    c = _FakeContainer(make_out=out, out_bytes=b"\x7fELFbin")
+
+    compile_exploit(c, src=src, arch="x86_64", out=out, image="like_musl:latest")
+
+    vols = c.run_kwargs["volumes"]
+    assert vols[LIKEDBG_ZIG_CACHE_VOLUME] == {"bind": "/zig-cache", "mode": "rw"}
+    assert "ZIG_GLOBAL_CACHE_DIR=/zig-cache" in " ".join(c.execs)
+
+
+def test_repack_initramfs_mounts_zig_cache_volume(tmp_path):
+    from likedbg.constants import LIKEDBG_ZIG_CACHE_VOLUME
+    from likedbg.foreign import repack_initramfs
+
+    initramfs = tmp_path / "in" / "initramfs.cpio.gz"
+    initramfs.parent.mkdir()
+    initramfs.write_bytes(b"\x1f\x8b\x08\x00")
+    exploit = tmp_path / "e.c"
+    exploit.write_text("int main(void){return 0;}\n")
+    out = tmp_path / "o" / "initramfs.repacked.cpio.gz"
+    c = _FakeContainer(make_out=out, out_bytes=b"\x1f\x8bxx")
+
+    repack_initramfs(c, initramfs=initramfs, exploit=exploit, arch="x86_64", out=out, image="like_musl:latest")
+
+    vols = c.run_kwargs["volumes"]
+    assert vols[LIKEDBG_ZIG_CACHE_VOLUME] == {"bind": "/zig-cache", "mode": "rw"}

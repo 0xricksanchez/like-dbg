@@ -17,7 +17,9 @@ from loguru import logger
 
 from likedbg.config import ForeignCfg
 from likedbg.config import load_config
+from likedbg.constants import LIKEDBG_ZIG_CACHE_VOLUME
 from likedbg.constants import V2E_VERSION
+from likedbg.constants import ZIG_CACHE_MOUNT
 from likedbg.errors import ContainerError
 from likedbg.errors import LikeDbgError
 
@@ -303,7 +305,9 @@ def _musl_compile(arch: str, src_q: str, out_q: str, extra_flags: tuple[str, ...
     if arch not in _MUSL_GCC:
         raise ForeignError(f"unsupported arch {arch!r}", remedy="use x86_64 or arm64")
     flags = "".join(f" {shlex.quote(f)}" for f in extra_flags)
-    return f"{_MUSL_GCC[arch]} -static {src_q}{flags} -o {out_q}"
+    # ZIG_GLOBAL_CACHE_DIR points zig at the persistent named volume so the from-source musl
+    # libc.a is built once and reused (cold ~20s, warm ~1-2s). See ADR-0016 / the Part A gate.
+    return f"ZIG_GLOBAL_CACHE_DIR={ZIG_CACHE_MOUNT} {_MUSL_GCC[arch]} -static {src_q}{flags} -o {out_q}"
 
 
 def compile_exploit(
@@ -322,6 +326,7 @@ def compile_exploit(
     volumes, (src_path, out_path) = _dedup_mounts(
         [("/src", src.parent, "ro", src.name), ("/out", out.parent, "rw", out.name)]
     )
+    volumes[LIKEDBG_ZIG_CACHE_VOLUME] = {"bind": ZIG_CACHE_MOUNT, "mode": "rw"}
     cmd = _musl_compile(arch, shlex.quote(src_path), shlex.quote(out_path), extra_flags)
     c = container.run_detached(image, volumes=volumes, detach=True, tty=True)
     try:
@@ -384,6 +389,7 @@ def repack_initramfs(
             ("/out", out.parent, "rw", out.name),
         ]
     )
+    volumes[LIKEDBG_ZIG_CACHE_VOLUME] = {"bind": ZIG_CACHE_MOUNT, "mode": "rw"}
     cmd = _repack_command(in_path, src_path, arch, out_path, extra_flags)
     c = container.run_detached(image, volumes=volumes, detach=True, tty=True)
     try:

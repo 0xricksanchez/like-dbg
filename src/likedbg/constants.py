@@ -12,6 +12,11 @@ VOLUME_MOUNT = "/ksrc"
 # container only when settings.build.ccache is enabled (see stages/build.py).
 LIKEDBG_CCACHE_VOLUME = "likedbg_ccache"
 
+# Persistent zig global cache shared across exploit compiles (Part A, 2026-07): mounted at
+# /zig-cache in the like_musl container so musl libc.a is built once, not on every compile.
+LIKEDBG_ZIG_CACHE_VOLUME = "likedbg_zigcache"
+ZIG_CACHE_MOUNT = "/zig-cache"
+
 BASE_IMAGE = "like_dbg_base:latest"
 # NOTE: the kbuilder image is clang-universal (cross-compiles any arch); the `_arm64`
 # suffix is a legacy misnomer. Revisit the name when x86_64-on-Mac lands (ROADMAP section B).
