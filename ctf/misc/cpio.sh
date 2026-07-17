@@ -7,7 +7,6 @@ set -e
 GZIP=0
 ENC=0
 DEC=0
-EXPLOIT=
 DEST=""
 
 usage() {
@@ -15,7 +14,7 @@ usage() {
 This script is a helper to (un-)pack rootfs.cpio(.gz) root file systems on the fly.
 
 Usage:
-    $0 [-r [rootfs]] [-g] [-p|-x] [-e [exploit]]
+    $0 -r <rootfs> [-g] (-p|-x) [-d <destination>]
 
     Mandatory options:
         -r <rootfs> : Path to the archive to unpack / folder housing the rootfs to pack
@@ -24,8 +23,7 @@ Usage:
     
     Optional flags:
         -g          : Enable gzip de-compression
-        -e          : Provide a path to an exploit.c in a rootfs directory to statically compile it with musl-gcc
-        -d          : Destination folder for unpacking
+        -d <dir>    : Destination folder for unpacking (default: ./initramfs)
 EOF
   exit 255
 }
@@ -38,57 +36,17 @@ is_exist() {
   fi
 }
 
-compile_mac() {
-  CTR=0
-  while true; do
-    if [ "$(basename "$PWD")" != "like-dbg" ] || [ ! -f "$(pwd)/.dockerfile_base" ]; then
-      pushd .. >/dev/null
-      ((CTR++))
-    else
-      break
-    fi
-
-  done
-  if ! "$(docker images | grep -qo "like_mac_compiler")"; then
-    docker build -t "like_mac_compiler" -f .dockerfile_compiler_mac .
-  fi
-  while [ $CTR -ne 0 ]; do
-    popd >/dev/null
-    ((CTR--))
-  done
-  rsync -u "$2" "$1/root/" >/dev/null
-  out="/io/bin/$(basename "$2")"
-  out=${out%.*}
-  docker run --rm -v "$(pwd)/$1":/io "like_mac_compiler" musl-gcc "/io/root/$(basename "$2")" -static -o "$out"
-}
-
 pack() {
   is_exist "$1" "-d"
+  rm -f -- "$1.cpio" "$1.cpio.gz" || return 1
 
-  if [ -n "$3" ]; then
-    is_exist "$3" "-f"
-    if [ "$(uname -s)" == "Darwin" ]; then
-      compile_mac "$1" "$3" || return 1
-    else
-      MUSL=$(which musl-gcc)
-      is_exist "$MUSL" "-f"
-      out=$(echo "$3" | awk '{ print substr( $0, 1, length($0)-2 ) }')
-      $MUSL "$3" -static -o "$out" || return 1
-      mv "$out" "$1/bin/" || return 1
-    fi
-    echo "Exploit pushed to $1/bin/"
-  fi
-  rm -rf "$1.cpio" "$1.cpio.gz" || return 1
-
-  pushd . >/dev/null && pushd "$1" >/dev/null
-  cmd="find . -print0 | cpio --null --format=newc -o --owner=root 2>/dev/null"
+  pushd "$1" >/dev/null
   dst=$(basename "$1")
   if [ "$2" -eq 1 ]; then
-    cmd="${cmd} | gzip -9 > ../$dst.cpio.gz"
+    find . -print0 | cpio --null --format=newc -o --owner=root 2>/dev/null | gzip -9 > "../$dst.cpio.gz"
   else
-    cmd="${cmd} > ../$dst.cpio"
+    find . -print0 | cpio --null --format=newc -o --owner=root 2>/dev/null > "../$dst.cpio"
   fi
-  eval "$cmd" || return 1
   popd >/dev/null
 }
 
@@ -97,19 +55,13 @@ unpack() {
     echo "Couldn't find 'cpio' utility... Exiting!"
     exit 255
   fi
-  LOCAL_DST=""
+  is_exist "$1" "-f"
+  LOCAL_ROOTFS="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
+  LOCAL_DST="${DEST:-initramfs}"
 
-  if [[ -n "$DEST" ]]; then
-    LOCAL_DST=$DEST
-  else
-    LOCAL_DST="initramfs"
-  fi
-
-  mkdir -p $LOCAL_DST || return 1
-  pushd . >/dev/null && pushd $LOCAL_DST >/dev/null
-  cp "../$1" . || return 1
-  LOCAL_ROOTFS="$(pwd)/$(basename "$1")"
-  echo "Unpacking $LOCAL_ROOTFS > $LOCAL_DST"
+  mkdir -p -- "$LOCAL_DST" || return 1
+  pushd "$LOCAL_DST" >/dev/null
+  echo "Unpacking $LOCAL_ROOTFS > $(pwd)"
 
   if [ "$2" -eq 1 ]; then
 
@@ -118,10 +70,9 @@ unpack() {
     cpio -idm <"$LOCAL_ROOTFS" &>/dev/null
   fi
 
-  rm "$LOCAL_ROOTFS" || return 1
   LUSER=$(logname 2>/dev/null || echo "$SUDO_USER")
   popd >/dev/null
-  chown -R "$LUSER": $LOCAL_DST || return 1
+  chown -R "$LUSER": "$LOCAL_DST" || return 1
 }
 
 if [ $# -eq 0 ]; then
@@ -153,11 +104,6 @@ while true; do
     DEC=1
     shift 1
     ;;
-  -e | --exploit)
-    # If you want to compile your exploit before packing, you can provide a path here
-    EXPLOIT=$2
-    shift 2
-    ;;
   -d | --destination)
     # Unpacking a .cpio(.gz) into a specific area instead of ./initramfs
     DEST=$2
@@ -185,13 +131,12 @@ if [ "$DEC" -eq 1 ]; then
   fi
   unpack "$ROOTFS" "$GZIP" || {
     echo "Unpacking failed.."
-    rm -rf initramfs
     exit 255
   }
 fi
 
 if [ "$ENC" -eq 1 ]; then
-  pack "$ROOTFS" "$GZIP" "$EXPLOIT" || {
+  pack "$ROOTFS" "$GZIP" || {
     echo "Packing failed.."
     exit 255
   }
