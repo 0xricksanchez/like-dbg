@@ -168,6 +168,9 @@ class _FakeContainer(ContainerService):
     def stop(self, container):
         pass
 
+    def remove_volume(self, name: str) -> None:
+        pass
+
 
 class _DuContainer(_FakeContainer):
     def __init__(self, output="8192\t/ksrc/linux-6.6.30-volume\n", *, fail=False):
@@ -1687,3 +1690,17 @@ def test_cmd_run_dispatches(tmp_path, monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "pwned" in out
     assert (run / "exploit" / "poc.log").read_text().strip() == "pwned"
+
+
+def test_clean_all_removes_zig_cache_volume(tmp_path, monkeypatch):
+    from likedbg.constants import LIKEDBG_ZIG_CACHE_VOLUME
+
+    removed: list[str] = []
+
+    class _C:
+        def remove_volume(self, name):
+            removed.append(name)
+
+    monkeypatch.setattr(cache, "list_manifests", lambda *a, **k: [])
+    cmd_clean(_C(), tmp_path, label=None, clean_all=True)
+    assert LIKEDBG_ZIG_CACHE_VOLUME in removed

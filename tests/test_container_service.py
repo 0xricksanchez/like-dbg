@@ -149,3 +149,37 @@ def test_image_labels_missing_image_raises():
     svc = ContainerService(FakeClient())
     with pytest.raises(ContainerError):
         svc.image_labels("nope:latest")
+
+
+class _FakeVol:
+    def __init__(self):
+        self.removed = False
+
+    def remove(self, force=False):
+        self.removed = True
+
+
+class _FakeVols:
+    def __init__(self, exists=True):
+        self._exists = exists
+        self.vol = _FakeVol()
+
+    def get(self, name):
+        if not self._exists:
+            raise docker.errors.NotFound("nope")
+        return self.vol
+
+
+class _FakeClientWithVolumes:
+    def __init__(self, exists=True):
+        self.volumes = _FakeVols(exists)
+
+
+def test_remove_volume_removes_when_present():
+    client = _FakeClientWithVolumes(exists=True)
+    ContainerService(client).remove_volume("likedbg_zigcache")
+    assert client.volumes.vol.removed is True
+
+
+def test_remove_volume_ignores_missing():
+    ContainerService(_FakeClientWithVolumes(exists=False)).remove_volume("likedbg_zigcache")  # no raise

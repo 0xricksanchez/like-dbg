@@ -39,6 +39,7 @@ from likedbg.constants import DEBUGGER_IMAGE
 from likedbg.constants import EXPLOIT_MOUNT
 from likedbg.constants import KBUILDER_IMAGE
 from likedbg.constants import KERNEL_VOLUME
+from likedbg.constants import LIKEDBG_ZIG_CACHE_VOLUME
 from likedbg.constants import MUSL_IMAGE
 from likedbg.constants import ROOTFS_IMAGE
 from likedbg.constants import VOLUME_MOUNT
@@ -928,6 +929,8 @@ def cmd_clean(container: ContainerService, workspace: Path, *, label: str | None
             src_storage_mode = "bind" if bind_tree.is_dir() else "volume"
             cache.remove_source(container, workspace, s.label, storage_mode=src_storage_mode, volume=KERNEL_VOLUME)
             logger.info(f"removed source {s.label}")
+        container.remove_volume(LIKEDBG_ZIG_CACHE_VOLUME)
+        logger.info("removed exploit-compile cache volume")
     return 0
 
 

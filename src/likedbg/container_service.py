@@ -95,3 +95,11 @@ class ContainerService:
 
     def stop(self, container: Any) -> None:
         container.stop()
+
+    def remove_volume(self, name: str) -> None:
+        """Delete a named Docker volume if it exists (idempotent). Used by --clean-all to reset
+        the persistent exploit-compile (zig) cache."""
+        try:
+            self._client.volumes.get(name).remove(force=True)
+        except docker.errors.NotFound:
+            pass
