@@ -46,6 +46,8 @@ class DebuggeeStage:
             share_host_dir=share_host_dir,
             foreign_cmdline=ctx.foreign_cmdline,
             foreign_mitigation_overrides=ctx.foreign_mitigation_overrides,
+            foreign_net=ctx.foreign_net,
+            foreign_net_iface=ctx.foreign_net_iface,
             qemu_extra=ctx.qemu_extra,
         )
         if ctx.host.debuggee_mode == "in-container":

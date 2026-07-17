@@ -515,6 +515,8 @@ def build_foreign_pipeline(
     debuginfod_urls: str = "",
     debuginfod_cache: Path | None = None,
     exploit_flags: tuple[str, ...] = (),
+    foreign_net: bool = True,
+    foreign_net_iface: str = "eth0",
 ) -> Pipeline:
     # ADR-0010: a foreign guest has no exploit share (no guest-side delivery path): never mount one,
     # and DebuggerStage below is left at its modules_gdb=None default (no modules.gdb to watch).
@@ -532,7 +534,12 @@ def build_foreign_pipeline(
 
     return Pipeline(
         [
-            ForeignAdoptStage(foreign=foreign, qemu_extra=qemu_extra),
+            ForeignAdoptStage(
+                foreign=foreign,
+                qemu_extra=qemu_extra,
+                foreign_net=foreign_net,
+                foreign_net_iface=foreign_net_iface,
+            ),
             ForeignRepackStage(
                 container,
                 foreign=foreign,
@@ -764,6 +771,8 @@ def cmd_foreign(
         debuginfod_urls=cfg.settings.debugger.debuginfod_urls,
         debuginfod_cache=debuginfod_cache,
         exploit_flags=cfg.settings.build.exploit_flags,
+        foreign_net=fcfg.net,
+        foreign_net_iface=fcfg.net_iface,
     )
     _save_rerun_request(
         session,
@@ -1001,9 +1010,7 @@ def _save_rerun_request(
 def _load_rerun_request(session: Session, *, workspace: Path) -> RerunRequest:
     raw = session.get_option(_RERUN_OPTION)
     if not raw:
-        raise SessionError(
-            "no active run to re-run", remedy="start a Debugging session with `uv run ./start_kgdb`"
-        )
+        raise SessionError("no active run to re-run", remedy="start a Debugging session with `uv run ./start_kgdb`")
     try:
         data = json.loads(raw)
         scenario_raw = data["scenario"]
@@ -1050,7 +1057,9 @@ def _stop_rerun_panes(session: Session) -> None:
         raise SessionError("missing @likedbg_base_pane_id", remedy="start a fresh Debugging session")
     panes = (session.get_option("@likedbg_debugger_pane"), session.get_option("@likedbg_debuggee_pane"))
     if any(pane == base_pane for pane in panes if pane):
-        raise SessionError("refusing to close the host pane from corrupted re-run state", remedy="start a fresh Debugging session")
+        raise SessionError(
+            "refusing to close the host pane from corrupted re-run state", remedy="start a fresh Debugging session"
+        )
     for pane in panes:  # debugger first, then QEMU
         if pane and session.pane_exists(pane):
             session.kill_pane(pane)

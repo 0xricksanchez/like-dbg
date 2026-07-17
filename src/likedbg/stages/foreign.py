@@ -19,9 +19,18 @@ class ForeignAdoptStage:
 
     name = "foreign-adopt"
 
-    def __init__(self, *, foreign: ForeignKernel, qemu_extra: tuple[str, ...]) -> None:
+    def __init__(
+        self,
+        *,
+        foreign: ForeignKernel,
+        qemu_extra: tuple[str, ...],
+        foreign_net: bool = True,
+        foreign_net_iface: str = "eth0",
+    ) -> None:
         self._foreign = foreign
         self._qemu_extra = qemu_extra
+        self._foreign_net = foreign_net
+        self._foreign_net_iface = foreign_net_iface
 
     def should_skip(self, ctx: PipelineContext) -> bool:
         return False
@@ -34,6 +43,8 @@ class ForeignAdoptStage:
         # path is /ksrc/<basename>. The mount source is passed to build_foreign_pipeline.
         ctx.vmlinux = Path(VOLUME_MOUNT) / fk.vmlinux.name
         ctx.foreign_cmdline = fk.cmdline
+        ctx.foreign_net = self._foreign_net
+        ctx.foreign_net_iface = self._foreign_net_iface
         ctx.qemu_extra = self._qemu_extra
         if ctx.recorder is not None:
             ctx.recorder.record_kernel_paths(  # type: ignore[attr-defined]

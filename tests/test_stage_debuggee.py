@@ -176,3 +176,21 @@ def test_debuggee_threads_foreign_cmdline_and_qemu_extra(tmp_path, monkeypatch):
     assert captured["foreign_cmdline"] == "quiet console=ttyS0"
     assert captured["foreign_mitigation_overrides"] == ("kaslr",)
     assert captured["qemu_extra"] == ("-no-reboot",)
+
+
+def test_debuggee_foreign_net_emits_nic_in_launched_argv(tmp_path):
+    launched = {}
+    ctx = _ctx("native-host")
+    # Mirrors cmd_foreign: guest_net (the regular control-transport NIC) is always forced off for
+    # a foreign guest, so any -netdev/-device in the launched argv can only come from foreign_net.
+    ctx.effective_debuggee = ctx.settings.debuggee.model_copy(update={"guest_net": False, "share": False})
+    ctx.foreign_cmdline = "quiet console=ttyS0"
+    ctx.foreign_net = True
+    ctx.foreign_net_iface = "eth0"
+    DebuggeeStage(
+        launch=lambda cmd: launched.setdefault("cmd", cmd),
+        debuggee_image="like_debuggee:latest",
+        workspace=tmp_path,
+    ).run(ctx)
+    assert "-netdev user,id=net0" in launched["cmd"]
+    assert "virtio-net-pci" in launched["cmd"]

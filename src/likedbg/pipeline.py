@@ -41,6 +41,8 @@ class PipelineContext:
     effective_debuggee: DebuggeeCfg | None = None
     extra_boot_args: tuple[str, ...] = field(default_factory=tuple)
     foreign_cmdline: str | None = None
+    foreign_net: bool = False
+    foreign_net_iface: str = "eth0"
     # Names of explicitly configured [debuggee] mitigation toggles.  Foreign kernels otherwise
     # retain their supplied command line byte-for-byte.
     foreign_mitigation_overrides: tuple[str, ...] = field(default_factory=tuple)

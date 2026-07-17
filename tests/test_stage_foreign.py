@@ -64,6 +64,14 @@ def test_foreign_adopt_does_not_skip(tmp_path):
     assert ForeignAdoptStage(foreign=_fk(tmp_path), qemu_extra=()).should_skip(ctx) is False
 
 
+def test_foreign_adopt_sets_net_fields_on_ctx(tmp_path):
+    fk = _fk(tmp_path)
+    stage = ForeignAdoptStage(foreign=fk, qemu_extra=(), foreign_net=True, foreign_net_iface="enp0s3")
+    ctx = PipelineContext(settings=Settings(), host=_host())
+    stage.run(ctx)
+    assert ctx.foreign_net is True and ctx.foreign_net_iface == "enp0s3"
+
+
 class _RepackFakeContainer:
     def __init__(self, out: Path):
         self.execs = []
