@@ -19,10 +19,17 @@ _ENP0S_RE = re.compile(r"^enp0s(\d+)$")
 def _foreign_nic_args(net_iface: str, cmdline: str) -> tuple[str, list[str]]:
     """Return (`-device` value, extra kernel-cmdline tokens) for an outbound foreign NIC that the
     guest sees under `net_iface`. The name is matched HOST-SIDE - the initramfs is never edited.
-      ethN   -> NIC on an auto PCI slot + net.ifnames=0 (unless the cmdline already sets net.ifnames)
+      ethN   -> NIC on an auto PCI slot + net.ifnames=0 (skipped if the cmdline already sets
+                net.ifnames=0; a conflicting net.ifnames value raises)
       enp0sN -> NIC pinned to PCI slot N; the challenge's predictable-naming kernel names it enp0sN
     Raises ForeignError on an unsupported scheme or a net.ifnames contradiction (no silent failure)."""
     if _ETHN_RE.match(net_iface):
+        if "net.ifnames=" in cmdline and "net.ifnames=0" not in cmdline:
+            raise ForeignError(
+                f"[foreign].net_iface={net_iface!r} needs net.ifnames=0, but the challenge cmdline "
+                "sets a conflicting net.ifnames value",
+                remedy="set net_iface to the enp0sN name the challenge expects, or remove net.ifnames from [foreign].cmdline",
+            )
         tokens = [] if "net.ifnames=" in cmdline else ["net.ifnames=0"]
         return "virtio-net-pci,netdev=net0", tokens
     m = _ENP0S_RE.match(net_iface)

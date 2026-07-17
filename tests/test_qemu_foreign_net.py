@@ -20,6 +20,13 @@ def test_ethn_does_not_duplicate_existing_net_ifnames():
     assert tokens == []
 
 
+def test_ethn_conflicting_net_ifnames_raises():
+    # symmetry with enp0sN: an ethN request against a cmdline that forces predictable naming is a
+    # contradiction, not a silent degrade (the NIC would never come up as ethN -> the ifup wait stalls).
+    with pytest.raises(ForeignError):
+        _foreign_nic_args("eth0", "console=ttyS0 net.ifnames=1")
+
+
 def test_enp0sn_pins_pci_slot_no_net_ifnames():
     device, tokens = _foreign_nic_args("enp0s3", "console=ttyS0")
     assert device == "virtio-net-pci,netdev=net0,addr=0x3"
