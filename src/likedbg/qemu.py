@@ -2,13 +2,42 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Collection
 from pathlib import Path
 
 from likedbg.config import DebuggeeCfg
+from likedbg.foreign import ForeignError
 from likedbg.host_profile import HostProfile
 
 _QEMU_BIN = {"arm64": "qemu-system-aarch64", "x86_64": "qemu-system-x86_64"}
+
+_ETHN_RE = re.compile(r"^eth\d+$")
+_ENP0S_RE = re.compile(r"^enp0s(\d+)$")
+
+
+def _foreign_nic_args(net_iface: str, cmdline: str) -> tuple[str, list[str]]:
+    """Return (`-device` value, extra kernel-cmdline tokens) for an outbound foreign NIC that the
+    guest sees under `net_iface`. The name is matched HOST-SIDE - the initramfs is never edited.
+      ethN   -> NIC on an auto PCI slot + net.ifnames=0 (unless the cmdline already sets net.ifnames)
+      enp0sN -> NIC pinned to PCI slot N; the challenge's predictable-naming kernel names it enp0sN
+    Raises ForeignError on an unsupported scheme or a net.ifnames contradiction (no silent failure)."""
+    if _ETHN_RE.match(net_iface):
+        tokens = [] if "net.ifnames=" in cmdline else ["net.ifnames=0"]
+        return "virtio-net-pci,netdev=net0", tokens
+    m = _ENP0S_RE.match(net_iface)
+    if m:
+        if "net.ifnames=0" in cmdline:
+            raise ForeignError(
+                f"[foreign].net_iface={net_iface!r} needs predictable naming, but the challenge "
+                "cmdline sets net.ifnames=0",
+                remedy="use an ethN name, or remove net.ifnames=0 from [foreign].cmdline",
+            )
+        return f"virtio-net-pci,netdev=net0,addr=0x{int(m.group(1)):x}", []
+    raise ForeignError(
+        f"unsupported [foreign].net_iface {net_iface!r}",
+        remedy="use ethN or enp0sN; for other schemes place the NIC via [foreign].qemu_extra and set [foreign].net = false",
+    )
 
 
 def _mitigations(d: DebuggeeCfg, arch: str) -> list[str]:
@@ -108,7 +137,12 @@ def _foreign_mitigation_args(d: DebuggeeCfg, arch: str, overrides: Collection[st
     for key, prefix, enabled, disabled in (
         ("init_on_alloc", "init_on_alloc=", "init_on_alloc=1", "init_on_alloc=0"),
         ("init_on_free", "init_on_free=", "init_on_free=1", "init_on_free=0"),
-        ("randomize_kstack_offset", "randomize_kstack_offset=", "randomize_kstack_offset=on", "randomize_kstack_offset=off"),
+        (
+            "randomize_kstack_offset",
+            "randomize_kstack_offset=",
+            "randomize_kstack_offset=on",
+            "randomize_kstack_offset=off",
+        ),
         ("hardened_usercopy", "hardened_usercopy=", "hardened_usercopy=on", "hardened_usercopy=off"),
     ):
         if key in overrides:
@@ -117,9 +151,7 @@ def _foreign_mitigation_args(d: DebuggeeCfg, arch: str, overrides: Collection[st
     return remove, add
 
 
-def _apply_foreign_mitigation_overrides(
-    cmdline: str, d: DebuggeeCfg, arch: str, overrides: Collection[str]
-) -> str:
+def _apply_foreign_mitigation_overrides(cmdline: str, d: DebuggeeCfg, arch: str, overrides: Collection[str]) -> str:
     """Apply explicit TOML choices without changing an otherwise verbatim foreign cmdline."""
     active = set(overrides) & _FOREIGN_MITIGATION_KEYS
     if not active:
