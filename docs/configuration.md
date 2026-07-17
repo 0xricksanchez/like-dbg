@@ -150,6 +150,10 @@ pthread) can intermittently fail to compile (a zig cache quirk in the LinuxKit V
 prefer a prebuilt binary or simply retry. See
 [ctf-foreign-kernel.md](ctf-foreign-kernel.md#deliver-an-exploit).
 
+The exploit compile reuses a persistent zig cache (the `likedbg_zigcache` Docker volume): the first
+compile is cold (~20s, building musl once) and every later one is a warm hit (~1–2s), across
+sessions. `start_kgdb --clean-all` deletes that volume to force a cold rebuild.
+
 ### `[cache]`
 
 | Key | Default | Values and meaning |
