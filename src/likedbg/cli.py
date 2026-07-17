@@ -28,6 +28,9 @@ from likedbg.cache import Manifest
 from likedbg.cache import RootfsRecipe
 from likedbg.cache import build_recipe as make_build_recipe
 from likedbg.cache import rootfs_recipe as make_rootfs_recipe
+from likedbg.config import LAYER_CLI
+from likedbg.config import LAYER_LOCAL
+from likedbg.config import LAYER_SCENARIO
 from likedbg.config import ConfigResolution
 from likedbg.config import load_config
 from likedbg.constants import BASE_IMAGE
@@ -87,12 +90,28 @@ _FRAGMENTS = (
 
 _SESSION_STATE_OPTIONS = (
     "@likedbg_restart_in_progress",
+    "@likedbg_rerun_request",
+    "@likedbg_active_run_dir",
     "@likedbg_debuggee_cmd",
     "@likedbg_debugger_cmd",
     "@likedbg_debuggee_pane",
     "@likedbg_debugger_pane",
     "@likedbg_debuggee_pane_log",
 )
+
+
+@dataclasses.dataclass(frozen=True)
+class RerunRequest:
+    kind: str
+    scenario: Path | None
+    profile_arg: str
+    use_label: str = ""
+    rootfs_label: str = ""
+    force_rebuild: bool = False
+
+
+_RERUN_OPTION = "@likedbg_rerun_request"
+_ACTIVE_RUN_DIR_OPTION = "@likedbg_active_run_dir"
 
 
 def _fetch(url: str, dest: Path) -> None:
@@ -115,6 +134,7 @@ def resolve_for_run(
     profile_arg: str,
     scenario: Path | None,
     cli_overrides: dict[str, dict[str, str]] | None,
+    validate_build_gates: bool = True,
 ) -> tuple[ConfigResolution, HostProfile, RunResolution]:
     """Testable prelude: load_config -> detect host -> resolve run profiles.
 
@@ -124,7 +144,13 @@ def resolve_for_run(
     cfg = load_config(workspace, scenario=scenario, cli_overrides=cli_overrides)
     host = HostProfile.detect(cfg.settings, workspace)
     names = parse_profile_names(profile_arg) if profile_arg else cfg.settings.debugging.profiles
-    rr = resolve_run(profile_names=names, config=cfg, host=host, workspace=workspace)
+    rr = resolve_run(
+        profile_names=names,
+        config=cfg,
+        host=host,
+        workspace=workspace,
+        validate_build_gates=validate_build_gates,
+    )
     for w in rr.profile_warnings:
         logger.warning(w)
     for n in (*rr.runtime_overrides, *rr.runtime_notes):
@@ -617,6 +643,16 @@ def cmd_use(
         debuginfod_urls=use_settings.debugger.debuginfod_urls,
         debuginfod_cache=debuginfod_cache,
     )
+    _save_rerun_request(
+        session,
+        workspace=workspace,
+        kind="use",
+        scenario=custom_ini.resolve() if custom_ini is not None else None,
+        profile_arg=profile_arg,
+        run_dir=recorder.run_dir,
+        use_label=label,
+        rootfs_label=rootfs_label or "",
+    )
     pipeline.run(ctx)
     return 0
 
@@ -646,6 +682,9 @@ def cmd_foreign(
         profile_arg=profile_arg,
         scenario=scenario,
         cli_overrides={"general": {"arch": fk.arch}},
+        # Profile expectations describe LIKE-DBG-built kernels. A foreign bzImage may support a
+        # runtime flag even when the selected local profile would build its Kconfig dependency off.
+        validate_build_gates=False,
     )
     # ADR-0010: a foreign guest exposes only the serial console: no virtio-net/9p devices the
     # CTF challenge never specified, and no run.json `guest` block (which would otherwise make
@@ -654,6 +693,23 @@ def cmd_foreign(
     # read effective_debuggee off the RunResolution, so overriding it here fixes both at once.
     eff = rr.effective_debuggee.model_copy(update={"guest_net": False, "share": False})
     rr = dataclasses.replace(rr, effective_debuggee=eff)
+    # A foreign command line remains verbatim unless the user/scenario explicitly selected a
+    # runtime mitigation. Defaults and profile defaults must not rewrite a challenge's run.sh.
+    foreign_mitigation_overrides = tuple(
+        key
+        for key in (
+            "kaslr",
+            "kpti",
+            "fgkaslr",
+            "mitigations",
+            "slab_merge",
+            "init_on_alloc",
+            "init_on_free",
+            "randomize_kstack_offset",
+            "hardened_usercopy",
+        )
+        if rr.provenance.get(("debuggee", key)) in {LAYER_LOCAL, LAYER_SCENARIO, LAYER_CLI}
+    )
     _ensure_images(container, workspace, specs=images.required_for_foreign(host))
 
     exploit = resolve_input_path(workspace, fcfg.exploit) if fcfg.exploit else None
@@ -676,6 +732,7 @@ def cmd_foreign(
         host=host,
         effective_debuggee=rr.effective_debuggee,
         extra_boot_args=rr.extra_boot_args,
+        foreign_mitigation_overrides=foreign_mitigation_overrides,
         recorder=recorder,
     )
     debuginfod_enabled = resolve_debuginfod_enabled(cfg.settings.debugger.debuginfod, is_foreign=True)
@@ -706,6 +763,14 @@ def cmd_foreign(
         debuginfod_urls=cfg.settings.debugger.debuginfod_urls,
         debuginfod_cache=debuginfod_cache,
         exploit_flags=cfg.settings.build.exploit_flags,
+    )
+    _save_rerun_request(
+        session,
+        workspace=workspace,
+        kind="foreign",
+        scenario=scenario,
+        profile_arg=profile_arg,
+        run_dir=recorder.run_dir,
     )
     pipeline.run(ctx)
     return 0
@@ -902,6 +967,130 @@ def _missing_restart_state(name: str) -> SessionError:
         f"missing {name}; cannot restart Debuggee",
         remedy="start a fresh Debugging session with `uv run ./start_kgdb`",
     )
+
+
+def _save_rerun_request(
+    session: Session,
+    *,
+    workspace: Path,
+    kind: str,
+    scenario: Path | None,
+    profile_arg: str,
+    run_dir: Path,
+    use_label: str = "",
+    rootfs_label: str = "",
+    force_rebuild: bool = False,
+) -> None:
+    request = {
+        "version": 1,
+        "workspace": str(workspace.resolve()),
+        "kind": kind,
+        "scenario": str(scenario.resolve()) if scenario is not None else "",
+        "profile_arg": profile_arg,
+        "use_label": use_label,
+        "rootfs_label": rootfs_label,
+        "force_rebuild": force_rebuild,
+    }
+    session.set_option(_RERUN_OPTION, json.dumps(request, sort_keys=True))
+    session.set_option(_ACTIVE_RUN_DIR_OPTION, str(run_dir))
+
+
+def _load_rerun_request(session: Session, *, workspace: Path) -> RerunRequest:
+    raw = session.get_option(_RERUN_OPTION)
+    if not raw:
+        raise SessionError(
+            "no active run to re-run", remedy="start a Debugging session with `uv run ./start_kgdb`"
+        )
+    try:
+        data = json.loads(raw)
+        scenario_raw = data["scenario"]
+        saved_workspace = Path(data["workspace"])
+        kind = data["kind"]
+        profile_arg = data["profile_arg"]
+        use_label = data.get("use_label", "")
+        rootfs_label = data.get("rootfs_label", "")
+        force_rebuild = data.get("force_rebuild", False)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise SessionError("invalid active re-run state", remedy="start the session again") from exc
+    scenario = Path(scenario_raw) if scenario_raw else None
+    if (
+        data.get("version") != 1
+        or kind not in {"foreign", "normal", "use"}
+        or scenario is not None
+        and not scenario.is_absolute()
+        or not isinstance(profile_arg, str)
+        or not isinstance(use_label, str)
+        or not isinstance(rootfs_label, str)
+        or not isinstance(force_rebuild, bool)
+    ):
+        raise SessionError("invalid active re-run state", remedy="start the session again")
+    if saved_workspace != workspace.resolve():
+        raise SessionError(
+            "active run belongs to a different workspace",
+            remedy=f"cd to {saved_workspace} or start a new session here",
+        )
+    if scenario is not None and not scenario.is_file():
+        raise SessionError(f"stored scenario is missing: {scenario}", remedy="start a new session")
+    return RerunRequest(
+        kind=kind,
+        scenario=scenario,
+        profile_arg=profile_arg,
+        use_label=use_label,
+        rootfs_label=rootfs_label,
+        force_rebuild=force_rebuild,
+    )
+
+
+def _stop_rerun_panes(session: Session) -> None:
+    base_pane = session.get_option("@likedbg_base_pane_id")
+    if not base_pane:
+        raise SessionError("missing @likedbg_base_pane_id", remedy="start a fresh Debugging session")
+    panes = (session.get_option("@likedbg_debugger_pane"), session.get_option("@likedbg_debuggee_pane"))
+    if any(pane == base_pane for pane in panes if pane):
+        raise SessionError("refusing to close the host pane from corrupted re-run state", remedy="start a fresh Debugging session")
+    for pane in panes:  # debugger first, then QEMU
+        if pane and session.pane_exists(pane):
+            session.kill_pane(pane)
+    session.unset_option("@likedbg_debugger_pane")
+    session.unset_option("@likedbg_debuggee_pane")
+
+
+def _rerun_argv(request: RerunRequest) -> list[str]:
+    args: list[str] = []
+    if request.scenario is not None:
+        args += ["--config", str(request.scenario)]
+    if request.profile_arg:
+        args += ["--profile", request.profile_arg]
+    if request.kind == "use":
+        args += ["--use", request.use_label]
+        if request.rootfs_label:
+            args += ["--rootfs", request.rootfs_label]
+    elif request.force_rebuild:
+        args.append("--force-rebuild")
+    return args
+
+
+def cmd_rerun(session: Session, workspace: Path) -> int:
+    request = _load_rerun_request(session, workspace=workspace)
+    # Preflight before touching live panes: a broken/deleted scenario must not destroy the current session.
+    cfg = load_config(workspace, scenario=request.scenario)
+    if request.kind == "foreign" and not cfg.settings.foreign.image:
+        raise SessionError("stored scenario is no longer a foreign run", remedy="start the desired scenario explicitly")
+    if request.kind == "use" and not request.use_label:
+        raise SessionError("stored --use run has no build label", remedy="start the desired cached build explicitly")
+    # Docker connection is also established before teardown, so a stopped daemon leaves the live session intact.
+    docker_env.make_client(docker_env.resolve_docker_host(env=os.environ))
+    prior_run = session.get_option(_ACTIVE_RUN_DIR_OPTION)
+    _stop_rerun_panes(session)
+    if prior_run:
+        try:
+            RunRecorder.mark_restarted(Path(prior_run))
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            logger.warning(f"could not mark prior run as restarted: {exc}")
+    logger.info(f"restarting {request.kind} session")
+    # Re-enter the normal CLI dispatch with reconstructed declarative selectors. This is not a raw
+    # saved shell command: current TOML/files are re-read and each established launcher stays authoritative.
+    return main(_rerun_argv(request))
 
 
 def cmd_restart_debuggee(session: Session) -> int:
@@ -1193,6 +1382,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--rootfs", default="")
     parser.add_argument("--build-images", action="store_true")
     parser.add_argument("--restart-debuggee", action="store_true")
+    parser.add_argument("--re-run", action="store_true")
     parser.add_argument("--explain-config", nargs="?", const="text", default=None, choices=["text", "json"])
     parser.add_argument("--analyze-crash", nargs="?", const="latest", default=None, metavar="RUN-ID")
     parser.add_argument("--run", default="", metavar="EXPLOIT-PATH")
@@ -1228,6 +1418,22 @@ def main(argv: list[str] | None = None) -> int:
             )
         if args.rmmod:
             return cmd_rmmod(workspace, run_id=args.run_id, name=args.rmmod, force_unload=args.force_unload)
+        if args.re_run:
+            if args.config or args.profile or args.use or args.rootfs:
+                parser.error("--re-run cannot be combined with launch selectors")
+            if not os.getenv("TMUX"):
+                logger.error("Not running inside a TMUX session. Start tmux first.")
+                return 2
+            session = Session("LIKE-DBG")
+            try:
+                return cmd_rerun(session, workspace)
+            except LikeDbgError as exc:
+                logger.error(str(exc))
+                try:
+                    session.display_message(f"LIKE-DBG re-run failed: {exc.message}")
+                except LikeDbgError:
+                    pass
+                return 1
         if args.restart_debuggee:
             if not os.getenv("TMUX"):
                 logger.error("Not running inside a TMUX session. Start tmux first.")
@@ -1368,6 +1574,15 @@ def main(argv: list[str] | None = None) -> int:
             ccache=cfg.settings.build.ccache,
             ccache_max_size=cfg.settings.build.ccache_max_size,
             max_size=cfg.settings.cache.max_size,
+        )
+        _save_rerun_request(
+            session,
+            workspace=workspace,
+            kind="normal",
+            scenario=scenario.resolve() if scenario is not None else None,
+            profile_arg=args.profile,
+            run_dir=recorder.run_dir,
+            force_rebuild=args.force_rebuild,
         )
         pipeline.run(ctx)
         return 0

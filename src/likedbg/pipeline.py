@@ -41,6 +41,9 @@ class PipelineContext:
     effective_debuggee: DebuggeeCfg | None = None
     extra_boot_args: tuple[str, ...] = field(default_factory=tuple)
     foreign_cmdline: str | None = None
+    # Names of explicitly configured [debuggee] mitigation toggles.  Foreign kernels otherwise
+    # retain their supplied command line byte-for-byte.
+    foreign_mitigation_overrides: tuple[str, ...] = field(default_factory=tuple)
     qemu_extra: tuple[str, ...] = field(default_factory=tuple)
     recorder: object | None = None  # TODO: type as RunRecorder once run_artifacts (Task 12) exists
     kernel_release: str | None = None

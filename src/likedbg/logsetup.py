@@ -7,6 +7,7 @@ from __future__ import annotations
 import sys
 from datetime import UTC
 from datetime import datetime
+from os.path import relpath
 from pathlib import Path
 
 from loguru import logger
@@ -29,7 +30,9 @@ def _prune_old_logs(logs: Path, *, keep: int) -> None:
 def _point_latest(link: Path, target: Path) -> None:
     try:
         link.unlink(missing_ok=True)
-        link.symlink_to(target.name)  # relative, same dir
+        # Run logs live under artifacts/runs/<id>/logs/, not alongside this link.  A bare
+        # basename would therefore create a dangling artifacts/logs/latest.log -> likedbg.log.
+        link.symlink_to(relpath(target, start=link.parent))
     except OSError:
         pass  # symlinks unavailable (e.g. Windows), non-fatal
 

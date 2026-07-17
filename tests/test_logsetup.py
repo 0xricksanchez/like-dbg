@@ -33,6 +33,13 @@ def test_add_run_logfile_creates_file_latest_and_captures_debug(tmp_path):
     assert latest.is_symlink() and latest.resolve() == run_log.resolve()
 
 
+def test_add_run_logfile_external_path_points_latest_at_run_scoped_log(tmp_path):
+    run_log = tmp_path / "artifacts" / "runs" / "run-123" / "logs" / "likedbg.log"
+    logsetup.add_run_logfile(tmp_path, path=run_log)
+    latest = tmp_path / "artifacts" / "logs" / "latest.log"
+    assert latest.is_symlink() and latest.resolve() == run_log.resolve()
+
+
 def test_prune_old_logs_keeps_newest(tmp_path):
     logs = tmp_path / "artifacts" / "logs"
     logs.mkdir(parents=True)

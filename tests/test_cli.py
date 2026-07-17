@@ -111,6 +111,7 @@ class _RestartSession:
         self.launches: list[dict[str, object]] = []
         self.selected: list[str] = []
         self.messages: list[str] = []
+        self.kills: list[str] = []
 
     def get_option(self, name):
         return self.options.get(name, "")
@@ -131,6 +132,10 @@ class _RestartSession:
 
     def respawn_pane(self, *, pane, cmd):
         self.respawns.append((pane, cmd))
+
+    def kill_pane(self, pane):
+        self.kills.append(pane)
+        self.existing.discard(pane)
 
     def run_in_new_pane(self, *, target, direction, percent, cmd, full=False):
         pane = "%4"
@@ -739,7 +744,11 @@ def test_cmd_use_builds_default_rootfs_when_manifest_is_missing(tmp_path, monkey
         ),
     )
 
-    assert cli.cmd_use(container, _FakeSession(), tmp_path, custom_ini=None, label=label, rootfs_label=None) == 0
+    session = _FakeSession()
+    assert cli.cmd_use(container, session, tmp_path, custom_ini=None, label=label, rootfs_label=None) == 0
+    rerun = json.loads(dict(session.options)["@likedbg_rerun_request"])
+    assert rerun["kind"] == "use"
+    assert rerun["use_label"] == label
     assert cache.manifest_exists(tmp_path, "rootfs", rr.label)
     assert target.read_bytes() == b"img"
     # ProfileVerificationStage also calls run_detached (legacy fallback, BASE_IMAGE).
@@ -819,7 +828,8 @@ class _FakeRecorder:
     """Minimal RunRecorder stand-in for pipeline tests — mirrors the public RunRecorder API."""
 
     def __init__(self, workspace: Path) -> None:
-        logs = workspace / "artifacts" / "runs" / "fake" / "logs"
+        self.run_dir = workspace / "artifacts" / "runs" / "fake"
+        logs = self.run_dir / "logs"
         logs.mkdir(parents=True, exist_ok=True)
         self.likedbg_log = logs / "likedbg.log"
         self.debuggee_pane_log = logs / "debuggee-pane.log"
@@ -884,6 +894,8 @@ def test_pipeline_launches_process_panes_and_stores_session_options(tmp_path):
     assert session.pane_launches[1]["full"] is True
     assert session.unset_options == [
         "@likedbg_restart_in_progress",
+        "@likedbg_rerun_request",
+        "@likedbg_active_run_dir",
         "@likedbg_debuggee_cmd",
         "@likedbg_debugger_cmd",
         "@likedbg_debuggee_pane",
@@ -1140,6 +1152,104 @@ def test_main_restart_requires_tmux(monkeypatch):
     monkeypatch.delenv("TMUX", raising=False)
     monkeypatch.setattr(cli, "load_config", lambda *a, **k: pytest.fail("load_config should not run"))
     assert cli.main(["--restart-debuggee"]) == 2
+
+
+def test_rerun_stops_managed_panes_then_reenters_foreign_launch_dispatch(tmp_path, monkeypatch):
+    _make_project(tmp_path)
+    scenario = tmp_path / "pawnyable.toml"
+    scenario.write_text('[foreign]\nimage = "kernel"\n')
+    request = json.dumps(
+        {
+            "version": 1,
+            "workspace": str(tmp_path.resolve()),
+            "kind": "foreign",
+            "scenario": str(scenario.resolve()),
+            "profile_arg": "",
+        }
+    )
+    session = _RestartSession(
+        options={
+            "@likedbg_rerun_request": request,
+            "@likedbg_base_pane_id": "%1",
+            "@likedbg_debuggee_pane": "%2",
+            "@likedbg_debugger_pane": "%3",
+        }
+    )
+    captured = {}
+    monkeypatch.setattr(cli.docker_env, "make_client", lambda _host: object())
+    monkeypatch.setattr(cli, "main", lambda argv: captured.update({"argv": argv}) or 0)
+    assert cli.cmd_rerun(session, tmp_path) == 0  # type: ignore[arg-type]
+    assert session.kills == ["%3", "%2"]
+    assert captured == {"argv": ["--config", str(scenario.resolve())]}
+
+
+def test_rerun_request_round_trips_as_absolute_session_state(tmp_path):
+    scenario = tmp_path / "pawnyable.toml"
+    scenario.write_text("")
+    session = _RestartSession()
+    cli._save_rerun_request(  # noqa: SLF001 - exercise the tmux-state seam directly
+        session,
+        workspace=tmp_path,
+        kind="foreign",
+        scenario=scenario,
+        profile_arg="exploit-dev",
+        run_dir=tmp_path / "run",
+    )
+    request = cli._load_rerun_request(session, workspace=tmp_path)  # noqa: SLF001
+    assert request.kind == "foreign"
+    assert request.scenario == scenario.resolve()
+    assert request.profile_arg == "exploit-dev"
+
+
+def test_rerun_foreign_preflights_before_killing_panes(tmp_path):
+    _make_project(tmp_path)
+    scenario = tmp_path / "not-foreign.toml"
+    scenario.write_text("[debuggee]\nmemory_mib = 64\n")
+    request = json.dumps(
+        {
+            "version": 1,
+            "workspace": str(tmp_path.resolve()),
+            "kind": "foreign",
+            "scenario": str(scenario.resolve()),
+            "profile_arg": "",
+        }
+    )
+    session = _RestartSession(
+        options={
+            "@likedbg_rerun_request": request,
+            "@likedbg_base_pane_id": "%1",
+            "@likedbg_debuggee_pane": "%2",
+            "@likedbg_debugger_pane": "%3",
+        }
+    )
+    with pytest.raises(SessionError, match="no longer a foreign"):
+        cli.cmd_rerun(session, tmp_path)  # type: ignore[arg-type]
+    assert session.kills == []
+
+
+def test_main_rerun_bypasses_normal_config_and_docker_setup(monkeypatch):
+    rerun = []
+    monkeypatch.setenv("TMUX", "/tmp/tmux")
+    monkeypatch.setattr(cli, "load_config", lambda *a, **k: pytest.fail("normal config flow should not run"))
+    monkeypatch.setattr(cli, "cmd_rerun", lambda session, workspace: rerun.append((session, workspace)) or 0)
+    assert cli.main(["--re-run"]) == 0
+    assert len(rerun) == 1
+
+
+def test_rerun_argv_reconstructs_normal_and_use_selectors(tmp_path):
+    normal = cli.RerunRequest(kind="normal", scenario=None, profile_arg="kasan", force_rebuild=True)
+    use = cli.RerunRequest(
+        kind="use", scenario=tmp_path / "scenario.toml", profile_arg="", use_label="linux-foo", rootfs_label="rootfs-bar"
+    )
+    assert cli._rerun_argv(normal) == ["--profile", "kasan", "--force-rebuild"]  # noqa: SLF001
+    assert cli._rerun_argv(use) == [  # noqa: SLF001
+        "--config",
+        str(tmp_path / "scenario.toml"),
+        "--use",
+        "linux-foo",
+        "--rootfs",
+        "rootfs-bar",
+    ]
 
 
 def test_main_build_images_is_docker_only_and_invokes_build_images(monkeypatch):

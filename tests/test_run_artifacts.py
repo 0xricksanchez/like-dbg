@@ -124,6 +124,15 @@ def test_recorder_accepts_crashed_status(tmp_path: Path) -> None:
     assert rj["status"] == "crashed"
 
 
+def test_mark_restarted_preserves_prior_run_artifact(tmp_path: Path) -> None:
+    rec = _start_recorder(tmp_path)
+    rec.set_status("launched")
+    RunRecorder.mark_restarted(rec.run_dir)
+    rj = json.loads((rec.run_dir / "run.json").read_text())
+    assert rj["status"] == "restarted"
+    assert [h["status"] for h in rj["status_history"]] == ["created", "launched", "restarted"]
+
+
 def test_run_json_has_guest_block(tmp_path: Path) -> None:
     rec = _start_recorder(tmp_path)
     rj = json.loads((rec.run_dir / "run.json").read_text())

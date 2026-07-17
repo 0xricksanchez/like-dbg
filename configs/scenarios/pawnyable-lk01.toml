@@ -13,15 +13,20 @@
 
 [debuggee]
 memory_mib = 64        # run.sh: -m 64M
-smep = false           # run.sh: -cpu qemu64 (bare) -> no +smep/+smap on the guest CPU
-smap = false
+smep = true           # run.sh: -cpu qemu64 (bare) -> no +smep/+smap on the guest CPU
+smap = true
+kaslr = true
+kpti = true
 
 [foreign]
 image = "ctf/pawnyable-lk01/bzImage"           # presence selects the foreign path
-initramfs = "ctf/pawnyable-lk01/rootfs.cpio"   # the challenge's own busybox rootfs (raw cpio)
-cmdline = "console=ttyS0 loglevel=3 oops=panic panic=-1 nopti nokaslr"  # used verbatim
+initramfs = "initramfs.cpio"   # the challenge's own busybox rootfs (raw cpio)
+cmdline = "console=ttyS0 loglevel=3 oops=panic panic=-1"  # used verbatim
 arch = "x86_64"
 # Kernel symbols (kmod, crash breakpoints, add-symbol-file) are recovered automatically from the
 # bzImage's kallsyms (see docs/ctf-foreign-kernel.md#symbols). Only set vmlinux to override that with
 # a real vmlinux for source-level kernel debugging:
 # vmlinux = "ctf/pawnyable-lk01/vmlinux"
+
+# 
+exploit = "ctf/pawnyable-lk01/exploit2.c"

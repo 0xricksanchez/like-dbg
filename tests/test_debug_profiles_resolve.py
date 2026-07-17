@@ -81,6 +81,20 @@ def test_explicit_kaslr_on_with_exploit_dev_is_contradiction(tmp_path: Path) -> 
         resolve_run(profile_names=("exploit-dev",), config=cfg, host=_host(tmp_path), workspace=tmp_path)
 
 
+def test_foreign_run_does_not_apply_native_profile_build_gate(tmp_path: Path) -> None:
+    _scaffold(tmp_path)
+    (tmp_path / "configs" / "local.toml").write_text("[debuggee]\nkaslr = true\n")
+    cfg = load_config(tmp_path)
+    rr = resolve_run(
+        profile_names=("exploit-dev",),
+        config=cfg,
+        host=_host(tmp_path),
+        workspace=tmp_path,
+        validate_build_gates=False,
+    )
+    assert rr.effective_debuggee.kaslr is True
+
+
 def test_default_kaslr_off_is_fine(tmp_path: Path) -> None:
     _scaffold(tmp_path)
     cfg = load_config(tmp_path)

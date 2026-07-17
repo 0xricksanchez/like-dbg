@@ -104,6 +104,7 @@ def _crash_capture_source(
     sanitizer: tuple[str, ...],
     gates: tuple[str, ...],
     out_path: str,
+    display_path: str | None = None,
 ) -> str:
     # Built via literal placeholder substitution (not %-formatting or f-string interpolation) so the
     # payload's own `%s` formatting and `{}` literals below stay unescaped.
@@ -111,6 +112,7 @@ def _crash_capture_source(
 import gdb, json, os
 
 _OUT = __OUT__
+_DISPLAY_OUT = __DISPLAY_OUT__
 _FATAL = __FATAL__
 _SANITIZER = __SANITIZER__
 _GATES = __GATES__
@@ -158,7 +160,7 @@ class _LikedbgCrash(gdb.Breakpoint):
             os.makedirs(os.path.dirname(_OUT), exist_ok=True)
             with open(_OUT, "w") as fh:
                 json.dump({"stopped_at": self.location, "registers": _regs(), "backtrace": _bt()}, fh, indent=2)
-            gdb.write("[likedbg] crash captured at %s -> %s\\n" % (self.location, _OUT))
+            gdb.write("[likedbg] crash captured at %s -> %s\\n" % (self.location, _DISPLAY_OUT))
         except Exception as exc:
             gdb.write("[likedbg] crash capture failed: %s\\n" % exc)
         return True
@@ -223,6 +225,7 @@ if _SAN_BPS:
 """
     source = (
         source.replace("__OUT__", repr(out_path))
+        .replace("__DISPLAY_OUT__", repr(display_path or out_path))
         .replace("__FATAL__", repr(list(fatal)))
         .replace("__SANITIZER__", repr(list(sanitizer)))
         .replace("__GATES__", repr(list(gates)))
@@ -330,6 +333,7 @@ def build_gdb_args(
     debuginfod_enabled: bool = False,
     debuginfod_urls: str = "",
     crash_drop_path: str = CRASH_DROP_MOUNT,
+    crash_display_path: str | None = None,
     modules_gdb: str | None = None,
 ) -> list[str]:
     addr = host.gdbstub_addr
@@ -369,6 +373,7 @@ def build_gdb_args(
                 sanitizer_breakpoints,
                 ("run_init_process", "kernel_init"),
                 f"{crash_drop_path}/crash.gdb.json",
+                f"{crash_display_path}/crash.gdb.json" if crash_display_path else None,
             ),
         ]
     if modules_gdb is not None:

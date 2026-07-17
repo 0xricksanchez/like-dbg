@@ -8,6 +8,7 @@ GZIP=0
 ENC=0
 DEC=0
 EXPLOIT=
+DEST=""
 
 usage() {
   cat <<EOF
@@ -24,6 +25,7 @@ Usage:
     Optional flags:
         -g          : Enable gzip de-compression
         -e          : Provide a path to an exploit.c in a rootfs directory to statically compile it with musl-gcc
+        -d          : Destination folder for unpacking
 EOF
   exit 255
 }
@@ -95,10 +97,19 @@ unpack() {
     echo "Couldn't find 'cpio' utility... Exiting!"
     exit 255
   fi
-  mkdir initramfs || return 1
-  pushd . >/dev/null && pushd initramfs >/dev/null
+  LOCAL_DST=""
+
+  if [[ -n "$DEST" ]]; then
+    LOCAL_DST=$DEST
+  else
+    LOCAL_DST="initramfs"
+  fi
+
+  mkdir -p $LOCAL_DST || return 1
+  pushd . >/dev/null && pushd $LOCAL_DST >/dev/null
   cp "../$1" . || return 1
   LOCAL_ROOTFS="$(pwd)/$(basename "$1")"
+  echo "Unpacking $LOCAL_ROOTFS > $LOCAL_DST"
 
   if [ "$2" -eq 1 ]; then
 
@@ -110,7 +121,7 @@ unpack() {
   rm "$LOCAL_ROOTFS" || return 1
   LUSER=$(logname 2>/dev/null || echo "$SUDO_USER")
   popd >/dev/null
-  chown -R "$LUSER": initramfs || return 1
+  chown -R "$LUSER": $LOCAL_DST || return 1
 }
 
 if [ $# -eq 0 ]; then
@@ -145,6 +156,11 @@ while true; do
   -e | --exploit)
     # If you want to compile your exploit before packing, you can provide a path here
     EXPLOIT=$2
+    shift 2
+    ;;
+  -d | --destination)
+    # Unpacking a .cpio(.gz) into a specific area instead of ./initramfs
+    DEST=$2
     shift 2
     ;;
   -*)

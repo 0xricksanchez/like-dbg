@@ -173,6 +173,12 @@ def test_display_message_calls_tmux_display_message():
     assert rec.calls == [["tmux", "display-message", "restarted Debuggee"]]
 
 
+def test_kill_pane_targets_only_the_requested_pane():
+    rec = Recorder()
+    Session("LIKE-DBG", runner=rec).kill_pane("%3")
+    assert rec.calls == [["tmux", "kill-pane", "-t", "%3"]]
+
+
 def test_session_has_no_shell_driving_layout_helpers():
     session = Session("LIKE-DBG")
     assert not hasattr(session, "split")

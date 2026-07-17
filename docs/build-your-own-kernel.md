@@ -193,6 +193,10 @@ Do not use `target remote :1234` from inside the Debugger container: `localhost`
 container, not the host QEMU process. A raw manual attach uses `target remote
 host.docker.internal:1234`.
 
+To start a fresh native QEMU/GDB pair after changing the scenario or build inputs, run
+`uv run ./start_kgdb --re-run`. It closes LIKE-DBG's existing Debugger and Debuggee panes, keeps
+the host pane, and reuses the original scenario, profile, and (when chosen) `--force-rebuild`.
+
 ## 4. Iterate on an exploit
 
 The inner loop is edit, deliver, run, crash, root-cause, repeat. Put your exploit under

@@ -325,7 +325,12 @@ def _selectors_match(
 
 
 def resolve_run(
-    *, profile_names: tuple[str, ...], config: ConfigResolution, host: HostProfile, workspace: Path
+    *,
+    profile_names: tuple[str, ...],
+    config: ConfigResolution,
+    host: HostProfile,
+    workspace: Path,
+    validate_build_gates: bool = True,
 ) -> RunResolution:
     registry = load_profiles(workspace)
     ordered, base, implied_by_lists = _expand(profile_names, registry)
@@ -395,7 +400,7 @@ def resolve_run(
                 ),
                 None,
             )
-            if forbidden is not None:
+            if forbidden is not None and validate_build_gates:
                 raise ConfigError(
                     f"[debuggee] {toggle}=on is impossible: active profiles build {forbidden} disabled",
                     remedy="remove the explicit toggle, or switch to a base profile that builds it in (e.g. hardened)",

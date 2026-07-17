@@ -231,6 +231,13 @@ switch winning. `fgkaslr` only emits `nofgkaslr` (to disable); it is meaningful 
 out-of-tree FG-KASLR patchset (or CTF kernels that ship it) and is harmlessly ignored elsewhere. Since
 `nokaslr` also disables FG-KASLR, a dedicated `fgkaslr = false` matters mainly when base KASLR is on.
 
+For a `[foreign]` kernel, `cmdline` remains verbatim when no mitigation toggle is explicitly set.
+You may instead set the `[debuggee]` mitigation toggles in `local.toml`, a scenario, or the CLI;
+each explicit setting replaces the corresponding token in the foreign command line. This makes, for
+example, `kaslr = false` and `kpti = false` equivalent to `nokaslr nopti`, while preserving all
+unrelated challenge boot arguments. `smep` and `smap` already apply through QEMU's CPU model, for
+both built and foreign kernels.
+
 ### `[debugger]`
 
 | Key | Default | Values and meaning |

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from pathlib import Path
 
 from likedbg.config import DebuggeeCfg
@@ -66,6 +67,80 @@ def _foreign_append(cmdline: str, console_dev: str, extra_boot_args: tuple[str, 
     return " ".join(p for p in parts if p)
 
 
+_FOREIGN_MITIGATION_KEYS = frozenset(
+    {
+        "kaslr",
+        "kpti",
+        "fgkaslr",
+        "mitigations",
+        "slab_merge",
+        "init_on_alloc",
+        "init_on_free",
+        "randomize_kstack_offset",
+        "hardened_usercopy",
+    }
+)
+
+
+def _foreign_mitigation_args(d: DebuggeeCfg, arch: str, overrides: Collection[str]) -> tuple[set[str], list[str]]:
+    """Return command-line tokens to replace and append for explicit foreign overrides only."""
+    remove: set[str] = set()
+    add: list[str] = []
+    if "kaslr" in overrides:
+        remove |= {"kaslr", "nokaslr"}
+        add.append("kaslr" if d.kaslr else "nokaslr")
+    if "kpti" in overrides or d.mitigations is False and "mitigations" in overrides:
+        remove.add("nopti")  # pti= values are filtered below.
+    if "kpti" in overrides and d.mitigations is not False:
+        if arch == "x86_64":
+            add.append("pti=on" if d.kpti else "nopti")
+        elif not d.kpti:
+            add.append("kpti=off")
+    if "fgkaslr" in overrides:
+        remove.add("nofgkaslr")
+        if not d.fgkaslr:
+            add.append("nofgkaslr")
+    if "mitigations" in overrides:
+        add.append("mitigations=auto" if d.mitigations else "mitigations=off")
+    if "slab_merge" in overrides:
+        remove |= {"slab_merge", "slab_nomerge"}
+        add.append("slab_merge" if d.slab_merge else "slab_nomerge")
+    for key, prefix, enabled, disabled in (
+        ("init_on_alloc", "init_on_alloc=", "init_on_alloc=1", "init_on_alloc=0"),
+        ("init_on_free", "init_on_free=", "init_on_free=1", "init_on_free=0"),
+        ("randomize_kstack_offset", "randomize_kstack_offset=", "randomize_kstack_offset=on", "randomize_kstack_offset=off"),
+        ("hardened_usercopy", "hardened_usercopy=", "hardened_usercopy=on", "hardened_usercopy=off"),
+    ):
+        if key in overrides:
+            remove.add(prefix)
+            add.append(enabled if getattr(d, key) else disabled)
+    return remove, add
+
+
+def _apply_foreign_mitigation_overrides(
+    cmdline: str, d: DebuggeeCfg, arch: str, overrides: Collection[str]
+) -> str:
+    """Apply explicit TOML choices without changing an otherwise verbatim foreign cmdline."""
+    active = set(overrides) & _FOREIGN_MITIGATION_KEYS
+    if not active:
+        return cmdline
+    remove, add = _foreign_mitigation_args(d, arch, active)
+    kept: list[str] = []
+    for token in cmdline.split():
+        if token in remove:
+            continue
+        if token.startswith("pti=") and ("kpti" in active or "mitigations" in active and d.mitigations is False):
+            continue
+        if token.startswith("kpti=") and "kpti" in active:
+            continue
+        if token.startswith("mitigations=") and "mitigations" in active:
+            continue
+        if any(token.startswith(prefix) for prefix in remove if prefix.endswith("=")):
+            continue
+        kept.append(token)
+    return " ".join([*kept, *add])
+
+
 def build_qemu_argv(
     debuggee: DebuggeeCfg,
     host: HostProfile,
@@ -77,6 +152,7 @@ def build_qemu_argv(
     console_log: Path | None = None,
     share_host_dir: Path | None = None,
     foreign_cmdline: str | None = None,
+    foreign_mitigation_overrides: Collection[str] = (),
     qemu_extra: tuple[str, ...] = (),
 ) -> list[str]:
     argv = [_QEMU_BIN[target_arch]]
@@ -98,7 +174,10 @@ def build_qemu_argv(
     argv += ["-kernel", str(kernel_image)]
     drive_args, root = _rootfs_args(rootfs)
     if foreign_cmdline is not None:
-        append = _foreign_append(foreign_cmdline, console_dev, extra_boot_args)
+        cmdline = _apply_foreign_mitigation_overrides(
+            foreign_cmdline, debuggee, target_arch, foreign_mitigation_overrides
+        )
+        append = _foreign_append(cmdline, console_dev, extra_boot_args)
     else:
         append = " ".join(
             [

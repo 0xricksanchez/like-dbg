@@ -107,6 +107,29 @@ def test_debugger_stage_threads_modules_gdb_to_build_gdb_args(monkeypatch):
     assert captured["modules_gdb"] == "/exploit/modules.gdb"
 
 
+def test_debugger_stage_threads_run_scoped_crash_display_path(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_build(*a, **k):
+        captured.update(k)
+        return ["gdb-multiarch"]
+
+    class _Recorder:
+        crash_dir = tmp_path / "artifacts" / "runs" / "run-123" / "crash"
+
+        def record_command(self, *a, **k):
+            pass
+
+        def set_status(self, *a, **k):
+            pass
+
+    monkeypatch.setattr("likedbg.stages.debugger.build_gdb_args", fake_build)
+    ctx = _ctx()
+    ctx.recorder = _Recorder()
+    DebuggerStage(ext="pwndbg", run_gdb=lambda args: None, breakpoint=None).run(ctx)
+    assert captured["crash_display_path"] == str(_Recorder.crash_dir)
+
+
 def test_debugger_stage_modules_gdb_defaults_to_none(monkeypatch):
     captured = {}
 

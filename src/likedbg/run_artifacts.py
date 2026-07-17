@@ -26,6 +26,7 @@ RunStatus = Literal[
     "profile-verification-failed",
     "launching",
     "launched",
+    "restarted",
     "launch-failed",
     "crashed",
 ]
@@ -193,6 +194,19 @@ class RunRecorder:
             entry["message"] = message
         self._run["status_history"].append(entry)
         self._flush()
+
+    @staticmethod
+    def mark_restarted(run_dir: Path) -> None:
+        """Record that a later `--re-run` intentionally replaced this session's panes."""
+        path = run_dir / "run.json"
+        data = json.loads(path.read_text())
+        now = _utc_now()
+        data["status"] = "restarted"
+        data.setdefault("status_history", []).append({"status": "restarted", "at": now})
+        fd, tmp = tempfile.mkstemp(dir=str(run_dir), suffix=".json.tmp")
+        with os.fdopen(fd, "w") as fh:
+            fh.write(json.dumps(data, indent=2, sort_keys=True))
+        Path(tmp).replace(path)
 
     def add_warning(self, code: str, message: str) -> None:
         self._run["warnings"].append({"at": _utc_now(), "code": code, "message": message})

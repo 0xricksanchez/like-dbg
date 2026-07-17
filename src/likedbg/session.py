@@ -126,6 +126,9 @@ class Session:
         output.parent.mkdir(parents=True, exist_ok=True)
         self._tmux("pipe-pane", "-o", "-t", pane, f"cat >> {shlex.quote(str(output))}")
 
+    def kill_pane(self, pane: str) -> None:
+        self._tmux("kill-pane", "-t", pane)
+
     def kill(self) -> None:
         # TODO(plan-3): target panes/session by self.name; name is unused scaffolding for now
         self._tmux("kill-pane", "-a", "-t", str(self.pane_base_index()))

@@ -33,6 +33,22 @@ def test_crash_breakpoints_injected_when_enabled():
     assert "gdb.Breakpoint" in joined
 
 
+def test_crash_breakpoint_displays_host_artifact_path_not_container_mount():
+    args = build_gdb_args(
+        _host(),
+        arch="x86_64",
+        vmlinux=Path("/w/vmlinux"),
+        ext="pwndbg",
+        breakpoint="start_kernel",
+        break_on_crash=True,
+        crash_breakpoints=("panic",),
+        crash_display_path="/workspace/artifacts/runs/run-123/crash",
+    )
+    joined = "\n".join(args)
+    assert f"{CRASH_DROP_MOUNT}/crash.gdb.json" in joined  # write path inside the debugger container
+    assert "/workspace/artifacts/runs/run-123/crash/crash.gdb.json" in joined  # path shown to the user
+
+
 def test_crash_breakpoints_installed_after_reaching_start_kernel():
     # Software crash breakpoints must be CREATED while gdb is stopped at the
     # start_kernel hardware breakpoint (kernel VA space mapped), so their

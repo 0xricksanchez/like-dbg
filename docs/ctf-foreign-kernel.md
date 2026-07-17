@@ -94,6 +94,13 @@ injected as-is (cross-compile it yourself). Changing the exploit means another r
 The unpack, compile, and repack happen inside the standalone `like_musl` container, so no host
 `cpio`, `musl`, or root is required.
 
+**Fast restart while iterating.** After starting a scenario with `-c`, edit its local exploit and
+run `uv run ./start_kgdb --re-run`. LIKE-DBG closes only its old Debugger and Debuggee panes,
+recompiles/repackages the scenario, and opens a fresh QEMU/GDB pair. It preserves the host pane and
+the prior run's artifacts. `--re-run` has the same lifecycle for native and cached `--use` runs;
+the foreign path additionally rebuilds the initramfs. This is different from `--restart-debuggee`,
+which only respawns the existing QEMU command and therefore cannot pick up a changed initramfs.
+
 **Console-upload (into the live guest).** Send the exploit to the running guest over the serial
 console, with no reboot, when the guest supports it:
 

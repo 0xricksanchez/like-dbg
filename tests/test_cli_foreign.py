@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from likedbg import cli
@@ -87,6 +89,7 @@ def test_build_foreign_pipeline_stage_order(tmp_path):
 
 class _FakeRecorder:
     def __init__(self, workspace):
+        self.run_dir = workspace / "artifacts" / "runs" / "fake"
         self.likedbg_log = workspace / "log"
         self.debuggee_pane_log = workspace / "d.log"
         self.debugger_pane_log = workspace / "g.log"
@@ -137,9 +140,13 @@ def test_cmd_foreign_runs_pipeline(tmp_path, monkeypatch):
 
     monkeypatch.setattr(cli, "build_foreign_pipeline", lambda *a, **k: _Pipe())
 
-    rc = cli.cmd_foreign(_FakeContainer(), _FakeSession(), tmp_path, scenario=scenario)
+    session = _FakeSession()
+    rc = cli.cmd_foreign(_FakeContainer(), session, tmp_path, scenario=scenario)
     assert rc == 0
     assert ran["ctx"].host.target_arch == "x86_64"  # arch injected from the vmlinux ELF
+    request = json.loads(session.options["@likedbg_rerun_request"])
+    assert request["scenario"] == str(scenario.resolve())
+    assert session.options["@likedbg_active_run_dir"].endswith("artifacts/runs/fake")
 
 
 def test_cmd_foreign_forces_serial_only_no_guest_net_or_share(tmp_path, monkeypatch):

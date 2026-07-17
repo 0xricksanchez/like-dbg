@@ -184,6 +184,35 @@ def test_foreign_cmdline_used_verbatim_no_mitigations():
         assert tok not in append
 
 
+def test_foreign_explicit_toml_mitigations_replace_conflicting_cmdline_tokens():
+    argv = build_qemu_argv(
+        _debuggee(kaslr=False, kpti=False),
+        _host(target_arch="x86_64"),
+        target_arch="x86_64",
+        kernel_image=Path("/w/bzImage"),
+        rootfs=None,
+        foreign_cmdline="quiet console=ttyS0 kaslr pti=on mitigations=auto",
+        foreign_mitigation_overrides=("kaslr", "kpti", "mitigations"),
+    )
+    append = argv[argv.index("-append") + 1]
+    assert "kaslr" not in append.split() and "pti=on" not in append.split() and "mitigations=auto" not in append.split()
+    assert append.endswith("nokaslr nopti mitigations=off")
+
+
+def test_foreign_explicit_kaslr_toggle_preserves_other_verbatim_arguments():
+    argv = build_qemu_argv(
+        _debuggee(kaslr=True),
+        _host(target_arch="x86_64"),
+        target_arch="x86_64",
+        kernel_image=Path("/w/bzImage"),
+        rootfs=None,
+        foreign_cmdline="quiet console=ttyS0 nokaslr panic=-1",
+        foreign_mitigation_overrides=("kaslr",),
+    )
+    append = argv[argv.index("-append") + 1]
+    assert append == "quiet console=ttyS0 panic=-1 kaslr"
+
+
 def test_foreign_cmdline_adds_console_when_missing():
     argv = build_qemu_argv(
         _debuggee(),

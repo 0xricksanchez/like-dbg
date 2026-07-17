@@ -42,6 +42,7 @@ class DebuggerStage:
         if ctx.vmlinux is None:
             raise BuildError("no vmlinux in context", remedy="run the Build/Export stages first")
         eff = ctx.effective_debuggee or ctx.settings.debuggee
+        crash_dir = getattr(ctx.recorder, "crash_dir", None)
         args = build_gdb_args(
             ctx.host,
             arch=ctx.host.target_arch,
@@ -55,6 +56,7 @@ class DebuggerStage:
             modules_gdb=self._modules_gdb,
             debuginfod_enabled=self._debuginfod_enabled,
             debuginfod_urls=self._debuginfod_urls,
+            crash_display_path=str(crash_dir) if crash_dir is not None else None,
         )
         if ctx.recorder is not None:
             ctx.recorder.record_command("gdb", shell=" ".join(args), argv=args)  # type: ignore[attr-defined]
