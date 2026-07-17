@@ -54,7 +54,8 @@ uv run ./start_kgdb -c lk01
 LIKE-DBG adopts the kernel without a Manifest: it skips download, build, and post-build `.config`
 verification (there is no `.config`), detects the architecture from the `vmlinux` ELF, and boots
 the image under GDB. The provided `cmdline` is passed through verbatim; only the console setting
-and the gdbstub option are appended.
+and the gdbstub option are appended (plus, with the default `eth0` guest NIC, `net.ifnames=0` to
+name it — see [Guest networking](#guest-networking)).
 
 ## Symbols
 
@@ -131,6 +132,26 @@ Match the challenge's runtime so your exploit behaves as it does on the remote:
 - `qemu_extra` adds QEMU flags, for example a specific CPU baseline with `-cpu
   qemu64,+smep,+smap`, so the guest's mitigations and instruction set match the target.
 
+## Guest networking
+
+Foreign guests boot with an **outbound** user-mode (SLIRP) NIC by default (`[foreign] net = true`).
+It does two jobs: the guest and your exploit can reach the network, and — the reason it is on by
+default — the NIC satisfies the challenge initramfs's boot-time `ifup`, which otherwise blocks for
+~15 seconds waiting for an interface that never appears. The NIC is a QEMU device only, **not** an
+SSH control transport, so `--run`/`--insmod` still refuse and delivery stays serial / console-upload.
+
+LIKE-DBG matches the interface name the challenge expects **without ever editing the initramfs**,
+via `[foreign] net_iface` (default `eth0`):
+
+- `eth0` (any `ethN`) — the NIC is named by appending `net.ifnames=0` to the boot command line.
+- `enp0sN` — the NIC is pinned to PCI slot `N`, so the challenge's own kernel names it `enp0sN` (no
+  `net.ifnames=0` is added).
+
+If the guest console shows `Waiting for interface <name> to appear`, set `[foreign] net_iface =
+<name>` and reboot. Names outside the `ethN` / `enp0sN` schemes are not auto-reproduced; for those,
+place the NIC by hand with `[foreign] qemu_extra` and set `[foreign] net = false`. Setting `net =
+false` on its own gives a faithful, air-gapped boot (and the ~15s wait returns).
+
 ## Worked example: Pawnyable LK01
 
 Pawnyable's LK01 ("Holstein v1", by ptr-yudai) is a good first foreign target: a stack buffer
@@ -170,8 +191,10 @@ it. Writing the exploit is left to you, as the challenge intends.
 
 ## Limitations
 
-- **Serial-only transport.** No SSH, no 9p share, and therefore no `--run` and no `--insmod`.
-  Exploit delivery is repack or console-upload, and the exploit is run by hand from the console.
+- **Serial-only control transport.** No SSH, no 9p share, and therefore no `--run` and no
+  `--insmod`. Exploit delivery is repack or console-upload, and the exploit is run by hand from the
+  console. (The guest still gets outbound networking by default — see
+  [Guest networking](#guest-networking) — but that is a device, not a control channel.)
 - **x86 symbols are auto-recovered; arm64 is not yet.** A bare x86 `bzImage` gets function symbols
   recovered from kallsyms automatically; an arm64 `Image` still needs an explicit `vmlinux` (arm64
   kallsyms recovery is a planned follow-up). Source-level (line/type) debugging on any arch still
