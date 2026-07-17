@@ -185,6 +185,8 @@ def build_qemu_argv(
     share_host_dir: Path | None = None,
     foreign_cmdline: str | None = None,
     foreign_mitigation_overrides: Collection[str] = (),
+    foreign_net: bool = False,
+    foreign_net_iface: str = "eth0",
     qemu_extra: tuple[str, ...] = (),
 ) -> list[str]:
     argv = [_QEMU_BIN[target_arch]]
@@ -205,11 +207,15 @@ def build_qemu_argv(
     argv += ["-accel", host.accel, "-m", str(debuggee.memory_mib), "-smp", str(debuggee.smp)]
     argv += ["-kernel", str(kernel_image)]
     drive_args, root = _rootfs_args(rootfs)
+    foreign_nic_device: str | None = None
     if foreign_cmdline is not None:
         cmdline = _apply_foreign_mitigation_overrides(
             foreign_cmdline, debuggee, target_arch, foreign_mitigation_overrides
         )
-        append = _foreign_append(cmdline, console_dev, extra_boot_args)
+        net_tokens: list[str] = []
+        if foreign_net:
+            foreign_nic_device, net_tokens = _foreign_nic_args(foreign_net_iface, cmdline)
+        append = _foreign_append(cmdline, console_dev, (*extra_boot_args, *net_tokens))
     else:
         append = " ".join(
             [
@@ -238,6 +244,8 @@ def build_qemu_argv(
     if debuggee.guest_net:
         argv += ["-netdev", f"user,id=net0,hostfwd=tcp::{debuggee.ssh_port}-:22"]
         argv += ["-device", "virtio-net-pci,netdev=net0"]
+    if foreign_nic_device is not None:
+        argv += ["-netdev", "user,id=net0", "-device", foreign_nic_device]
     if debuggee.share and share_host_dir is not None:
         argv += ["-virtfs", f"local,path={share_host_dir},mount_tag=exploit,security_model=mapped-xattr,id=fsdev0"]
     if debuggee.gdb:
