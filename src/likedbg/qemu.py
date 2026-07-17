@@ -244,6 +244,8 @@ def build_qemu_argv(
     if debuggee.guest_net:
         argv += ["-netdev", f"user,id=net0,hostfwd=tcp::{debuggee.ssh_port}-:22"]
         argv += ["-device", "virtio-net-pci,netdev=net0"]
+    # Foreign outbound NIC (ADR-0017). Shares id=net0 with the guest_net block above; the two are
+    # mutually exclusive (cmd_foreign forces guest_net=False for a foreign guest), so only one emits.
     if foreign_nic_device is not None:
         argv += ["-netdev", "user,id=net0", "-device", foreign_nic_device]
     if debuggee.share and share_host_dir is not None:

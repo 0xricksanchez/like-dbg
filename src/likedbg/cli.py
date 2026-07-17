@@ -694,11 +694,13 @@ def cmd_foreign(
         # runtime flag even when the selected local profile would build its Kconfig dependency off.
         validate_build_gates=False,
     )
-    # ADR-0010: a foreign guest exposes only the serial console: no virtio-net/9p devices the
-    # CTF challenge never specified, and no run.json `guest` block (which would otherwise make
-    # --run/--insmod/--rmmod try to SSH to a nonexistent sshd instead of refusing cleanly).
-    # Both RunRecorder.start (run.json `guest` block) and the pipeline's DebuggeeStage (QEMU argv)
-    # read effective_debuggee off the RunResolution, so overriding it here fixes both at once.
+    # ADR-0010/0017: a foreign guest has no SSH/9p *control* transport. Forcing guest_net=False
+    # (and share=False) drops the SSH hostfwd + the run.json `guest` block, so --run/--insmod/--rmmod
+    # refuse cleanly instead of trying to SSH to a nonexistent sshd. The outbound NIC that unblocks
+    # the challenge initramfs's ifup wait is a separate axis ([foreign] net -> foreign_net, never
+    # guest_net), so it is unaffected by this override. Both RunRecorder.start (run.json `guest`
+    # block) and the pipeline's DebuggeeStage (QEMU argv) read effective_debuggee off the
+    # RunResolution, so overriding it here fixes both at once.
     eff = rr.effective_debuggee.model_copy(update={"guest_net": False, "share": False})
     rr = dataclasses.replace(rr, effective_debuggee=eff)
     # A foreign command line remains verbatim unless the user/scenario explicitly selected a
