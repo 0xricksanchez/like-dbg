@@ -122,6 +122,13 @@ class ForeignCfg(_Base):
     arch: str = ""  # optional override; else auto-detected from the vmlinux ELF
     qemu_extra: tuple[str, ...] = ()
     exploit: str = ""
+    # Outbound guest network for a foreign guest (a QEMU device only; not an SSH control
+    # transport). Default on: the NIC makes the challenge initramfs's ifup wait succeed and
+    # gives the guest outbound network. `net_iface` is the interface name the challenge waits
+    # for (read off the guest's "Waiting for interface XXX" console line): ethN uses
+    # net.ifnames=0; enp0sN pins the NIC's PCI slot. Never edits the initramfs. See ADR-0017.
+    net: bool = True
+    net_iface: str = "eth0"
 
     @field_validator("image", "vmlinux", "initramfs", "exploit", mode="before")
     @classmethod

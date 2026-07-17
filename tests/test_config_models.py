@@ -221,3 +221,14 @@ def test_settings_has_cache_config() -> None:
     s = Settings()
     assert s.cache.max_size == ""
     assert isinstance(s.cache, CacheCfg)
+
+
+def test_foreign_cfg_net_defaults():
+    from likedbg.config import ForeignCfg
+
+    fc = ForeignCfg()
+    assert fc.net is True
+    assert fc.net_iface == "eth0"
+
+    fc2 = ForeignCfg(net=False, net_iface="enp0s3")
+    assert fc2.net is False and fc2.net_iface == "enp0s3"
