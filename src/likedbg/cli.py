@@ -517,6 +517,7 @@ def build_foreign_pipeline(
     exploit_flags: tuple[str, ...] = (),
     foreign_net: bool = True,
     foreign_net_iface: str = "eth0",
+    force_rebuild: bool = False,
 ) -> Pipeline:
     # ADR-0010: a foreign guest has no exploit share (no guest-side delivery path): never mount one,
     # and DebuggerStage below is left at its modules_gdb=None default (no modules.gdb to watch).
@@ -548,6 +549,7 @@ def build_foreign_pipeline(
                 out_dir=out_dir,
                 workspace=workspace,
                 exploit_flags=exploit_flags,
+                force=force_rebuild,
             ),
             DebuggeeStage(launch=launch_debuggee, debuggee_image=debuggee_image, workspace=workspace),
             DebuggerStage(
@@ -673,6 +675,7 @@ def cmd_foreign(
     *,
     scenario: Path | None,
     profile_arg: str = "",
+    force_rebuild: bool = False,
 ) -> int:
     cfg0 = load_config(workspace, scenario=scenario)
     fcfg = cfg0.settings.foreign
@@ -683,7 +686,7 @@ def cmd_foreign(
     out_dir = workspace / "artifacts" / "foreign" / name
     # musl (+ base) must exist before we can extract vmlinux / repack.
     _ensure_images(container, workspace, specs=images.foreign_prep_images())
-    fk = resolve_foreign(container, fcfg, workspace, out_dir=out_dir, image=MUSL_IMAGE)
+    fk = resolve_foreign(container, fcfg, workspace, out_dir=out_dir, image=MUSL_IMAGE, force=force_rebuild)
 
     # Inject the detected arch so HostProfile.detect / QEMU / gdb follow the foreign kernel.
     cfg, host, rr = resolve_for_run(
@@ -776,6 +779,7 @@ def cmd_foreign(
         exploit_flags=cfg.settings.build.exploit_flags,
         foreign_net=fcfg.net,
         foreign_net_iface=fcfg.net_iface,
+        force_rebuild=force_rebuild,
     )
     _save_rerun_request(
         session,
@@ -784,6 +788,7 @@ def cmd_foreign(
         scenario=scenario,
         profile_arg=profile_arg,
         run_dir=recorder.run_dir,
+        force_rebuild=force_rebuild,
     )
     pipeline.run(ctx)
     return 0
@@ -1494,6 +1499,7 @@ def main(argv: list[str] | None = None) -> int:
                 workspace,
                 scenario=_scenario_path(workspace, args.config),
                 profile_arg=args.profile,
+                force_rebuild=args.force_rebuild,
             )
         if args.use:
             if not os.getenv("TMUX"):

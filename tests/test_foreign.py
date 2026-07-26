@@ -1172,3 +1172,26 @@ def test_compile_exploit_logs_its_duration(tmp_path: Path, monkeypatch) -> None:
     out = tmp_path / "out" / "e"
     compile_exploit(_FakeContainer(make_out=out, out_bytes=b"\x7fELF"), src=src, arch="x86_64", out=out, image="m")
     assert any(ln.startswith("exploit: compiled e.c in ") and ln.endswith("s") for ln in lines)
+
+
+def test_extract_vmlinux_force_ignores_a_valid_stamp(tmp_path: Path, monkeypatch) -> None:
+    from likedbg import foreign as foreign_mod
+
+    img = tmp_path / "bzImage"
+    img.write_bytes(b"MZfake")
+    out = tmp_path / "vmlinux"
+    out.write_bytes(b"\x7fELFcached")
+    (tmp_path / "vmlinux.stamp").write_text(
+        json.dumps({"image_sha256": _file_sha256(img), "v2e_version": V2E_VERSION, "state": "RECOVERED"})
+    )
+
+    calls: list[str] = []
+    monkeypatch.setattr(
+        foreign_mod,
+        "recover_vmlinux",
+        lambda *a, **k: calls.append("recover") or type("R", (), {"ok": True, "symbol_count": 9999, "reason": ""})(),
+    )
+    extract_vmlinux(_FakeContainer(), img, out, image="m")
+    assert calls == []  # cached
+    extract_vmlinux(_FakeContainer(), img, out, image="m", force=True)
+    assert calls == ["recover"]

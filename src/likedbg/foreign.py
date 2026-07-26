@@ -277,19 +277,22 @@ def musl_image_sha(workspace: Path) -> str:
         return ""
 
 
-def extract_vmlinux(container: Any, image_path: Path, out: Path, *, image: str) -> Path:
+def extract_vmlinux(container: Any, image_path: Path, out: Path, *, image: str, force: bool = False) -> Path:
     """Resolve a vmlinux for an adopted kernel, best symbols first: reuse a cached result, else
     recover kernel symbols from the bzImage's kallsyms (x86, vmlinux-to-elf in like_musl), else fall
     back to a decompress-only carve (arch-detect only). The outcome is cached under out.stamp
     (keyed by image hash + pinned vmlinux-to-elf version) and logged. Raises ForeignError only when
-    nothing produces an ELF (arm64 Image / exotic packing). See ADR-0015."""
+    nothing produces an ELF (arm64 Image / exotic packing). See ADR-0015.
+
+    `force` (from --force-rebuild) ignores the cached result."""
     out.parent.mkdir(parents=True, exist_ok=True)
     stamp = out.parent / (out.name + ".stamp")
     image_hash = _file_sha256(image_path)
 
     cached = _read_stamp(stamp)
     if (
-        out.is_file()
+        not force
+        and out.is_file()
         and cached is not None
         and cached.get("image_sha256") == image_hash
         and cached.get("v2e_version") == V2E_VERSION
@@ -325,6 +328,7 @@ def resolve_foreign(
     *,
     out_dir: Path,
     image: str,
+    force: bool = False,
 ) -> ForeignKernel:
     """Resolve foreign inputs, extract vmlinux if absent, detect arch, return a ForeignKernel.
 
@@ -343,7 +347,7 @@ def resolve_foreign(
         if not vmlinux.is_file():
             raise ForeignError(f"[foreign].vmlinux not found: {vmlinux}", remedy="check the path")
     else:
-        vmlinux = extract_vmlinux(container, image_path, out_dir / "vmlinux", image=image)
+        vmlinux = extract_vmlinux(container, image_path, out_dir / "vmlinux", image=image, force=force)
 
     initramfs: Path | None = None
     if cfg.initramfs:

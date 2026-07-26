@@ -154,3 +154,29 @@ def test_foreign_repack_repoints_rootfs(tmp_path):
     stage.run(ctx)
     assert ctx.rootfs_image == out
     assert "x86_64-linux-musl-gcc -static" in " ".join(c.execs)
+
+
+def test_foreign_repack_stage_forwards_force(tmp_path):
+    (tmp_path / "initramfs.cpio.gz").write_bytes(b"\x1f\x8b")
+    exploit = tmp_path / "exploit.c"
+    exploit.write_text("int main(){}\n")
+    out = tmp_path / "stage" / "initramfs.repacked.cpio.gz"
+    c = _RepackFakeContainer(out)
+    ctx = PipelineContext(settings=Settings(), host=_host())
+
+    def _stage(force):
+        return ForeignRepackStage(
+            c,
+            foreign=_fk(tmp_path),
+            exploit=exploit,
+            image="like_musl:latest",
+            out_dir=tmp_path / "stage",
+            workspace=tmp_path,
+            force=force,
+        )
+
+    _stage(False).run(ctx)
+    _stage(False).run(ctx)
+    assert len(c.execs) == 1  # Stamp hit
+    _stage(True).run(ctx)
+    assert len(c.execs) == 2  # force ignores the Stamp

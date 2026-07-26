@@ -87,6 +87,29 @@ def test_build_foreign_pipeline_stage_order(tmp_path):
     ]
 
 
+def test_build_foreign_pipeline_threads_force_rebuild(tmp_path):
+    pipe = build_foreign_pipeline(
+        _FakeContainer(),
+        _FakeSession(),  # type: ignore[arg-type]
+        host=_host(),
+        workspace=tmp_path,
+        foreign=_fk(tmp_path),
+        exploit=tmp_path / "exp.c",
+        qemu_extra=(),
+        gdb_mount_source=str(tmp_path),
+        out_dir=tmp_path / "stage",
+        debugger_image="like_debugger:latest",
+        debuggee_image="like_debuggee:latest",
+        ext="pwndbg",
+        musl_image="like_musl:latest",
+        recorder=None,
+        force_rebuild=True,
+    )
+    repack = next(s for s in pipe._stages if s.name == "foreign-repack")  # type: ignore[attr-defined]
+    assert repack._force is True
+    assert repack._workspace == tmp_path
+
+
 class _FakeRecorder:
     def __init__(self, workspace):
         self.run_dir = workspace / "artifacts" / "runs" / "fake"
