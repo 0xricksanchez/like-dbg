@@ -314,23 +314,24 @@ def test_repack_initramfs_compiles_c_with_cross_musl(tmp_path: Path) -> None:
     assert vols[str(out.parent)]["mode"] == "rw"
 
 
-def test_repack_command_never_pipes_cpio_into_gzip(tmp_path: Path) -> None:
-    """A shell pipeline reports only its LAST command's status, and /bin/sh in the image is dash
-    (no `set -o pipefail`). `cpio | gzip > out` therefore reports GZIP's status: a cpio that dies
-    partway still exits 0, leaving a short-but-valid gzip that passes the non-empty check and gets
-    Stamped -- a false reuse for the rest of the artifact's life. cpio must be the last command of
-    its own pipeline, with the compression a separately-failing `&&` step."""
+def test_repack_command_opens_with_pipefail_so_a_dying_cpio_is_fatal(tmp_path: Path) -> None:
+    """A shell pipeline reports only its LAST command's status, so `cpio -o | gzip -1 > out` reports
+    GZIP's: a cpio that dies partway still exits 0, leaving a short-but-VALID gzip (`gzip -t` proves
+    nothing) that passes the non-empty check and gets Stamped -- a false reuse for the rest of the
+    artifact's life. `gzip -dc | cpio -idm` masks a failed decompress the same way. pipefail must be
+    the FIRST link of the `&&` chain: a shell without it then dies there, loudly, instead of running
+    on with the statuses masked."""
     from likedbg.foreign import _repack_command
 
     cmd = _repack_command("/in/initramfs.cpio.gz", "/src/exp.c", "x86_64", "/out/initramfs.repacked.cpio.gz")
     steps = cmd.split(" && ")
-    pack = next(s for s in steps if "--format=newc" in s)
-    assert "gzip" not in pack  # nothing may consume cpio's stdout and overwrite its exit status
-    assert pack.rstrip().endswith("/work/initramfs.cpio")  # staged outside /work/rootfs, which find walks
-    assert any(s.startswith("gzip -1 < /work/initramfs.cpio > ") for s in steps)
+    assert steps[0] == "set -o pipefail"
+    assert any("gzip -dc" in s and "| cpio -idm" in s for s in steps)  # unpack: covered by the same option
+    assert steps[-1].endswith("| gzip -1 > /out/initramfs.repacked.cpio.gz")
 
-    # The uncompressed branch already ends in cpio, so it keeps writing the output directly.
+    # The uncompressed branch has nothing to compress, so cpio writes the output itself.
     plain = _repack_command("/in/rootfs.cpio", "/src/exp.c", "x86_64", "/out/repacked.cpio")
+    assert plain.split(" && ")[0] == "set -o pipefail"
     assert plain.split(" && ")[-1] == "find . -print0 | cpio --null --format=newc -o --owner=root > /out/repacked.cpio"
 
 
