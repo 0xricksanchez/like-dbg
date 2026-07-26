@@ -314,25 +314,30 @@ def test_repack_initramfs_compiles_c_with_cross_musl(tmp_path: Path) -> None:
     assert vols[str(out.parent)]["mode"] == "rw"
 
 
-def test_repack_command_opens_with_pipefail_so_a_dying_cpio_is_fatal(tmp_path: Path) -> None:
-    """A shell pipeline reports only its LAST command's status, so `cpio -o | gzip -1 > out` reports
-    GZIP's: a cpio that dies partway still exits 0, leaving a short-but-VALID gzip (`gzip -t` proves
-    nothing) that passes the non-empty check and gets Stamped -- a false reuse for the rest of the
-    artifact's life. `gzip -dc | cpio -idm` masks a failed decompress the same way. pipefail must be
-    the FIRST link of the `&&` chain: a shell without it then dies there, loudly, instead of running
-    on with the statuses masked."""
+def test_repack_command_scopes_pipefail_to_the_pack_pipeline(tmp_path: Path) -> None:
+    """`set -o pipefail` must sit BETWEEN the unpack and the repack, and a reorder must fail here.
+
+    It is needed for the pack: `cpio -o | gzip -1 > out` reports GZIP's status, so a cpio that dies
+    partway still exits 0, leaving a short-but-VALID gzip (`gzip -t` proves nothing) that passes the
+    non-empty check and gets Stamped -- a false reuse for the rest of the artifact's life.
+
+    It must NOT reach the unpack. A zero-PADDED cpio archive is the normal result of block-aligning
+    an initramfs; `cpio -idm` stops at the trailer and never reads the padding, so once the unread
+    remainder exceeds the pipe buffer `gzip -dc` takes SIGPIPE and exits 141 on a perfectly good
+    unpack. Under pipefail that kills the chain and a working challenge stops booting."""
     from likedbg.foreign import _repack_command
 
     cmd = _repack_command("/in/initramfs.cpio.gz", "/src/exp.c", "x86_64", "/out/initramfs.repacked.cpio.gz")
     steps = cmd.split(" && ")
-    assert steps[0] == "set -o pipefail"
-    assert any("gzip -dc" in s and "| cpio -idm" in s for s in steps)  # unpack: covered by the same option
+    unpack = next(i for i, s in enumerate(steps) if "cpio -idm" in s)
+    pack = next(i for i, s in enumerate(steps) if "--format=newc" in s)
+    assert unpack < steps.index("set -o pipefail") < pack
     assert steps[-1].endswith("| gzip -1 > /out/initramfs.repacked.cpio.gz")
 
     # The uncompressed branch has nothing to compress, so cpio writes the output itself.
-    plain = _repack_command("/in/rootfs.cpio", "/src/exp.c", "x86_64", "/out/repacked.cpio")
-    assert plain.split(" && ")[0] == "set -o pipefail"
-    assert plain.split(" && ")[-1] == "find . -print0 | cpio --null --format=newc -o --owner=root > /out/repacked.cpio"
+    plain = _repack_command("/in/rootfs.cpio", "/src/exp.c", "x86_64", "/out/repacked.cpio").split(" && ")
+    assert plain.index("set -o pipefail") == len(plain) - 2
+    assert plain[-1] == "find . -print0 | cpio --null --format=newc -o --owner=root > /out/repacked.cpio"
 
 
 def test_repack_initramfs_arm64_uses_aarch64_gcc(tmp_path: Path) -> None:

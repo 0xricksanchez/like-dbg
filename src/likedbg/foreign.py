@@ -427,15 +427,20 @@ def exploit_flags_for(workspace: Path) -> tuple[str, ...]:
 def _repack_command(in_path: str, src_path: str, arch: str, out_path: str, extra_flags: tuple[str, ...] = ()) -> str:
     """The unpack + inject + repack command run in the like_musl container.
 
-    Opens with `set -o pipefail` because BOTH halves of this command are pipelines whose
-    interesting exit status is not the last one's: `cpio -o | gzip -1 > out` reports GZIP's, so a
-    cpio that died partway would still exit 0 having compressed the partial stream -- a short but
-    non-empty, and perfectly VALID gzip (so `gzip -t` proves nothing), initramfs that passes
-    repack_initramfs's non-empty check, gets Stamped, and is then reused forever. `gzip -dc | cpio
-    -idm` masks a failed decompress the same way. The image's /bin/sh is dash 0.5.12, which has
-    pipefail (POSIX 2024). It is the first link of the `&&` chain, not a leading `;`, deliberately:
-    on a shell without pipefail the chain dies right there instead of quietly running with the
-    statuses masked again.
+    `set -o pipefail` guards the REPACK pipeline: `cpio -o | gzip -1 > out` otherwise reports
+    GZIP's status, so a cpio that died partway would still exit 0 having compressed the partial
+    stream -- a short but non-empty, and perfectly VALID gzip (so `gzip -t` proves nothing),
+    initramfs that passes repack_initramfs's non-empty check, gets Stamped, and is then reused
+    forever. The image's /bin/sh is dash 0.5.12, which has pipefail (POSIX 2024).
+
+    It is enabled as its own link of the `&&` chain (never a leading `;`, so a shell WITHOUT
+    pipefail dies loudly here rather than running on with the status masked) placed AFTER the
+    unpack -- do not "tidy" it to the head of the chain. The unpack's `gzip -dc IN | cpio -idm`
+    must keep its default semantics: a zero-PADDED cpio archive is the normal result of
+    block-aligning an initramfs, `cpio -idm` stops at the trailer and never reads the padding, so
+    gzip takes SIGPIPE and exits 141 on a perfectly good unpack. Under pipefail that kills the
+    chain and a working challenge stops booting. Nothing is lost by scoping it: cpio is already
+    last in the unpack pipeline, so the status that matters there propagates on its own.
     """
     in_q = shlex.quote(in_path)
     src_q = shlex.quote(src_path)
@@ -450,7 +455,7 @@ def _repack_command(in_path: str, src_path: str, arch: str, out_path: str, extra
         repack += f" | gzip -1 > {out_q}"
     else:
         repack += f" > {out_q}"
-    return " && ".join(["set -o pipefail", "mkdir -p /work/rootfs", "cd /work/rootfs", unpack, inject, repack])
+    return " && ".join(["mkdir -p /work/rootfs", "cd /work/rootfs", unpack, inject, "set -o pipefail", repack])
 
 
 def repack_initramfs(
