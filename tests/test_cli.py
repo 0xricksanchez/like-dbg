@@ -1255,6 +1255,24 @@ def test_rerun_argv_reconstructs_normal_and_use_selectors(tmp_path):
     ]
 
 
+def test_rerun_argv_foreign_plain_rerun_omits_force_rebuild(tmp_path):
+    """Reuse on plain --re-run is the entire reason --force-rebuild threading exists: rebooting
+    to flip a guest mitigation must not pay for a repack. A foreign RerunRequest saved without
+    --force-rebuild must replay without it."""
+    request = cli.RerunRequest(kind="foreign", scenario=tmp_path / "scenario.toml", profile_arg="")
+    assert cli._rerun_argv(request) == ["--config", str(tmp_path / "scenario.toml")]  # noqa: SLF001
+
+
+def test_rerun_argv_foreign_force_rebuild_composes_with_rerun(tmp_path):
+    """The other direction: --force-rebuild --re-run must still replay with the flag."""
+    request = cli.RerunRequest(kind="foreign", scenario=tmp_path / "scenario.toml", profile_arg="", force_rebuild=True)
+    assert cli._rerun_argv(request) == [  # noqa: SLF001
+        "--config",
+        str(tmp_path / "scenario.toml"),
+        "--force-rebuild",
+    ]
+
+
 def test_main_build_images_is_docker_only_and_invokes_build_images(monkeypatch):
     built = []
     monkeypatch.setattr(
