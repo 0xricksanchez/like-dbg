@@ -1056,6 +1056,21 @@ def test_repack_leaves_no_stamp_when_the_container_fails(tmp_path: Path) -> None
     assert not stamp.exists()
 
 
+def test_repack_writes_no_stamp_when_the_container_produces_no_output(tmp_path: Path) -> None:
+    """exec can return cleanly (exit 0) yet leave `out` missing. The Stamp write must be gated on
+    the output-exists check, not merely on exec not raising -- else a silently-empty repack would
+    be recorded as a valid build and handed back as a cache hit next boot."""
+    from likedbg.foreign import repack_initramfs
+
+    initramfs, exploit, out = _repack_fixture(tmp_path)
+    stamp = out.parent / (out.name + ".stamp")
+    kw = {"initramfs": initramfs, "exploit": exploit, "arch": "x86_64", "out": out, "image": "m", "workspace": tmp_path}
+
+    with pytest.raises(ForeignError):
+        repack_initramfs(_FakeContainer(make_out=None), **kw)  # exec succeeds, `out` never appears
+    assert not stamp.exists()
+
+
 def test_repack_stamp_records_the_inputs_it_built_from(tmp_path: Path) -> None:
     from likedbg.foreign import _file_sha256
     from likedbg.foreign import repack_initramfs
@@ -1078,6 +1093,50 @@ def test_repack_stamp_records_the_inputs_it_built_from(tmp_path: Path) -> None:
     assert recorded["initramfs_sha256"] == _file_sha256(initramfs)
     assert recorded["exploit_flags"] == "-lm"
     assert len(recorded["command_sha"]) == 64
+
+
+class _MutatingContainer(_FakeContainer):
+    """Simulates the user saving exploit.c WHILE the ~10s repack is running (routine in an
+    edit/reboot loop): exec produces the output as usual, then rewrites the source out from
+    under the build that already consumed it."""
+
+    def __init__(self, *, exploit: Path, new_content: bytes, **kw) -> None:
+        super().__init__(**kw)
+        self._exploit = exploit
+        self._new_content = new_content
+
+    def exec(self, container, cmd, *, workdir=None):
+        result = super().exec(container, cmd, workdir=workdir)
+        self._exploit.write_bytes(self._new_content)
+        return result
+
+
+def test_repack_stamps_the_hash_read_before_the_container_ran(tmp_path: Path) -> None:
+    """The Stamp must record the source the binary was ACTUALLY built from (hashed before
+    run_detached), not whatever happens to be on disk after the container finishes. Re-hashing
+    post-run would silently record a source the repacked initramfs was never built from, and the
+    next boot would then be a cache hit on an artifact that matches no exploit.c under any hash."""
+    from likedbg.foreign import _file_sha256
+    from likedbg.foreign import repack_initramfs
+
+    initramfs, exploit, out = _repack_fixture(tmp_path)
+    pre_run_sha = _file_sha256(exploit)
+    c = _MutatingContainer(
+        exploit=exploit, new_content=b"int main(void){return 99;}\n", make_out=out, out_bytes=b"\x1f\x8b"
+    )
+    kw = {"initramfs": initramfs, "exploit": exploit, "arch": "x86_64", "out": out, "image": "m", "workspace": tmp_path}
+
+    repack_initramfs(c, **kw)
+
+    recorded = json.loads((out.parent / (out.name + ".stamp")).read_text())
+    assert recorded["exploit_sha256"] == pre_run_sha
+
+    # The Stamp now names the OLD content; the file on disk holds the NEW content edited mid-run.
+    # The next boot must rebuild from the new source rather than reuse an initramfs that was
+    # actually built from the old one.
+    c2 = _FakeContainer(make_out=out, out_bytes=b"\x1f\x8b")
+    repack_initramfs(c2, **kw)
+    assert len(c2.execs) == 1
 
 
 def test_repack_stamps_and_reuses_a_prebuilt_binary(tmp_path: Path) -> None:
