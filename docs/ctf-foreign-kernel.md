@@ -115,10 +115,11 @@ run `uv run ./start_kgdb --re-run`. LIKE-DBG closes only its old Debugger and De
 re-reads the scenario, repackages it if an input changed, and opens a fresh QEMU/GDB pair. It
 preserves the host pane and the prior run's artifacts. `--re-run` has the same lifecycle for native
 and cached `--use` runs; the foreign path additionally rebuilds the initramfs when your edit reached
-it. A re-run replays the original launch, so a session started with `--force-rebuild` keeps forcing
-the repack on every re-run; passing the flag to `--re-run` itself has no effect. This is different
-from `--restart-debuggee`, which only respawns the existing QEMU command and therefore cannot pick
-up a changed initramfs.
+it. A re-run replays the original launch's selectors and nothing more, so a plain `--re-run` always
+reuses what is unchanged, however the session was first started; write
+`uv run ./start_kgdb --re-run --force-rebuild` to force that one replay. This is different from
+`--restart-debuggee`, which only respawns the existing QEMU command and therefore cannot pick up a
+changed initramfs.
 
 **Console-upload (into the live guest).** Send the exploit to the running guest over the serial
 console, with no reboot, when the guest supports it:

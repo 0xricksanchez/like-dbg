@@ -195,7 +195,9 @@ host.docker.internal:1234`.
 
 To start a fresh native QEMU/GDB pair after changing the scenario or build inputs, run
 `uv run ./start_kgdb --re-run`. It closes LIKE-DBG's existing Debugger and Debuggee panes, keeps
-the host pane, and reuses the original scenario, profile, and (when chosen) `--force-rebuild`.
+the host pane, and reuses the original scenario and profile. `--force-rebuild` is not carried over:
+it applies to the command you type it on, so put it on the `--re-run` line when that replay should
+force.
 
 ## 4. Iterate on an exploit
 
@@ -260,8 +262,9 @@ uv run ./start_kgdb --force-rebuild            # discard this configuration's ca
 ```
 
 `--force-rebuild` carries the same meaning on a foreign scenario, where there is no cached build to
-discard: it ignores the recorded inputs and redoes the vmlinux extraction and the initramfs repack
-(see [ctf-foreign-kernel.md](ctf-foreign-kernel.md#deliver-an-exploit)). Neither form touches the
+discard: it ignores the recorded inputs and repacks the initramfs, plus re-extracts the vmlinux if
+that vmlinux was auto-extracted rather than given as `[foreign] vmlinux` (see
+[ctf-foreign-kernel.md](ctf-foreign-kernel.md#deliver-an-exploit)). Neither form touches the
 exploit-compile cache volume; `--clean-all` is what clears that.
 
 Kernel source trees are shared across builds with the same (version, patches): `--list` shows
