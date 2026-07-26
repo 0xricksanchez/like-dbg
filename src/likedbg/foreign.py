@@ -361,7 +361,7 @@ def _repack_command(in_path: str, src_path: str, arch: str, out_path: str, extra
     unpack = f"if gzip -t {in_q} 2>/dev/null; then gzip -dc {in_q} | cpio -idm; else cpio -idm < {in_q}; fi"
     repack = "find . -print0 | cpio --null --format=newc -o --owner=root"
     if out_path.endswith(".gz"):
-        repack += f" | gzip -9 > {out_q}"
+        repack += f" | gzip -1 > {out_q}"
     else:
         repack += f" > {out_q}"
     return " && ".join(["mkdir -p /work/rootfs", "cd /work/rootfs", unpack, inject, repack])

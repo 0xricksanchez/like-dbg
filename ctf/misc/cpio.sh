@@ -43,9 +43,9 @@ pack() {
   pushd "$1" >/dev/null
   dst=$(basename "$1")
   if [ "$2" -eq 1 ]; then
-    find . -print0 | cpio --null --format=newc -o --owner=root 2>/dev/null | gzip -9 > "../$dst.cpio.gz"
+    find . -print0 | cpio --null --format=newc -o --owner=root 2>/dev/null | gzip -1 >"../$dst.cpio.gz"
   else
-    find . -print0 | cpio --null --format=newc -o --owner=root 2>/dev/null > "../$dst.cpio"
+    find . -print0 | cpio --null --format=newc -o --owner=root 2>/dev/null >"../$dst.cpio"
   fi
   popd >/dev/null
 }
