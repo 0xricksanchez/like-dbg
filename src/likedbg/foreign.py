@@ -15,9 +15,11 @@ from typing import Literal
 
 from loguru import logger
 
+from likedbg import images
 from likedbg.config import ForeignCfg
 from likedbg.config import load_config
 from likedbg.constants import LIKEDBG_ZIG_CACHE_VOLUME
+from likedbg.constants import MUSL_IMAGE
 from likedbg.constants import V2E_VERSION
 from likedbg.constants import ZIG_CACHE_MOUNT
 from likedbg.errors import ContainerError
@@ -193,7 +195,9 @@ def _carve_vmlinux(container: Any, image_path: Path, out: Path, *, image: str) -
     return out
 
 
-def _image_sha256(path: Path) -> str:
+def _file_sha256(path: Path) -> str:
+    """Content hash of one file, streamed. Used for every Stamp input that is a file:
+    kernel images, initramfs archives, and exploit sources."""
     h = sha256()
     with path.open("rb") as f:
         for chunk in iter(lambda: f.read(1 << 20), b""):
@@ -209,6 +213,69 @@ def _read_stamp(stamp: Path) -> dict[str, str] | None:
         return None
 
 
+# A Stamp records the inputs one derived artifact was last built from (CONTEXT.md -> Stamp).
+# Keys are checked in THIS order so the reported reason names the most salient change: identity
+# first, then content, then the surrounding build inputs. `command_sha` is deliberately last --
+# it is the catch-all that fires when like-dbg's own build command changed, and its message is
+# the least specific of the six.
+_STAMP_REASONS: dict[str, str] = {
+    "exploit_name": "exploit changed",
+    "exploit_sha256": "source changed",
+    "exploit_flags": "exploit_flags changed",
+    "initramfs_sha256": "base initramfs changed",
+    "musl_image_sha": "like_musl toolchain image changed",
+    "command_sha": "build recipe changed",
+}
+
+
+def _abbrev(key: str, value: str | None) -> str:
+    """Shorten hash-valued Stamp fields so a reason line stays readable in the boot log."""
+    if value is None:
+        return "none"
+    return value[:8] if key.endswith(("_sha256", "_sha")) and len(value) > 8 else value
+
+
+def _stamp_verdict(stamp: Path, out: Path, inputs: dict[str, str], *, force: bool) -> str | None:
+    """None -> `out` is a valid cache hit for `inputs`; else a human-readable reason to rebuild.
+
+    Returns the reason rather than a bool so the caller can log WHICH input moved instead of
+    silently redoing the work. Fails safe in every ambiguous case -- absent output, absent or
+    unreadable Stamp, a key the stored Stamp predates -- so the answer is "rebuild", never "reuse".
+    """
+    if force:
+        return "--force-rebuild"
+    if not out.is_file() or out.stat().st_size == 0:
+        return "no cached output"
+    cached = _read_stamp(stamp)
+    if cached is None:
+        return "no build record"
+    for key, label in _STAMP_REASONS.items():
+        if key not in inputs:
+            continue
+        old = cached.get(key)
+        if old != inputs[key]:
+            return f"{label}: {_abbrev(key, old)} -> {_abbrev(key, inputs[key])}"
+    return None
+
+
+def musl_image_sha(workspace: Path) -> str:
+    """Content hash of the like_musl image's build inputs -- the compiler identity behind an
+    exploit build, and the one thing a hash of the build command cannot see (same command, newer
+    zig inside the image). Reuses the hash `images.ensure_current` already computes, so this is a
+    few file reads and no Docker call.
+
+    Best-effort: "" when the build files are absent, so a stripped-down workspace degrades to
+    "toolchain identity not tracked" rather than failing the boot.
+    """
+    spec = next((s for s in images.IMAGES if s.tag == MUSL_IMAGE), None)
+    if spec is None:
+        return ""
+    try:
+        return images.input_sha(spec, workspace)
+    except OSError:
+        return ""
+
+
 def extract_vmlinux(container: Any, image_path: Path, out: Path, *, image: str) -> Path:
     """Resolve a vmlinux for an adopted kernel, best symbols first: reuse a cached result, else
     recover kernel symbols from the bzImage's kallsyms (x86, vmlinux-to-elf in like_musl), else fall
@@ -217,7 +284,7 @@ def extract_vmlinux(container: Any, image_path: Path, out: Path, *, image: str) 
     nothing produces an ELF (arm64 Image / exotic packing). See ADR-0015."""
     out.parent.mkdir(parents=True, exist_ok=True)
     stamp = out.parent / (out.name + ".stamp")
-    image_hash = _image_sha256(image_path)
+    image_hash = _file_sha256(image_path)
 
     cached = _read_stamp(stamp)
     if (

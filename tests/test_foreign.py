@@ -10,7 +10,7 @@ from likedbg.errors import ContainerError
 from likedbg.errors import LikeDbgError
 from likedbg.foreign import ForeignError
 from likedbg.foreign import ForeignKernel
-from likedbg.foreign import _image_sha256
+from likedbg.foreign import _file_sha256
 from likedbg.foreign import _trust_gate
 from likedbg.foreign import detect_arch
 from likedbg.foreign import extract_vmlinux
@@ -596,7 +596,7 @@ def test_cache_hit_reuses_without_container(tmp_path: Path) -> None:
     out.parent.mkdir(parents=True)
     out.write_bytes(b"\x7fELFcached")
     (out.parent / "vmlinux.stamp").write_text(
-        json.dumps({"image_sha256": _image_sha256(img), "v2e_version": V2E_VERSION, "state": "RECOVERED"})
+        json.dumps({"image_sha256": _file_sha256(img), "v2e_version": V2E_VERSION, "state": "RECOVERED"})
     )
     c = _RecoverFake()
     extract_vmlinux(c, img, out, image="like_musl:latest")
@@ -699,6 +699,149 @@ def test_compile_exploit_mounts_zig_cache_volume(tmp_path):
     vols = c.run_kwargs["volumes"]
     assert vols[LIKEDBG_ZIG_CACHE_VOLUME] == {"bind": "/zig-cache", "mode": "rw"}
     assert "ZIG_GLOBAL_CACHE_DIR=/zig-cache" in " ".join(c.execs)
+
+
+# ---- Stamp: reuse a derived artifact when nothing it was built from moved ----
+
+_STAMP_INPUTS = {
+    "exploit_name": "exp.c",
+    "exploit_sha256": "a" * 64,
+    "exploit_flags": "-lpthread",
+    "initramfs_sha256": "b" * 64,
+    "musl_image_sha": "c" * 64,
+    "command_sha": "d" * 64,
+}
+
+
+def _mk_stamp(tmp_path: Path, inputs: dict[str, str]) -> tuple[Path, Path]:
+    """(stamp, out) with a non-empty `out` and a Stamp holding `inputs`."""
+    out = tmp_path / "artifact.bin"
+    out.write_bytes(b"artifact")
+    stamp = tmp_path / "artifact.bin.stamp"
+    stamp.write_text(json.dumps(inputs, sort_keys=True))
+    return stamp, out
+
+
+def test_stamp_verdict_reuses_when_every_input_matches(tmp_path: Path) -> None:
+    from likedbg.foreign import _stamp_verdict
+
+    stamp, out = _mk_stamp(tmp_path, _STAMP_INPUTS)
+    assert _stamp_verdict(stamp, out, dict(_STAMP_INPUTS), force=False) is None
+
+
+def test_stamp_verdict_force_outranks_a_valid_stamp(tmp_path: Path) -> None:
+    from likedbg.foreign import _stamp_verdict
+
+    stamp, out = _mk_stamp(tmp_path, _STAMP_INPUTS)
+    assert _stamp_verdict(stamp, out, dict(_STAMP_INPUTS), force=True) == "--force-rebuild"
+
+
+def test_stamp_verdict_missing_output_rebuilds(tmp_path: Path) -> None:
+    from likedbg.foreign import _stamp_verdict
+
+    stamp, out = _mk_stamp(tmp_path, _STAMP_INPUTS)
+    out.unlink()
+    assert _stamp_verdict(stamp, out, dict(_STAMP_INPUTS), force=False) == "no cached output"
+
+
+def test_stamp_verdict_empty_output_rebuilds(tmp_path: Path) -> None:
+    from likedbg.foreign import _stamp_verdict
+
+    stamp, out = _mk_stamp(tmp_path, _STAMP_INPUTS)
+    out.write_bytes(b"")
+    assert _stamp_verdict(stamp, out, dict(_STAMP_INPUTS), force=False) == "no cached output"
+
+
+def test_stamp_verdict_missing_stamp_rebuilds(tmp_path: Path) -> None:
+    from likedbg.foreign import _stamp_verdict
+
+    stamp, out = _mk_stamp(tmp_path, _STAMP_INPUTS)
+    stamp.unlink()
+    assert _stamp_verdict(stamp, out, dict(_STAMP_INPUTS), force=False) == "no build record"
+
+
+def test_stamp_verdict_corrupt_stamp_rebuilds(tmp_path: Path) -> None:
+    """A torn write (interrupted mid-flush) must fail safe, not be trusted."""
+    from likedbg.foreign import _stamp_verdict
+
+    stamp, out = _mk_stamp(tmp_path, _STAMP_INPUTS)
+    stamp.write_text('{"exploit_name": "exp.c"')  # truncated JSON
+    assert _stamp_verdict(stamp, out, dict(_STAMP_INPUTS), force=False) == "no build record"
+
+
+@pytest.mark.parametrize(
+    ("key", "label"),
+    [
+        ("exploit_name", "exploit changed"),
+        ("exploit_sha256", "source changed"),
+        ("exploit_flags", "exploit_flags changed"),
+        ("initramfs_sha256", "base initramfs changed"),
+        ("musl_image_sha", "like_musl toolchain image changed"),
+        ("command_sha", "build recipe changed"),
+    ],
+)
+def test_stamp_verdict_names_the_key_that_moved(tmp_path: Path, key: str, label: str) -> None:
+    from likedbg.foreign import _stamp_verdict
+
+    stamp, out = _mk_stamp(tmp_path, _STAMP_INPUTS)
+    changed = dict(_STAMP_INPUTS)
+    changed[key] = "z" * 64 if key.endswith(("_sha256", "_sha")) else "moved"
+    reason = _stamp_verdict(stamp, out, changed, force=False)
+    assert reason is not None and reason.startswith(f"{label}: ")
+
+
+def test_stamp_verdict_reports_the_rename_not_the_content_change(tmp_path: Path) -> None:
+    """A rename implies new content; the rename is the more useful thing to say."""
+    from likedbg.foreign import _stamp_verdict
+
+    stamp, out = _mk_stamp(tmp_path, _STAMP_INPUTS)
+    changed = dict(_STAMP_INPUTS, exploit_name="exp2.c", exploit_sha256="e" * 64)
+    assert _stamp_verdict(stamp, out, changed, force=False) == "exploit changed: exp.c -> exp2.c"
+
+
+def test_stamp_verdict_abbreviates_hashes_but_not_names(tmp_path: Path) -> None:
+    from likedbg.foreign import _stamp_verdict
+
+    stamp, out = _mk_stamp(tmp_path, _STAMP_INPUTS)
+    changed = dict(_STAMP_INPUTS, exploit_sha256="e" * 64)
+    assert _stamp_verdict(stamp, out, changed, force=False) == "source changed: aaaaaaaa -> eeeeeeee"
+
+
+def test_stamp_verdict_rebuilds_when_the_stamp_predates_a_key(tmp_path: Path) -> None:
+    """An older Stamp written before a key existed must not be read as a match."""
+    from likedbg.foreign import _stamp_verdict
+
+    older = {k: v for k, v in _STAMP_INPUTS.items() if k != "command_sha"}
+    stamp, out = _mk_stamp(tmp_path, older)
+    reason = _stamp_verdict(stamp, out, dict(_STAMP_INPUTS), force=False)
+    assert reason == "build recipe changed: none -> dddddddd"
+
+
+def test_stamp_verdict_ignores_keys_absent_from_inputs(tmp_path: Path) -> None:
+    from likedbg.foreign import _stamp_verdict
+
+    stamp, out = _mk_stamp(tmp_path, _STAMP_INPUTS)
+    assert _stamp_verdict(stamp, out, {"exploit_name": "exp.c"}, force=False) is None
+
+
+def test_musl_image_sha_matches_the_image_currency_hash(tmp_path: Path) -> None:
+    from likedbg import images
+    from likedbg.constants import MUSL_IMAGE
+    from likedbg.foreign import musl_image_sha
+
+    (tmp_path / "io" / "scripts").mkdir(parents=True)
+    (tmp_path / ".dockerfile_musl").write_text("FROM like_dbg_base:latest\n")
+    (tmp_path / "io" / "scripts" / "extract-vmlinux.sh").write_text("#!/bin/sh\n")
+    spec = next(s for s in images.IMAGES if s.tag == MUSL_IMAGE)
+    assert musl_image_sha(tmp_path) == images.input_sha(spec, tmp_path)
+
+
+def test_musl_image_sha_is_empty_without_the_dockerfile(tmp_path: Path) -> None:
+    """A workspace stripped of the repo's build files still boots; it just stops
+    tracking toolchain identity, rather than raising."""
+    from likedbg.foreign import musl_image_sha
+
+    assert musl_image_sha(tmp_path) == ""
 
 
 def test_repack_initramfs_mounts_zig_cache_volume(tmp_path):
