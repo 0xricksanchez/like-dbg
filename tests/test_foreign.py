@@ -277,7 +277,9 @@ def test_repack_initramfs_compiles_c_with_cross_musl(tmp_path: Path) -> None:
     out = tmp_path / "out" / "initramfs.repacked.cpio.gz"
     c = _FakeContainer(make_out=out, out_bytes=b"\x1f\x8b")
 
-    result = repack_initramfs(c, initramfs=initramfs, exploit=exploit, arch="x86_64", out=out, image="like_musl:latest")
+    result = repack_initramfs(
+        c, initramfs=initramfs, exploit=exploit, arch="x86_64", out=out, image="like_musl:latest", workspace=tmp_path
+    )
 
     assert result == out
     cmd = " ".join(c.execs)
@@ -300,7 +302,9 @@ def test_repack_initramfs_arm64_uses_aarch64_gcc(tmp_path: Path) -> None:
     out = tmp_path / "out" / "repacked.cpio"
     c = _FakeContainer(make_out=out, out_bytes=b"07070100")
 
-    repack_initramfs(c, initramfs=initramfs, exploit=exploit, arch="arm64", out=out, image="like_musl:latest")
+    repack_initramfs(
+        c, initramfs=initramfs, exploit=exploit, arch="arm64", out=out, image="like_musl:latest", workspace=tmp_path
+    )
     assert "aarch64-linux-musl-gcc -static" in " ".join(c.execs)
 
 
@@ -316,7 +320,9 @@ def test_repack_initramfs_copies_prebuilt_binary(tmp_path: Path) -> None:
     out = tmp_path / "out" / "initramfs.repacked.cpio.gz"
     c = _FakeContainer(make_out=out, out_bytes=b"\x1f\x8b")
 
-    repack_initramfs(c, initramfs=initramfs, exploit=exploit, arch="x86_64", out=out, image="like_musl:latest")
+    repack_initramfs(
+        c, initramfs=initramfs, exploit=exploit, arch="x86_64", out=out, image="like_musl:latest", workspace=tmp_path
+    )
     cmd = " ".join(c.execs)
     assert "cp /src/exploit" in cmd and "musl-gcc" not in cmd
 
@@ -333,7 +339,9 @@ def test_repack_initramfs_quotes_filename_with_space(tmp_path: Path) -> None:
     out = tmp_path / "out" / "initramfs.repacked.cpio.gz"
     c = _FakeContainer(make_out=out, out_bytes=b"\x1f\x8b")
 
-    repack_initramfs(c, initramfs=initramfs, exploit=exploit, arch="x86_64", out=out, image="like_musl:latest")
+    repack_initramfs(
+        c, initramfs=initramfs, exploit=exploit, arch="x86_64", out=out, image="like_musl:latest", workspace=tmp_path
+    )
     cmd = " ".join(c.execs)
     assert "'/in/odd name.cpio.gz'" in cmd
     # unquoted form must not appear as a standalone shell token
@@ -355,7 +363,9 @@ def test_repack_initramfs_same_dir_initramfs_and_exploit_shares_one_mount(tmp_pa
     out = tmp_path / "out" / "initramfs.repacked.cpio.gz"
     c = _FakeContainer(make_out=out, out_bytes=b"\x1f\x8b")
 
-    repack_initramfs(c, initramfs=initramfs, exploit=exploit, arch="x86_64", out=out, image="like_musl:latest")
+    repack_initramfs(
+        c, initramfs=initramfs, exploit=exploit, arch="x86_64", out=out, image="like_musl:latest", workspace=tmp_path
+    )
 
     vols = c.run_kwargs["volumes"]
     binds = {v["bind"] for v in vols.values()}
@@ -669,7 +679,9 @@ def test_repack_threads_exploit_flags(tmp_path: Path) -> None:
     src.write_text("int main(void){return 0;}\n")
     out = tmp_path / "o" / "rootfs.cpio"
     c = _FakeContainer(make_out=out, out_bytes=b"cpio")
-    repack_initramfs(c, initramfs=initramfs, exploit=src, arch="x86_64", out=out, image="m", extra_flags=("-lm",))
+    repack_initramfs(
+        c, initramfs=initramfs, exploit=src, arch="x86_64", out=out, image="m", workspace=tmp_path, extra_flags=("-lm",)
+    )
     assert "-lm" in " ".join(c.execs)
 
 
@@ -856,7 +868,248 @@ def test_repack_initramfs_mounts_zig_cache_volume(tmp_path):
     out = tmp_path / "o" / "initramfs.repacked.cpio.gz"
     c = _FakeContainer(make_out=out, out_bytes=b"\x1f\x8bxx")
 
-    repack_initramfs(c, initramfs=initramfs, exploit=exploit, arch="x86_64", out=out, image="like_musl:latest")
+    repack_initramfs(
+        c, initramfs=initramfs, exploit=exploit, arch="x86_64", out=out, image="like_musl:latest", workspace=tmp_path
+    )
 
     vols = c.run_kwargs["volumes"]
     assert vols[LIKEDBG_ZIG_CACHE_VOLUME] == {"bind": "/zig-cache", "mode": "rw"}
+
+
+# ---- Stamp-guarded repack: skip the container when nothing moved ----
+
+
+class _StampProbeContainer(_FakeContainer):
+    """Records whether the Stamp still existed at the moment the container started."""
+
+    def __init__(self, *, stamp: Path, **kw) -> None:
+        super().__init__(**kw)
+        self._stamp = stamp
+        self.stamp_existed_during_run: bool | None = None
+
+    def run_detached(self, image, **kwargs):
+        self.stamp_existed_during_run = self._stamp.exists()
+        return super().run_detached(image, **kwargs)
+
+
+class _RaisingContainer(_FakeContainer):
+    def exec(self, container, cmd, *, workdir=None):
+        self.execs.append(cmd)
+        raise RuntimeError("container died mid-repack")
+
+
+def _repack_fixture(tmp_path: Path, *, exploit_name: str = "exp.c") -> tuple[Path, Path, Path]:
+    """(initramfs, exploit, out) laid out the way a CTF challenge ships them."""
+    initramfs = tmp_path / "in" / "initramfs.cpio.gz"
+    initramfs.parent.mkdir(parents=True, exist_ok=True)
+    initramfs.write_bytes(b"\x1f\x8b")
+    exploit = tmp_path / "src" / exploit_name
+    exploit.parent.mkdir(parents=True, exist_ok=True)
+    exploit.write_text("int main(void){return 0;}\n")
+    out = tmp_path / "out" / "initramfs.repacked.cpio.gz"
+    return initramfs, exploit, out
+
+
+def test_repack_reuses_the_previous_output_when_nothing_changed(tmp_path: Path) -> None:
+    from likedbg.foreign import repack_initramfs
+
+    initramfs, exploit, out = _repack_fixture(tmp_path)
+    c = _FakeContainer(make_out=out, out_bytes=b"\x1f\x8b")
+    kw = {"initramfs": initramfs, "exploit": exploit, "arch": "x86_64", "out": out, "image": "m", "workspace": tmp_path}
+
+    assert repack_initramfs(c, **kw) == out
+    assert len(c.execs) == 1
+    assert repack_initramfs(c, **kw) == out
+    assert len(c.execs) == 1  # second boot never started a container
+
+
+def test_repack_logs_both_the_reuse_and_the_rebuild(tmp_path: Path, monkeypatch) -> None:
+    from likedbg import foreign as foreign_mod
+    from likedbg.foreign import repack_initramfs
+
+    lines: list[str] = []
+    monkeypatch.setattr(foreign_mod.logger, "info", lambda msg: lines.append(msg))
+
+    initramfs, exploit, out = _repack_fixture(tmp_path)
+    c = _FakeContainer(make_out=out, out_bytes=b"\x1f\x8b")
+    kw = {"initramfs": initramfs, "exploit": exploit, "arch": "x86_64", "out": out, "image": "m", "workspace": tmp_path}
+
+    repack_initramfs(c, **kw)
+    assert any("rebuilding initramfs (no cached output)" in ln for ln in lines)
+    assert any(ln.startswith("foreign exploit: repacked initramfs from exp.c (sha256 ") for ln in lines)
+
+    lines.clear()
+    repack_initramfs(c, **kw)
+    assert len(lines) == 1
+    assert lines[0].startswith("foreign exploit: exp.c unchanged (sha256 ")
+    assert "reusing repacked initramfs" in lines[0]
+
+
+def test_repack_rebuilds_when_the_source_changes(tmp_path: Path) -> None:
+    from likedbg.foreign import repack_initramfs
+
+    initramfs, exploit, out = _repack_fixture(tmp_path)
+    c = _FakeContainer(make_out=out, out_bytes=b"\x1f\x8b")
+    kw = {"initramfs": initramfs, "exploit": exploit, "arch": "x86_64", "out": out, "image": "m", "workspace": tmp_path}
+
+    repack_initramfs(c, **kw)
+    exploit.write_text("int main(void){return 1;}\n")
+    repack_initramfs(c, **kw)
+    assert len(c.execs) == 2
+
+
+def test_repack_rebuilds_when_the_exploit_is_renamed(tmp_path: Path) -> None:
+    from likedbg.foreign import repack_initramfs
+
+    initramfs, exploit, out = _repack_fixture(tmp_path)
+    c = _FakeContainer(make_out=out, out_bytes=b"\x1f\x8b")
+    repack_initramfs(c, initramfs=initramfs, exploit=exploit, arch="x86_64", out=out, image="m", workspace=tmp_path)
+    renamed = exploit.parent / "exp2.c"
+    exploit.rename(renamed)  # same bytes, different name
+    repack_initramfs(c, initramfs=initramfs, exploit=renamed, arch="x86_64", out=out, image="m", workspace=tmp_path)
+    assert len(c.execs) == 2
+
+
+def test_repack_rebuilds_when_exploit_flags_change(tmp_path: Path) -> None:
+    from likedbg.foreign import repack_initramfs
+
+    initramfs, exploit, out = _repack_fixture(tmp_path)
+    c = _FakeContainer(make_out=out, out_bytes=b"\x1f\x8b")
+    kw = {"initramfs": initramfs, "exploit": exploit, "arch": "x86_64", "out": out, "image": "m", "workspace": tmp_path}
+
+    repack_initramfs(c, **kw, extra_flags=())
+    repack_initramfs(c, **kw, extra_flags=("-lpthread",))
+    assert len(c.execs) == 2
+
+
+def test_repack_rebuilds_when_the_base_initramfs_changes(tmp_path: Path) -> None:
+    from likedbg.foreign import repack_initramfs
+
+    initramfs, exploit, out = _repack_fixture(tmp_path)
+    c = _FakeContainer(make_out=out, out_bytes=b"\x1f\x8b")
+    kw = {"initramfs": initramfs, "exploit": exploit, "arch": "x86_64", "out": out, "image": "m", "workspace": tmp_path}
+
+    repack_initramfs(c, **kw)
+    initramfs.write_bytes(b"\x1f\x8b\x08\x00different")
+    repack_initramfs(c, **kw)
+    assert len(c.execs) == 2
+
+
+def test_repack_rebuilds_when_the_build_command_changes(tmp_path: Path, monkeypatch) -> None:
+    """The catch-all: like-dbg's own repack logic changed, so every Stamp is stale."""
+    from likedbg import foreign as foreign_mod
+    from likedbg.foreign import repack_initramfs
+
+    initramfs, exploit, out = _repack_fixture(tmp_path)
+    c = _FakeContainer(make_out=out, out_bytes=b"\x1f\x8b")
+    kw = {"initramfs": initramfs, "exploit": exploit, "arch": "x86_64", "out": out, "image": "m", "workspace": tmp_path}
+
+    repack_initramfs(c, **kw)
+    real = foreign_mod._repack_command
+    monkeypatch.setattr(foreign_mod, "_repack_command", lambda *a, **k: real(*a, **k) + " && echo new")
+    repack_initramfs(c, **kw)
+    assert len(c.execs) == 2
+
+
+def test_repack_force_rebuilds_despite_a_valid_stamp(tmp_path: Path) -> None:
+    from likedbg.foreign import repack_initramfs
+
+    initramfs, exploit, out = _repack_fixture(tmp_path)
+    c = _FakeContainer(make_out=out, out_bytes=b"\x1f\x8b")
+    kw = {"initramfs": initramfs, "exploit": exploit, "arch": "x86_64", "out": out, "image": "m", "workspace": tmp_path}
+
+    repack_initramfs(c, **kw)
+    repack_initramfs(c, **kw, force=True)
+    assert len(c.execs) == 2
+
+
+def test_repack_drops_the_stamp_before_starting_the_container(tmp_path: Path) -> None:
+    """An interrupted repack leaves a truncated but non-empty output that would pass the size
+    check. Dropping the Stamp first means such a run can never be mistaken for a finished one."""
+    from likedbg.foreign import repack_initramfs
+
+    initramfs, exploit, out = _repack_fixture(tmp_path)
+    stamp = out.parent / (out.name + ".stamp")
+    c = _FakeContainer(make_out=out, out_bytes=b"\x1f\x8b")
+    kw = {"initramfs": initramfs, "exploit": exploit, "arch": "x86_64", "out": out, "image": "m", "workspace": tmp_path}
+
+    repack_initramfs(c, **kw)
+    assert stamp.is_file()
+
+    probe = _StampProbeContainer(stamp=stamp, make_out=out, out_bytes=b"\x1f\x8b")
+    repack_initramfs(probe, **kw, force=True)
+    assert probe.stamp_existed_during_run is False
+
+
+def test_repack_leaves_no_stamp_when_the_container_fails(tmp_path: Path) -> None:
+    from likedbg.foreign import repack_initramfs
+
+    initramfs, exploit, out = _repack_fixture(tmp_path)
+    stamp = out.parent / (out.name + ".stamp")
+    kw = {"initramfs": initramfs, "exploit": exploit, "arch": "x86_64", "out": out, "image": "m", "workspace": tmp_path}
+
+    repack_initramfs(_FakeContainer(make_out=out, out_bytes=b"\x1f\x8b"), **kw)
+    assert stamp.is_file()
+
+    with pytest.raises(RuntimeError):
+        repack_initramfs(_RaisingContainer(), **kw, force=True)
+    assert not stamp.exists()
+
+
+def test_repack_stamp_records_the_inputs_it_built_from(tmp_path: Path) -> None:
+    from likedbg.foreign import _file_sha256
+    from likedbg.foreign import repack_initramfs
+
+    initramfs, exploit, out = _repack_fixture(tmp_path)
+    c = _FakeContainer(make_out=out, out_bytes=b"\x1f\x8b")
+    repack_initramfs(
+        c,
+        initramfs=initramfs,
+        exploit=exploit,
+        arch="x86_64",
+        out=out,
+        image="m",
+        workspace=tmp_path,
+        extra_flags=("-lm",),
+    )
+    recorded = json.loads((out.parent / (out.name + ".stamp")).read_text())
+    assert recorded["exploit_name"] == "exp.c"
+    assert recorded["exploit_sha256"] == _file_sha256(exploit)
+    assert recorded["initramfs_sha256"] == _file_sha256(initramfs)
+    assert recorded["exploit_flags"] == "-lm"
+    assert len(recorded["command_sha"]) == 64
+
+
+def test_repack_stamps_and_reuses_a_prebuilt_binary(tmp_path: Path) -> None:
+    from likedbg.foreign import repack_initramfs
+
+    initramfs = tmp_path / "in" / "initramfs.cpio.gz"
+    initramfs.parent.mkdir(parents=True)
+    initramfs.write_bytes(b"\x1f\x8b")
+    exploit = tmp_path / "src" / "exploit"  # no .c suffix = prebuilt static binary
+    exploit.parent.mkdir(parents=True)
+    exploit.write_bytes(b"\x7fELFstatic")
+    out = tmp_path / "out" / "initramfs.repacked.cpio.gz"
+    c = _FakeContainer(make_out=out, out_bytes=b"\x1f\x8b")
+    kw = {"initramfs": initramfs, "exploit": exploit, "arch": "x86_64", "out": out, "image": "m", "workspace": tmp_path}
+
+    repack_initramfs(c, **kw)
+    repack_initramfs(c, **kw)
+    assert len(c.execs) == 1
+    assert "musl-gcc" not in " ".join(c.execs)
+
+
+def test_compile_exploit_logs_its_duration(tmp_path: Path, monkeypatch) -> None:
+    """Instrumentation for the deferred --run cache decision; also standing UX."""
+    from likedbg import foreign as foreign_mod
+    from likedbg.foreign import compile_exploit
+
+    lines: list[str] = []
+    monkeypatch.setattr(foreign_mod.logger, "info", lambda msg: lines.append(msg))
+
+    src = tmp_path / "src" / "e.c"
+    src.parent.mkdir()
+    src.write_text("int main(void){return 0;}\n")
+    out = tmp_path / "out" / "e"
+    compile_exploit(_FakeContainer(make_out=out, out_bytes=b"\x7fELF"), src=src, arch="x86_64", out=out, image="m")
+    assert any(ln.startswith("exploit: compiled e.c in ") and ln.endswith("s") for ln in lines)

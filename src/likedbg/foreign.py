@@ -6,6 +6,7 @@ from __future__ import annotations
 import base64
 import json
 import shlex
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from hashlib import sha256
@@ -395,6 +396,7 @@ def compile_exploit(
     )
     volumes[LIKEDBG_ZIG_CACHE_VOLUME] = {"bind": ZIG_CACHE_MOUNT, "mode": "rw"}
     cmd = _musl_compile(arch, shlex.quote(src_path), shlex.quote(out_path), extra_flags)
+    t0 = time.monotonic()
     c = container.run_detached(image, volumes=volumes, detach=True, tty=True)
     try:
         container.exec(c, cmd)
@@ -405,6 +407,7 @@ def compile_exploit(
             f"exploit compile produced no output at {out}",
             remedy="check the .c compiles static-musl (a single flag-less .c; else pass a prebuilt binary)",
         )
+    logger.info(f"exploit: compiled {src.name} in {time.monotonic() - t0:.1f}s")
     return out
 
 
@@ -442,12 +445,20 @@ def repack_initramfs(
     arch: str,
     out: Path,
     image: str,
+    workspace: Path,
     extra_flags: tuple[str, ...] = (),
+    force: bool = False,
 ) -> Path:
     """Unpack the foreign initramfs, inject the exploit at /exploit (musl-static compile of a
     .c with the user's [build] exploit_flags, else copy a prebuilt static binary), repack
     (newc [+gzip]) to `out` in the like_musl container. Compiling to the FOREIGN arch is why
-    `arch` is threaded in."""
+    `arch` is threaded in.
+
+    Stamp-guarded (CONTEXT.md -> Stamp): a call whose exploit, base initramfs, flags, toolchain
+    image and build command all match the previous one returns `out` without starting a
+    container, so rebooting only to change a runtime mitigation costs nothing. `force` (from
+    --force-rebuild) ignores the Stamp.
+    """
     out.parent.mkdir(parents=True, exist_ok=True)
     volumes, (in_path, src_path, out_path) = _dedup_mounts(
         [
@@ -458,6 +469,34 @@ def repack_initramfs(
     )
     volumes[LIKEDBG_ZIG_CACHE_VOLUME] = {"bind": ZIG_CACHE_MOUNT, "mode": "rw"}
     cmd = _repack_command(in_path, src_path, arch, out_path, extra_flags)
+
+    # Hashed BEFORE the compile, and that same value is stamped below. Re-reading afterwards
+    # would record a source the repacked binary was NOT built from if the file changed
+    # mid-run -- permanently stale and silent. Hashing first fails toward a spurious rebuild.
+    exploit_sha = _file_sha256(exploit)
+    stamp = out.parent / (out.name + ".stamp")
+    inputs = {
+        "exploit_name": exploit.name,
+        "exploit_sha256": exploit_sha,
+        "exploit_flags": " ".join(extra_flags),
+        "initramfs_sha256": _file_sha256(initramfs),
+        "musl_image_sha": musl_image_sha(workspace),
+        # Hashing the command itself catches any change to like-dbg's own repack logic with no
+        # version constant to remember to bump. It also subsumes `arch`, correctly: arch appears
+        # in the .c branch's cross-gcc name and is genuinely absent from the prebuilt `cp` branch.
+        "command_sha": sha256(cmd.encode()).hexdigest(),
+    }
+    reason = _stamp_verdict(stamp, out, inputs, force=force)
+    if reason is None:
+        logger.info(f"foreign exploit: {exploit.name} unchanged (sha256 {exploit_sha[:8]}); reusing repacked initramfs")
+        return out
+    logger.info(f"foreign exploit: rebuilding initramfs ({reason})")
+
+    # Drop the Stamp BEFORE the work. An interrupted repack leaves a truncated but non-empty
+    # output that passes the size check below; if the user then reverts the source edit, the
+    # old Stamp would match again and hand back a corrupt initramfs.
+    stamp.unlink(missing_ok=True)
+    t0 = time.monotonic()
     c = container.run_detached(image, volumes=volumes, detach=True, tty=True)
     try:
         container.exec(c, cmd)
@@ -468,6 +507,11 @@ def repack_initramfs(
             f"initramfs repack produced no output at {out}",
             remedy="check the exploit compiles and the cpio format round-trips",
         )
+    stamp.write_text(json.dumps(inputs, sort_keys=True))
+    logger.info(
+        f"foreign exploit: repacked initramfs from {exploit.name} "
+        f"(sha256 {exploit_sha[:8]}) in {time.monotonic() - t0:.1f}s"
+    )
     return out
 
 

@@ -100,6 +100,7 @@ def test_foreign_repack_skips_without_exploit(tmp_path):
         exploit=None,
         image="like_musl:latest",
         out_dir=tmp_path / "stage",
+        workspace=tmp_path,
     )
     assert stage.should_skip(ctx) is True
 
@@ -126,6 +127,7 @@ def test_foreign_repack_warns_when_exploit_set_but_no_initramfs(tmp_path, monkey
         exploit=exploit,
         image="like_musl:latest",
         out_dir=tmp_path / "stage",
+        workspace=tmp_path,
     )
     assert stage.should_skip(ctx) is True
     assert len(warnings) == 1
@@ -141,7 +143,12 @@ def test_foreign_repack_repoints_rootfs(tmp_path):
     ctx = PipelineContext(settings=Settings(), host=_host())
     ForeignAdoptStage(foreign=_fk(tmp_path), qemu_extra=()).run(ctx)  # sets rootfs to the raw initramfs
     stage = ForeignRepackStage(
-        c, foreign=_fk(tmp_path), exploit=exploit, image="like_musl:latest", out_dir=tmp_path / "stage"
+        c,
+        foreign=_fk(tmp_path),
+        exploit=exploit,
+        image="like_musl:latest",
+        out_dir=tmp_path / "stage",
+        workspace=tmp_path,
     )
     assert stage.should_skip(ctx) is False
     stage.run(ctx)

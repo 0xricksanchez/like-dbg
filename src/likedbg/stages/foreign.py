@@ -57,7 +57,8 @@ class ForeignAdoptStage:
 
 
 class ForeignRepackStage:
-    """Repack the foreign initramfs with the exploit at /exploit; runs only when exploit is set."""
+    """Repack the foreign initramfs with the exploit at /exploit; runs only when exploit is set.
+    Stamp-guarded inside repack_initramfs: an unchanged exploit reuses the previous repack."""
 
     name = "foreign-repack"
 
@@ -69,6 +70,7 @@ class ForeignRepackStage:
         exploit: Path | None,
         image: str,
         out_dir: Path,
+        workspace: Path,
         exploit_flags: tuple[str, ...] = (),
     ) -> None:
         self._c = container
@@ -76,6 +78,7 @@ class ForeignRepackStage:
         self._exploit = exploit
         self._image = image
         self._out_dir = out_dir
+        self._workspace = workspace
         self._exploit_flags = exploit_flags
 
     def should_skip(self, ctx: PipelineContext) -> bool:
@@ -95,6 +98,7 @@ class ForeignRepackStage:
             arch=ctx.host.target_arch,
             out=self._out_dir / "initramfs.repacked.cpio.gz",
             image=self._image,
+            workspace=self._workspace,
             extra_flags=self._exploit_flags,
         )
         ctx.rootfs_image = repacked

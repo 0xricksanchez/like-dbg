@@ -546,6 +546,7 @@ def build_foreign_pipeline(
                 exploit=exploit,
                 image=musl_image,
                 out_dir=out_dir,
+                workspace=workspace,
                 exploit_flags=exploit_flags,
             ),
             DebuggeeStage(launch=launch_debuggee, debuggee_image=debuggee_image, workspace=workspace),
