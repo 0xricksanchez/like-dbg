@@ -1204,6 +1204,44 @@ def test_rerun_request_round_trips_as_absolute_session_state(tmp_path):
     assert request.profile_arg == "exploit-dev"
 
 
+def test_save_rerun_request_persists_no_force_rebuild_key(tmp_path):
+    """force_rebuild is no longer session state (Task 5): the persisted request must not carry a
+    force_rebuild key at all, so a stored session can never replay a stale force."""
+    session = _RestartSession()
+    cli._save_rerun_request(  # noqa: SLF001 - exercise the tmux-state seam directly
+        session,
+        workspace=tmp_path,
+        kind="normal",
+        scenario=None,
+        profile_arg="",
+        run_dir=tmp_path / "run",
+    )
+    data = json.loads(session.options[cli._RERUN_OPTION])  # noqa: SLF001
+    assert "force_rebuild" not in data
+
+
+def test_load_rerun_request_tolerates_stale_force_rebuild_key(tmp_path):
+    """Upgrade tolerance: a live tmux session started before this change may still have a stored
+    request with a stale force_rebuild key. _load_rerun_request reads fields individually rather
+    than splatting the dict, so the extra key must be silently ignored, not rejected as invalid
+    active re-run state -- stranding an in-flight session on upgrade would be worse than the bug
+    this fixes."""
+    request = json.dumps(
+        {
+            "version": 1,
+            "workspace": str(tmp_path.resolve()),
+            "kind": "normal",
+            "scenario": "",
+            "profile_arg": "",
+            "force_rebuild": True,
+        }
+    )
+    session = _RestartSession(options={"@likedbg_rerun_request": request})
+    loaded = cli._load_rerun_request(session, workspace=tmp_path)  # noqa: SLF001
+    assert loaded.kind == "normal"
+    assert not hasattr(loaded, "force_rebuild")
+
+
 def test_rerun_foreign_preflights_before_killing_panes(tmp_path):
     _make_project(tmp_path)
     scenario = tmp_path / "not-foreign.toml"
@@ -1234,18 +1272,21 @@ def test_main_rerun_bypasses_normal_config_and_docker_setup(monkeypatch):
     rerun = []
     monkeypatch.setenv("TMUX", "/tmp/tmux")
     monkeypatch.setattr(cli, "load_config", lambda *a, **k: pytest.fail("normal config flow should not run"))
-    monkeypatch.setattr(cli, "cmd_rerun", lambda session, workspace: rerun.append((session, workspace)) or 0)
+    monkeypatch.setattr(
+        cli, "cmd_rerun", lambda session, workspace, *, force_rebuild=False: rerun.append((session, workspace)) or 0
+    )
     assert cli.main(["--re-run"]) == 0
     assert len(rerun) == 1
 
 
 def test_rerun_argv_reconstructs_normal_and_use_selectors(tmp_path):
-    normal = cli.RerunRequest(kind="normal", scenario=None, profile_arg="kasan", force_rebuild=True)
+    normal = cli.RerunRequest(kind="normal", scenario=None, profile_arg="kasan")
     use = cli.RerunRequest(
         kind="use", scenario=tmp_path / "scenario.toml", profile_arg="", use_label="linux-foo", rootfs_label="rootfs-bar"
     )
-    assert cli._rerun_argv(normal) == ["--profile", "kasan", "--force-rebuild"]  # noqa: SLF001
-    assert cli._rerun_argv(use) == [  # noqa: SLF001
+    assert cli._rerun_argv(normal, force_rebuild=True) == ["--profile", "kasan", "--force-rebuild"]  # noqa: SLF001
+    # kind="use" wins over force_rebuild: a cached build selected by label has no rebuild to force.
+    assert cli._rerun_argv(use, force_rebuild=True) == [  # noqa: SLF001
         "--config",
         str(tmp_path / "scenario.toml"),
         "--use",
@@ -1255,18 +1296,26 @@ def test_rerun_argv_reconstructs_normal_and_use_selectors(tmp_path):
     ]
 
 
+def test_rerun_argv_normal_plain_rerun_omits_force_rebuild(tmp_path):
+    """force_rebuild is an argument to _rerun_argv now, not a field read off the request -- a plain
+    --re-run (force_rebuild=False) must not force, regardless of what an earlier boot did."""
+    request = cli.RerunRequest(kind="normal", scenario=None, profile_arg="kasan")
+    assert cli._rerun_argv(request, force_rebuild=False) == ["--profile", "kasan"]  # noqa: SLF001
+
+
 def test_rerun_argv_foreign_plain_rerun_omits_force_rebuild(tmp_path):
     """Reuse on plain --re-run is the entire reason --force-rebuild threading exists: rebooting
-    to flip a guest mitigation must not pay for a repack. A foreign RerunRequest saved without
-    --force-rebuild must replay without it."""
+    to flip a guest mitigation must not pay for a repack. A plain --re-run (force_rebuild=False)
+    must replay without it, even for a foreign RerunRequest."""
     request = cli.RerunRequest(kind="foreign", scenario=tmp_path / "scenario.toml", profile_arg="")
-    assert cli._rerun_argv(request) == ["--config", str(tmp_path / "scenario.toml")]  # noqa: SLF001
+    assert cli._rerun_argv(request, force_rebuild=False) == ["--config", str(tmp_path / "scenario.toml")]  # noqa: SLF001
 
 
 def test_rerun_argv_foreign_force_rebuild_composes_with_rerun(tmp_path):
-    """The other direction: --force-rebuild --re-run must still replay with the flag."""
-    request = cli.RerunRequest(kind="foreign", scenario=tmp_path / "scenario.toml", profile_arg="", force_rebuild=True)
-    assert cli._rerun_argv(request) == [  # noqa: SLF001
+    """The other direction: --re-run --force-rebuild must replay with the flag -- it now comes from
+    the argument typed on this re-run, not anything persisted on the request."""
+    request = cli.RerunRequest(kind="foreign", scenario=tmp_path / "scenario.toml", profile_arg="")
+    assert cli._rerun_argv(request, force_rebuild=True) == [  # noqa: SLF001
         "--config",
         str(tmp_path / "scenario.toml"),
         "--force-rebuild",

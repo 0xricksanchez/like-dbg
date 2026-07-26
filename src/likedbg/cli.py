@@ -108,7 +108,6 @@ class RerunRequest:
     profile_arg: str
     use_label: str = ""
     rootfs_label: str = ""
-    force_rebuild: bool = False
 
 
 _RERUN_OPTION = "@likedbg_rerun_request"
@@ -788,7 +787,6 @@ def cmd_foreign(
         scenario=scenario,
         profile_arg=profile_arg,
         run_dir=recorder.run_dir,
-        force_rebuild=force_rebuild,
     )
     pipeline.run(ctx)
     return 0
@@ -999,7 +997,6 @@ def _save_rerun_request(
     run_dir: Path,
     use_label: str = "",
     rootfs_label: str = "",
-    force_rebuild: bool = False,
 ) -> None:
     request = {
         "version": 1,
@@ -1009,7 +1006,6 @@ def _save_rerun_request(
         "profile_arg": profile_arg,
         "use_label": use_label,
         "rootfs_label": rootfs_label,
-        "force_rebuild": force_rebuild,
     }
     session.set_option(_RERUN_OPTION, json.dumps(request, sort_keys=True))
     session.set_option(_ACTIVE_RUN_DIR_OPTION, str(run_dir))
@@ -1027,7 +1023,6 @@ def _load_rerun_request(session: Session, *, workspace: Path) -> RerunRequest:
         profile_arg = data["profile_arg"]
         use_label = data.get("use_label", "")
         rootfs_label = data.get("rootfs_label", "")
-        force_rebuild = data.get("force_rebuild", False)
     except (KeyError, TypeError, ValueError) as exc:
         raise SessionError("invalid active re-run state", remedy="start the session again") from exc
     scenario = Path(scenario_raw) if scenario_raw else None
@@ -1039,7 +1034,6 @@ def _load_rerun_request(session: Session, *, workspace: Path) -> RerunRequest:
         or not isinstance(profile_arg, str)
         or not isinstance(use_label, str)
         or not isinstance(rootfs_label, str)
-        or not isinstance(force_rebuild, bool)
     ):
         raise SessionError("invalid active re-run state", remedy="start the session again")
     if saved_workspace != workspace.resolve():
@@ -1055,7 +1049,6 @@ def _load_rerun_request(session: Session, *, workspace: Path) -> RerunRequest:
         profile_arg=profile_arg,
         use_label=use_label,
         rootfs_label=rootfs_label,
-        force_rebuild=force_rebuild,
     )
 
 
@@ -1075,7 +1068,7 @@ def _stop_rerun_panes(session: Session) -> None:
     session.unset_option("@likedbg_debuggee_pane")
 
 
-def _rerun_argv(request: RerunRequest) -> list[str]:
+def _rerun_argv(request: RerunRequest, *, force_rebuild: bool = False) -> list[str]:
     args: list[str] = []
     if request.scenario is not None:
         args += ["--config", str(request.scenario)]
@@ -1085,12 +1078,12 @@ def _rerun_argv(request: RerunRequest) -> list[str]:
         args += ["--use", request.use_label]
         if request.rootfs_label:
             args += ["--rootfs", request.rootfs_label]
-    elif request.force_rebuild:
+    elif force_rebuild:
         args.append("--force-rebuild")
     return args
 
 
-def cmd_rerun(session: Session, workspace: Path) -> int:
+def cmd_rerun(session: Session, workspace: Path, *, force_rebuild: bool = False) -> int:
     request = _load_rerun_request(session, workspace=workspace)
     # Preflight before touching live panes: a broken/deleted scenario must not destroy the current session.
     cfg = load_config(workspace, scenario=request.scenario)
@@ -1110,7 +1103,7 @@ def cmd_rerun(session: Session, workspace: Path) -> int:
     logger.info(f"restarting {request.kind} session")
     # Re-enter the normal CLI dispatch with reconstructed declarative selectors. This is not a raw
     # saved shell command: current TOML/files are re-read and each established launcher stays authoritative.
-    return main(_rerun_argv(request))
+    return main(_rerun_argv(request, force_rebuild=force_rebuild))
 
 
 def cmd_restart_debuggee(session: Session) -> int:
@@ -1446,7 +1439,7 @@ def main(argv: list[str] | None = None) -> int:
                 return 2
             session = Session("LIKE-DBG")
             try:
-                return cmd_rerun(session, workspace)
+                return cmd_rerun(session, workspace, force_rebuild=args.force_rebuild)
             except LikeDbgError as exc:
                 logger.error(str(exc))
                 try:
@@ -1603,7 +1596,6 @@ def main(argv: list[str] | None = None) -> int:
             scenario=scenario.resolve() if scenario is not None else None,
             profile_arg=args.profile,
             run_dir=recorder.run_dir,
-            force_rebuild=args.force_rebuild,
         )
         pipeline.run(ctx)
         return 0
