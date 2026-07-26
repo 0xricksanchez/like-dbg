@@ -684,8 +684,18 @@ def cmd_foreign(
     name = scenario.stem if scenario is not None else "foreign"
     out_dir = workspace / "artifacts" / "foreign" / name
     # musl (+ base) must exist before we can extract vmlinux / repack.
-    _ensure_images(container, workspace, specs=images.foreign_prep_images())
-    fk = resolve_foreign(container, fcfg, workspace, out_dir=out_dir, image=MUSL_IMAGE, force=force_rebuild)
+    stale = _ensure_images(container, workspace, specs=images.foreign_prep_images())
+    # A stale like_musl is the one way a Stamp can lie (ADR-0018). `ensure_current` only WARNS, so
+    # this boot's repack runs in the OLD image while its Stamp records the NEW musl_image_sha -- a
+    # hash of the image's build files, not of the built image. The user then runs `--build-images`
+    # as told, the sha does not move, and every later boot reuses an initramfs holding a binary the
+    # current toolchain never produced. Distrust both foreign Stamps until the image is refreshed.
+    force = force_rebuild or MUSL_IMAGE in stale
+    if MUSL_IMAGE in stale:
+        logger.info(
+            f"foreign exploit: rebuilding derived artifacts ({MUSL_IMAGE} is stale, so no build record is trusted)"
+        )
+    fk = resolve_foreign(container, fcfg, workspace, out_dir=out_dir, image=MUSL_IMAGE, force=force)
 
     # Inject the detected arch so HostProfile.detect / QEMU / gdb follow the foreign kernel.
     cfg, host, rr = resolve_for_run(
@@ -778,7 +788,7 @@ def cmd_foreign(
         exploit_flags=cfg.settings.build.exploit_flags,
         foreign_net=fcfg.net,
         foreign_net_iface=fcfg.net_iface,
-        force_rebuild=force_rebuild,
+        force_rebuild=force,
     )
     _save_rerun_request(
         session,
@@ -792,9 +802,14 @@ def cmd_foreign(
     return 0
 
 
-def _ensure_images(container: ContainerService, workspace: Path, *, specs: tuple[images.ImageSpec, ...]) -> None:
-    for tag in images.ensure_current(container, workspace, specs):
+def _ensure_images(container: ContainerService, workspace: Path, *, specs: tuple[images.ImageSpec, ...]) -> list[str]:
+    """Build missing images, warn about stale ones (ADR-0004 keeps that warn-only), and return the
+    stale tags so a caller whose derived artifacts are keyed by an image's BUILD INPUTS -- not by the
+    built image -- can distrust them (see cmd_foreign)."""
+    stale = images.ensure_current(container, workspace, specs)
+    for tag in stale:
         logger.warning(f"image {tag} looks stale (build inputs changed); run `start_kgdb --build-images` to refresh")
+    return stale
 
 
 def _volume_du(container: ContainerService, path: str, *, volume: str = KERNEL_VOLUME) -> str | None:

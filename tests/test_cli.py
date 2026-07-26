@@ -1336,14 +1336,16 @@ def test_main_build_images_is_docker_only_and_invokes_build_images(monkeypatch):
     assert built == [True]
 
 
-def test_ensure_images_helper_warns_each_stale_tag(monkeypatch):
+def test_ensure_images_helper_warns_each_stale_tag_and_returns_them(monkeypatch):
     monkeypatch.setattr(cli.images, "ensure_current", lambda container, workspace, specs: ["like_rootfs:latest"])
     msgs = []
     monkeypatch.setattr(cli.logger, "warning", lambda msg: msgs.append(msg))
-    cli._ensure_images(object(), object(), specs=())
+    stale = cli._ensure_images(object(), object(), specs=())
     assert len(msgs) == 1
     assert "like_rootfs:latest" in msgs[0]
     assert "--build-images" in msgs[0]
+    # Returned, not swallowed: cmd_foreign distrusts its Stamps when like_musl is among them.
+    assert stale == ["like_rootfs:latest"]
 
 
 def test_main_configures_stderr_always_but_logfile_only_for_runs(monkeypatch):

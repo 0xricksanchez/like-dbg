@@ -147,7 +147,7 @@ def test_cmd_foreign_runs_pipeline(tmp_path, monkeypatch):
     scenario = _write_project(tmp_path)
     ran = {}
 
-    monkeypatch.setattr(cli, "_ensure_images", lambda container, workspace, *, specs: None)
+    monkeypatch.setattr(cli, "_ensure_images", lambda container, workspace, *, specs: [])
     monkeypatch.setattr(cli.HostProfile, "detect", staticmethod(lambda s, workspace: _host(target_arch=s.general.arch)))
     monkeypatch.setattr(cli.logsetup, "add_run_logfile", lambda workspace, **kw: None)
 
@@ -172,6 +172,77 @@ def test_cmd_foreign_runs_pipeline(tmp_path, monkeypatch):
     assert session.options["@likedbg_active_run_dir"].endswith("artifacts/runs/fake")
 
 
+def _run_cmd_foreign_capturing_force(tmp_path, monkeypatch, *, stale: list[str], force_rebuild: bool = False) -> dict:
+    """Run cmd_foreign with `stale` reported by _ensure_images; capture the force each Stamp got."""
+    scenario = _write_project(tmp_path)
+    seen: dict = {"log": []}
+
+    monkeypatch.setattr(
+        cli,
+        "_ensure_images",
+        lambda container, workspace, *, specs: [t for t in stale if any(s.tag == t for s in specs)],
+    )
+    monkeypatch.setattr(cli.HostProfile, "detect", staticmethod(lambda s, workspace: _host(target_arch=s.general.arch)))
+    monkeypatch.setattr(cli.logsetup, "add_run_logfile", lambda workspace, **kw: None)
+    monkeypatch.setattr(cli.logger, "info", lambda msg: seen["log"].append(msg))
+    monkeypatch.setattr(
+        cli.RunRecorder,
+        "start",
+        staticmethod(lambda *, workspace, **kw: _FakeRecorder(workspace)),
+    )
+
+    real_resolve = cli.resolve_foreign
+
+    def _capturing_resolve(container, cfg, workspace, *, out_dir, image, force=False):
+        seen["resolve_force"] = force
+        return real_resolve(container, cfg, workspace, out_dir=out_dir, image=image, force=force)
+
+    monkeypatch.setattr(cli, "resolve_foreign", _capturing_resolve)
+
+    class _Pipe:
+        def run(self, ctx):
+            pass
+
+    def _capturing_pipeline(*a, **k):
+        seen["repack_force"] = k["force_rebuild"]
+        return _Pipe()
+
+    monkeypatch.setattr(cli, "build_foreign_pipeline", _capturing_pipeline)
+
+    assert (
+        cli.cmd_foreign(_FakeContainer(), _FakeSession(), tmp_path, scenario=scenario, force_rebuild=force_rebuild) == 0
+    )
+    return seen
+
+
+def test_cmd_foreign_forces_both_stamps_when_the_musl_image_is_stale(tmp_path, monkeypatch):
+    """A stale like_musl is the one input that can make a Stamp LIE. `images.ensure_current` is
+    warn-only, so the repack would run in the OLD image while stamping the NEW musl_image_sha (a
+    hash of the image's build FILES); after the `--build-images` the warning asks for, that sha is
+    unchanged and every later boot reuses an initramfs built by the previous toolchain."""
+    seen = _run_cmd_foreign_capturing_force(tmp_path, monkeypatch, stale=[cli.MUSL_IMAGE])
+    assert seen["resolve_force"] is True  # the vmlinux Stamp (extract-vmlinux.sh lives in that image)
+    assert seen["repack_force"] is True  # the repack Stamp
+    assert any(cli.MUSL_IMAGE in ln and "stale" in ln for ln in seen["log"])  # told apart from a plain rebuild
+
+
+def test_cmd_foreign_threads_force_rebuild_to_both_foreign_stamps(tmp_path, monkeypatch):
+    """--force-rebuild reaches BOTH Stamps on a foreign run (ADR-0018): the repack's, and the
+    auto-extracted vmlinux's via resolve_foreign. Dropping either hop is silent -- the run still
+    boots, on the artifacts the user just asked to discard."""
+    seen = _run_cmd_foreign_capturing_force(tmp_path, monkeypatch, stale=[], force_rebuild=True)
+    assert seen["resolve_force"] is True
+    assert seen["repack_force"] is True
+
+
+def test_cmd_foreign_does_not_force_for_an_unrelated_stale_image(tmp_path, monkeypatch):
+    """Only like_musl feeds the foreign artifacts. A stale debugger/rootfs image must not throw
+    away the repack the Stamp exists to skip."""
+    seen = _run_cmd_foreign_capturing_force(tmp_path, monkeypatch, stale=["like_debugger:latest"])
+    assert seen["resolve_force"] is False
+    assert seen["repack_force"] is False
+
+
 def test_cmd_foreign_forces_serial_only_no_guest_net_or_share(tmp_path, monkeypatch):
     """ADR-0010: a foreign guest exposes only the serial console. Regression test for the
     finding that cmd_foreign left guest_net/share at their (True) defaults, which both
@@ -181,7 +252,7 @@ def test_cmd_foreign_forces_serial_only_no_guest_net_or_share(tmp_path, monkeypa
     scenario = _write_project(tmp_path)
     ran = {}
 
-    monkeypatch.setattr(cli, "_ensure_images", lambda container, workspace, *, specs: None)
+    monkeypatch.setattr(cli, "_ensure_images", lambda container, workspace, *, specs: [])
     monkeypatch.setattr(cli.HostProfile, "detect", staticmethod(lambda s, workspace: _host(target_arch=s.general.arch)))
     monkeypatch.setattr(cli.logsetup, "add_run_logfile", lambda workspace, **kw: None)
 
@@ -213,17 +284,34 @@ def test_cmd_foreign_forces_serial_only_no_guest_net_or_share(tmp_path, monkeypa
     assert rr_eff.share is False
 
 
-def test_main_dispatches_to_cmd_foreign_when_image_set(tmp_path, monkeypatch):
+def _stub_main_foreign_dispatch(tmp_path, monkeypatch, seen: dict):
+    """Patch main() down to the cmd_foreign call, CAPTURING the kwargs it is dispatched with."""
     _write_project(tmp_path)
-    called = {}
-    monkeypatch.setattr(cli, "cmd_foreign", lambda *a, **k: called.update(hit=True) or 0)
+    monkeypatch.setattr(cli, "cmd_foreign", lambda *a, **k: seen.update(hit=True, kwargs=k) or 0)
     monkeypatch.setattr(cli.os, "getenv", lambda k, d=None: "1" if k == "TMUX" else d)
     monkeypatch.setattr(cli.docker_env, "make_client", lambda host: object())
     monkeypatch.setattr(cli, "ContainerService", lambda client: _FakeContainer())
     monkeypatch.setattr(cli.Path, "cwd", staticmethod(lambda: tmp_path))
     monkeypatch.setattr(cli.Session, "start", lambda self, name: None)
+
+
+def test_main_dispatches_to_cmd_foreign_when_image_set(tmp_path, monkeypatch):
+    seen: dict = {}
+    _stub_main_foreign_dispatch(tmp_path, monkeypatch, seen)
     rc = cli.main(["-c", "lk01"])
-    assert called.get("hit") and rc == 0
+    assert seen.get("hit") and rc == 0
+    assert seen["kwargs"]["force_rebuild"] is False  # a plain foreign run never forces
+
+
+def test_main_passes_force_rebuild_through_to_cmd_foreign(tmp_path, monkeypatch):
+    """The typed --force-rebuild must REACH cmd_foreign: it is the only way to invalidate the
+    foreign path's Stamps (ADR-0018), and dropping the kwarg here fails silently -- the run still
+    boots, it just quietly reuses the artifacts the user asked to rebuild."""
+    seen: dict = {}
+    _stub_main_foreign_dispatch(tmp_path, monkeypatch, seen)
+    rc = cli.main(["-c", "lk01", "--force-rebuild"])
+    assert rc == 0
+    assert seen["kwargs"]["force_rebuild"] is True
 
 
 class _FakeUploadSession:

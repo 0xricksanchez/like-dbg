@@ -110,6 +110,15 @@ input. Use `--force-rebuild` after editing one: it ignores every input record on
 so the initramfs is repacked (and an auto-extracted vmlinux re-extracted) regardless of what
 changed.
 
+Editing `.dockerfile_musl` does the same thing on its own. The recorded toolchain identity is a hash
+of that image's build files, so until you run `--build-images` the image no longer matches its
+record; LIKE-DBG stops trusting the records rather than reuse a binary the current toolchain never
+built, and says so:
+
+```
+foreign exploit: rebuilding derived artifacts (like_musl:latest is stale, so no build record is trusted)
+```
+
 **Fast restart while iterating.** After starting a scenario with `-c`, edit its local exploit and
 run `uv run ./start_kgdb --re-run`. LIKE-DBG closes only its old Debugger and Debuggee panes,
 re-reads the scenario, repackages it if an input changed, and opens a fresh QEMU/GDB pair. It

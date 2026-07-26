@@ -424,6 +424,11 @@ def exploit_flags_for(workspace: Path) -> tuple[str, ...]:
     return load_config(workspace).settings.build.exploit_flags
 
 
+# Container-side staging path for the uncompressed archive. Deliberately OUTSIDE /work/rootfs (the
+# directory `find` walks) so it can never end up inside the initramfs it is being written from.
+_CPIO_STAGE = "/work/initramfs.cpio"
+
+
 def _repack_command(in_path: str, src_path: str, arch: str, out_path: str, extra_flags: tuple[str, ...] = ()) -> str:
     in_q = shlex.quote(in_path)
     src_q = shlex.quote(src_path)
@@ -433,11 +438,17 @@ def _repack_command(in_path: str, src_path: str, arch: str, out_path: str, extra
     else:
         inject = f"cp {src_q} /work/rootfs/exploit && chmod +x /work/rootfs/exploit"
     unpack = f"if gzip -t {in_q} 2>/dev/null; then gzip -dc {in_q} | cpio -idm; else cpio -idm < {in_q}; fi"
-    repack = "find . -print0 | cpio --null --format=newc -o --owner=root"
+    pack = "find . -print0 | cpio --null --format=newc -o --owner=root"
     if out_path.endswith(".gz"):
-        repack += f" | gzip -1 > {out_q}"
+        # Two `&&`-chained stages, NOT `cpio | gzip > out`. A pipeline reports only its LAST
+        # command's status, so a cpio that died partway would still exit 0 with gzip having
+        # compressed the partial stream: a SHORT but non-empty (and perfectly valid gzip) initramfs
+        # that passes repack_initramfs's size check, gets Stamped, and is then reused forever.
+        # Staging the archive keeps cpio last in its own pipeline, so its failure is fatal here.
+        # (`set -o pipefail` is not available: /bin/sh in the image is dash.)
+        repack = f"{pack} > {_CPIO_STAGE} && gzip -1 < {_CPIO_STAGE} > {out_q}"
     else:
-        repack += f" > {out_q}"
+        repack = f"{pack} > {out_q}"  # cpio is the pipeline's last command: its status already propagates
     return " && ".join(["mkdir -p /work/rootfs", "cd /work/rootfs", unpack, inject, repack])
 
 
