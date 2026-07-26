@@ -1282,7 +1282,11 @@ def test_main_rerun_bypasses_normal_config_and_docker_setup(monkeypatch):
 def test_rerun_argv_reconstructs_normal_and_use_selectors(tmp_path):
     normal = cli.RerunRequest(kind="normal", scenario=None, profile_arg="kasan")
     use = cli.RerunRequest(
-        kind="use", scenario=tmp_path / "scenario.toml", profile_arg="", use_label="linux-foo", rootfs_label="rootfs-bar"
+        kind="use",
+        scenario=tmp_path / "scenario.toml",
+        profile_arg="",
+        use_label="linux-foo",
+        rootfs_label="rootfs-bar",
     )
     assert cli._rerun_argv(normal, force_rebuild=True) == ["--profile", "kasan", "--force-rebuild"]  # noqa: SLF001
     # kind="use" wins over force_rebuild: a cached build selected by label has no rebuild to force.
