@@ -91,16 +91,34 @@ it **manually from the guest console** (for example `/exploit`); nothing is auto
 **Repack (baked into the initramfs).** Set `[foreign] exploit` to a source or binary path. At
 boot, LIKE-DBG unpacks the provided `initramfs`, places the exploit at `/exploit`, and repacks.
 A flag-less `.c` is auto-compiled static-musl to the target architecture; anything else is
-injected as-is (cross-compile it yourself). Changing the exploit means another repack and reboot.
-The unpack, compile, and repack happen inside the standalone `like_musl` container, so no host
-`cpio`, `musl`, or root is required.
+injected as-is (cross-compile it yourself). The unpack, compile, and repack happen inside the
+standalone `like_musl` container, so no host `cpio`, `musl`, or root is required.
+
+Changing the exploit means another repack and reboot; leaving it alone costs nothing. The repack is
+skipped when the exploit source, the base initramfs, `[build] exploit_flags`, the `like_musl` image
+and the repack command are all unchanged, so rebooting purely to flip a guest mitigation no longer
+pays for one. Every boot logs which way it went:
+
+```
+foreign exploit: exp.c unchanged (sha256 1a2b3c4d); reusing repacked initramfs
+foreign exploit: rebuilding initramfs (source changed: 1a2b3c4d -> 9f8e7d6c)
+foreign exploit: repacked initramfs from exp.c (sha256 9f8e7d6c) in 8.4s
+```
+
+The exploit is compiled as a single file, so a local header it `#include`s is **not** a tracked
+input. Use `--force-rebuild` after editing one: it ignores every input record on the foreign path,
+so the initramfs is repacked (and an auto-extracted vmlinux re-extracted) regardless of what
+changed.
 
 **Fast restart while iterating.** After starting a scenario with `-c`, edit its local exploit and
 run `uv run ./start_kgdb --re-run`. LIKE-DBG closes only its old Debugger and Debuggee panes,
-recompiles/repackages the scenario, and opens a fresh QEMU/GDB pair. It preserves the host pane and
-the prior run's artifacts. `--re-run` has the same lifecycle for native and cached `--use` runs;
-the foreign path additionally rebuilds the initramfs. This is different from `--restart-debuggee`,
-which only respawns the existing QEMU command and therefore cannot pick up a changed initramfs.
+re-reads the scenario, repackages it if an input changed, and opens a fresh QEMU/GDB pair. It
+preserves the host pane and the prior run's artifacts. `--re-run` has the same lifecycle for native
+and cached `--use` runs; the foreign path additionally rebuilds the initramfs when your edit reached
+it. A re-run replays the original launch, so a session started with `--force-rebuild` keeps forcing
+the repack on every re-run; passing the flag to `--re-run` itself has no effect. This is different
+from `--restart-debuggee`, which only respawns the existing QEMU command and therefore cannot pick
+up a changed initramfs.
 
 **Console-upload (into the live guest).** Send the exploit to the running guest over the serial
 console, with no reboot, when the guest supports it:

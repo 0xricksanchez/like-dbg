@@ -272,6 +272,6 @@ Present only for a CTF or foreign kernel; its `image` key selects that path. See
 | `cmdline` | Boot command line, used verbatim. |
 | `arch` | Optional architecture override; else auto-detected from the `vmlinux` ELF. |
 | `qemu_extra` | Extra QEMU flags, for example a CPU baseline. |
-| `exploit` | Optional exploit source or binary, repack-injected at `/exploit`. |
+| `exploit` | Optional exploit source or binary, repack-injected at `/exploit`. Repacked only when it (or the initramfs, `[build] exploit_flags`, or the `like_musl` image) changed; `--force-rebuild` repacks regardless. |
 | `net` | Outbound guest networking, default `true`. Adds a user-mode (SLIRP) NIC so the guest reaches the network and the challenge initramfs's boot-time `ifup` wait succeeds instantly instead of stalling ~15s. `false` gives a faithful air-gapped boot (the wait returns). It is a device only, not an SSH control transport — `--run`/`--insmod` still refuse. |
 | `net_iface` | Interface name the guest expects, default `eth0`. `ethN` forces the name via `net.ifnames=0`; `enp0sN` pins the NIC's PCI slot so the challenge's kernel names it. Read it off the guest's `Waiting for interface XXX` console line. Other schemes: place the NIC via `qemu_extra` and set `net = false`. |

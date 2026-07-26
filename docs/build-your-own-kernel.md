@@ -256,8 +256,13 @@ uv run ./start_kgdb --use <build-label> --rootfs <rootfs-label>
 uv run ./start_kgdb --clean <label>            # remove one cached artifact
 uv run ./start_kgdb --clean-all                # clear the cache
 uv run ./start_kgdb --prune [SIZE]             # evict least-recently-used builds to fit SIZE (or [cache] max_size)
-uv run ./start_kgdb --force-rebuild            # rebuild the current configuration
+uv run ./start_kgdb --force-rebuild            # discard this configuration's cached kernel build and build it again
 ```
+
+`--force-rebuild` carries the same meaning on a foreign scenario, where there is no cached build to
+discard: it ignores the recorded inputs and redoes the vmlinux extraction and the initramfs repack
+(see [ctf-foreign-kernel.md](ctf-foreign-kernel.md#deliver-an-exploit)). Neither form touches the
+exploit-compile cache volume; `--clean-all` is what clears that.
 
 Kernel source trees are shared across builds with the same (version, patches): `--list` shows
 each source with a refcount of the builds referencing it plus each build's last-used time, and
