@@ -1,9 +1,13 @@
 [general]
 arch = "native"
-mac_storage = "auto"
+# storage: where the kernel source tree lives. "auto" picks a host bind on a case-sensitive
+# filesystem and a named volume otherwise; "bind"/"volume" force it.
+storage = "auto"
+# The Debug profiles this run builds and boots for (configs/profiles/*.toml). --profile overrides.
+profiles = ["exploit-dev"]
 
 [source]
-kind = "mmp"
+kind = "version"
 value = "6.6.30"
 
 [build]
@@ -13,6 +17,11 @@ rust = false
 # ccache: compiler cache for cheap rebuilds (persisted in the likedbg_ccache volume, capped at ccache_max_size).
 ccache = true
 ccache_max_size = "5G"
+
+[exploit]
+# Extra flags for the exploit auto-compile, appended after the source so libraries resolve in
+# link order, e.g. flags = ["-lpthread", "-D_GNU_SOURCE"]. Used by [foreign] exploit, --run and --upload.
+flags = []
 
 [cache]
 # max_size: cache size cap for auto-eviction (unset = no limit). Supports K/M/G/T suffixes, e.g. "50G".
@@ -27,8 +36,9 @@ memory_mib = 1024
 smp = 1
 accel = "auto"
 network = "auto"
-gdb = true
-gdb_port = 1234
+# gdbstub: the guest-side stub QEMU exposes. The client that attaches to it is [debugger].
+gdbstub = true
+gdbstub_port = 1234
 kaslr = false
 smep = true
 smap = true
@@ -51,6 +61,3 @@ sanitizer_breakpoints = []
 # debuginfod: fetch debug info by build-id (auto = on for foreign kernels, off for self-built).
 debuginfod = "auto"
 debuginfod_urls = "https://debuginfod.elfutils.org"
-
-[debugging]
-profiles = ["exploit-dev"]

@@ -29,7 +29,7 @@ Set the version under `[source]` in `configs/default.toml` (or a personal
 
 ```toml
 [source]
-kind = "mmp"      # mmp | tag | commit (labels the intent)
+kind = "version"  # version | tag | commit (labels the intent)
 value = "6.6.30"  # a release, a git tag, or a commit hash
 
 [build]
@@ -42,7 +42,7 @@ hash is fetched as a git.kernel.org snapshot.
 
 The debug profile decides the kernel's build-time character. The default is `exploit-dev` (no
 KASLR, debug info, kallsyms, module force-unload), which is what you want for most exploit work.
-Pick another with `--profile` or the `[debugging]` section:
+Pick another with `--profile` or the `[general] profiles` section:
 
 ```sh
 uv run ./start_kgdb --profile hardened          # mitigations compiled in

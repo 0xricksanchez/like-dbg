@@ -61,7 +61,7 @@ class DebuggeeStage:
                 image=self._debuggee_image,
                 ro_mounts=[ctx.kernel_image],
                 rw_mounts=rw_mounts,
-                gdbstub_port=eff.gdb_port,
+                gdbstub_port=eff.gdbstub_port,
                 network_mode=ctx.host.network_mode,
                 kvm=ctx.host.accel == "kvm",
                 ssh_port=eff.ssh_port if eff.guest_net else None,

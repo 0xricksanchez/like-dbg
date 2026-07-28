@@ -95,7 +95,7 @@ injected as-is (cross-compile it yourself). The unpack, compile, and repack happ
 standalone `like_musl` container, so no host `cpio`, `musl`, or root is required.
 
 Changing the exploit means another repack and reboot; leaving it alone costs nothing. The repack is
-skipped when the exploit source, the base initramfs, `[build] exploit_flags`, the `like_musl` image
+skipped when the exploit source, the base initramfs, `[exploit] flags`, the `like_musl` image
 and the repack command are all unchanged, so rebooting purely to flip a guest mitigation no longer
 pays for one. Every boot logs which way it went:
 
@@ -142,7 +142,7 @@ The auto-compile boundary and the prebuilt-binary escape hatch are the same as f
 kernel; see [exploit/README.md](../exploit/README.md).
 
 To pass extra compiler/linker flags to that auto-compile (for example a challenge's `-lpthread`),
-set `[build] exploit_flags` (see [configuration.md](configuration.md#build)). They are appended
+set `[exploit] flags` (see [configuration.md](configuration.md#build)). They are appended
 after the source so libraries resolve in link order; musl folds most system libraries into libc, so
 many `-l` flags are no-ops, but a challenge's build line still copies over verbatim.
 

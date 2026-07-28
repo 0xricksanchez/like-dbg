@@ -257,7 +257,7 @@ def build_qemu_argv(
         argv += ["-netdev", "user,id=net0", "-device", foreign_nic_device]
     if debuggee.share and share_host_dir is not None:
         argv += ["-virtfs", f"local,path={share_host_dir},mount_tag=exploit,security_model=mapped-xattr,id=fsdev0"]
-    if debuggee.gdb:
-        argv += ["-S", "-gdb", f"tcp::{debuggee.gdb_port}"]
+    if debuggee.gdbstub:
+        argv += ["-S", "-gdb", f"tcp::{debuggee.gdbstub_port}"]
     argv += list(qemu_extra)
     return argv

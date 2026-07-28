@@ -13,10 +13,8 @@ def test_hostprofile_has_no_ssh_addr():
     assert "ssh_addr" not in {f.name for f in dataclasses.fields(HostProfile)}
 
 
-def _settings(arch="arm64", accel="auto", mac_storage="auto"):
-    return Settings.model_validate(
-        {"general": {"arch": arch, "mac_storage": mac_storage}, "debuggee": {"accel": accel}}
-    )
+def _settings(arch="arm64", accel="auto", storage="auto"):
+    return Settings.model_validate({"general": {"arch": arch, "storage": storage}, "debuggee": {"accel": accel}})
 
 
 def _probes(*, system, machine, kvm=False, hvf=False, qemu=False, case_sensitive=True):
@@ -88,14 +86,14 @@ def test_explicit_hvf_unsatisfiable_raises():
         HostProfile.detect(_settings("arm64", accel="hvf"), Path("/ws"), p)
 
 
-def test_explicit_mac_storage_override_wins_over_detection():
+def test_explicit_storage_override_wins_over_detection():
     # case-sensitive workspace, but override forces volume
     p_vol = _probes(system="darwin", machine="arm64", hvf=True, qemu=True, case_sensitive=True)
-    hp_vol = HostProfile.detect(_settings("arm64", mac_storage="volume"), Path("/ws"), p_vol)
+    hp_vol = HostProfile.detect(_settings("arm64", storage="volume"), Path("/ws"), p_vol)
     assert hp_vol.storage_mode == "volume"
     # case-insensitive workspace, but override forces bind
     p_bind = _probes(system="darwin", machine="arm64", hvf=True, qemu=True, case_sensitive=False)
-    hp_bind = HostProfile.detect(_settings("arm64", mac_storage="bind"), Path("/ws"), p_bind)
+    hp_bind = HostProfile.detect(_settings("arm64", storage="bind"), Path("/ws"), p_bind)
     assert hp_bind.storage_mode == "bind"
 
 

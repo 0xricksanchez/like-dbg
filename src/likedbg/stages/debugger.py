@@ -49,7 +49,7 @@ class DebuggerStage:
             vmlinux=ctx.vmlinux,
             ext=self._ext,
             breakpoint=self._breakpoint,
-            port=eff.gdb_port,
+            port=eff.gdbstub_port,
             break_on_crash=self._break_on_crash,
             crash_breakpoints=self._crash_breakpoints,
             sanitizer_breakpoints=self._sanitizer_breakpoints,

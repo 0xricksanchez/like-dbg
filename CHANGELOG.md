@@ -1,5 +1,15 @@
 # Changelog
 
+<!--toc:start-->
+- [Changelog](#changelog)
+  - [[Unreleased]](#unreleased)
+  - [[1.0.0] — unreleased](#100-unreleased)
+    - [Highlights](#highlights)
+    - [Added](#added)
+    - [Changed](#changed)
+    - [Removed](#removed)
+<!--toc:end-->
+
 All notable changes to LIKE-DBG are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -59,6 +69,7 @@ migrate; see [docs/configuration.md](docs/configuration.md) for the TOML equival
 ### Added
 
 **Kernel builds and the build cache**
+
 - Content-addressed build cache with human-readable labels, atomic manifests, and a typed registry.
 - Shared source trees with refcounting; orphaned sources are dropped automatically.
 - Out-of-tree per-config builds (`O=`) with a persistent, capped ccache volume.
@@ -70,13 +81,16 @@ migrate; see [docs/configuration.md](docs/configuration.md) for the TOML equival
 - Toolchain registry: clang/LLVM as the universal cross-compiler default, gcc opt-in per arch.
 
 **Configuration and profiles**
-- Pydantic-typed TOML settings with a six-layer loader and per-key provenance.
+
+- Pydantic-typed TOML settings with a six-layer loader and per-key provenance. Unknown or misplaced
+  keys are rejected by name, so a typo or a key that moved is a one-line fix.
 - Scenario files, a `local.toml` overlay, and a profile registry shipped under `configs/`.
 - `--explain-config [text|json]` — a Docker-free, tmux-free dry run of the resolved settings.
 - Profile verification as a pipeline stage: post-build `.config` assertions with arch and
   kernel-version selectors, failing the run before boot rather than after.
 
 **Debugging**
+
 - Both GEF and pwndbg are installed; `[debugger] ext` selects per run, defaulting to pwndbg.
 - A three-pane tmux layout (Debuggee, Debugger, host) driven as process panes, not interactive
   shells, so a crashed pane is a signal rather than a dead prompt (ADR-0005).
@@ -86,13 +100,15 @@ migrate; see [docs/configuration.md](docs/configuration.md) for the TOML equival
 - `--restart-debuggee` and `--re-run` rebuild the session without losing the host pane.
 
 **Exploit development**
+
 - SSH control transport over user-mode networking plus a 9p live share mounted at `/mnt/exploit`,
   so guest output survives a panic (ADR-0008).
-- `--run` / `--upload` with static-musl cross-compilation for either guest arch, a `[build]
-  exploit_flags` knob, and a persistent zig cache volume for warm compiles (ADR-0016).
+- `--run` / `--upload` with static-musl cross-compilation for either guest arch, an `[exploit]
+  flags` knob, and a persistent zig cache volume for warm compiles (ADR-0016).
 - `--insmod` / `--rmmod` with build-if-stale and force-unload.
 
 **Foreign and CTF kernels**
+
 - `[foreign]` scenarios: adopt an image, optional `vmlinux` and `initramfs`, a verbatim command
   line, and extra QEMU arguments.
 - Kernel-symbol recovery from a bzImage's kallsyms when no `vmlinux` is supplied, with an explicit
@@ -105,6 +121,7 @@ migrate; see [docs/configuration.md](docs/configuration.md) for the TOML equival
 - A Pawnyable LK01 scenario and walkthrough ship as a worked example.
 
 **Observability and safety**
+
 - Run artifacts with status transitions, including `profile-verification-failed` and `launch-failed`.
 - A typed error hierarchy where every failure carries an actionable remedy.
 - Container-image currency by content hash of declared build inputs, warning rather than silently

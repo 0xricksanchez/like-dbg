@@ -53,7 +53,7 @@ Arch = Literal["x86_64", "arm64"]
 RequestedArch = Literal["native", "x86_64", "arm64"]
 Accel = Literal["auto", "kvm", "hvf", "tcg"]
 MacStorage = Literal["auto", "bind", "volume"]
-SourceKind = Literal["mmp", "tag", "commit"]
+SourceKind = Literal["version", "tag", "commit"]
 Compiler = Literal["clang", "gcc"]
 Ext = Literal["gef", "pwndbg"]
 Network = Literal["auto", "host", "published"]
@@ -70,11 +70,15 @@ class _Base(BaseModel):
 class GeneralCfg(_Base):
     arch: RequestedArch = "native"
     workspace_dir: str | None = None
-    mac_storage: MacStorage = "auto"
+    # Storage mode (ADR-0002): where the kernel source tree lives. Auto-detected from the
+    # filesystem's case sensitivity, not from the platform -- hence `storage`, not `mac_storage`.
+    storage: MacStorage = "auto"
+    # The Debug profiles this run builds and boots for. A run-level intent, like `arch`.
+    profiles: tuple[str, ...] = ("exploit-dev",)
 
 
 class SourceCfg(_Base):
-    kind: SourceKind = "mmp"
+    kind: SourceKind = "version"
     value: str = ""
 
 
@@ -88,8 +92,6 @@ class BuildCfg(_Base):
     extra_fragments: tuple[str, ...] = ()
     ccache: bool = True
     ccache_max_size: str = "5G"
-    # extra flags for the exploit auto-compile (e.g. ["-lpthread", "-D_GNU_SOURCE"])
-    exploit_flags: tuple[str, ...] = ()
 
     @field_validator("patch_dirs", "custom_modules", mode="before")
     @classmethod
@@ -119,7 +121,7 @@ class ForeignCfg(_Base):
     vmlinux: str = ""
     initramfs: str = ""
     cmdline: str = ""
-    arch: str = ""  # optional override; else auto-detected from the vmlinux ELF
+    arch: Arch | Literal[""] = ""  # optional override; else auto-detected from the vmlinux ELF
     qemu_extra: tuple[str, ...] = ()
     exploit: str = ""
     # Outbound guest network for a foreign guest (a QEMU device only; not an SSH control
@@ -138,6 +140,13 @@ class ForeignCfg(_Base):
         return v
 
 
+class ExploitCfg(_Base):
+    # The exploit auto-compile, shared by the [foreign] repack, `--run` and `--upload`.
+    # Extra flags land AFTER the source so libraries resolve in link order
+    # (e.g. ["-lpthread", "-D_GNU_SOURCE"]).
+    flags: tuple[str, ...] = ()
+
+
 class RootfsCfg(_Base):
     distribution: str = "bookworm"
     hostname: str = "LIKE-DBG"
@@ -148,8 +157,9 @@ class DebuggeeCfg(_Base):
     smp: int = 1
     accel: Accel = "auto"
     network: Network = "auto"
-    gdb: bool = True
-    gdb_port: int = 1234
+    # The guest-side gdb *stub* QEMU exposes. The client that attaches to it is [debugger].
+    gdbstub: bool = True
+    gdbstub_port: int = 1234
     kaslr: bool = False
     smep: bool = True
     smap: bool = True
@@ -188,10 +198,6 @@ class DebuggerCfg(_Base):
     debuginfod_urls: str = "https://debuginfod.elfutils.org"
 
 
-class DebuggingCfg(_Base):
-    profiles: tuple[str, ...] = ("exploit-dev",)
-
-
 class CacheCfg(_Base):
     max_size: str = ""
 
@@ -200,10 +206,10 @@ class Settings(_Base):
     general: GeneralCfg = GeneralCfg()
     source: SourceCfg = SourceCfg()
     build: BuildCfg = BuildCfg()
+    exploit: ExploitCfg = ExploitCfg()
     rootfs: RootfsCfg = RootfsCfg()
     debuggee: DebuggeeCfg = DebuggeeCfg()
     debugger: DebuggerCfg = DebuggerCfg()
-    debugging: DebuggingCfg = DebuggingCfg()
     cache: CacheCfg = CacheCfg()
     foreign: ForeignCfg = ForeignCfg()
 
@@ -223,10 +229,10 @@ _SECTION_MODELS: dict[str, type[_Base]] = {
     "general": GeneralCfg,
     "source": SourceCfg,
     "build": BuildCfg,
+    "exploit": ExploitCfg,
     "rootfs": RootfsCfg,
     "debuggee": DebuggeeCfg,
     "debugger": DebuggerCfg,
-    "debugging": DebuggingCfg,
     "cache": CacheCfg,
     "foreign": ForeignCfg,
 }
@@ -260,9 +266,14 @@ def _build_settings(merged: dict[str, dict[str, object]]) -> Settings:
         try:
             kwargs[section] = model(**merged.get(section, {}))
         except ValidationError as exc:
+            # pydantic knows which key failed; say so. "Extra inputs are not permitted" without
+            # a key name turns a one-line fix (a typo, or a key that moved between releases)
+            # into a hunt through the whole section.
+            err = exc.errors()[0]
+            key = ".".join(str(part) for part in err["loc"]) or "?"
             raise ConfigError(
-                f"invalid [{section}] configuration: {exc.errors()[0]['msg']}",
-                remedy=f"check the [{section}] section of your TOML config",
+                f"invalid [{section}] configuration: {key}: {err['msg']}",
+                remedy=f"check `{key}` in the [{section}] section of your TOML config",
             ) from exc
     return Settings(**kwargs)  # type: ignore[arg-type]
 

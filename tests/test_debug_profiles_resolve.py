@@ -26,7 +26,7 @@ def _probes(machine="x86_64", system="linux"):
 def _scaffold(tmp_path: Path, *, kaslr_line: str = "kaslr = false") -> None:
     (tmp_path / "configs").mkdir(parents=True, exist_ok=True)
     (tmp_path / "configs" / "default.toml").write_text(
-        f'[source]\nkind="mmp"\nvalue="6.6.30"\n[debuggee]\n{kaslr_line}\n'
+        f'[source]\nkind="version"\nvalue="6.6.30"\n[debuggee]\n{kaslr_line}\n'
     )
     pdir = tmp_path / "configs" / "profiles"
     pdir.mkdir(parents=True, exist_ok=True)

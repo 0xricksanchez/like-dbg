@@ -222,7 +222,7 @@ def _read_stamp(stamp: Path) -> dict[str, str] | None:
 _STAMP_REASONS: dict[str, str] = {
     "exploit_name": "exploit changed",
     "exploit_sha256": "source changed",
-    "exploit_flags": "exploit_flags changed",
+    "exploit_flags": "exploit flags changed",
     "initramfs_sha256": "base initramfs changed",
     "musl_image_sha": "like_musl toolchain image changed",
     "command_sha": "build recipe changed",
@@ -367,7 +367,7 @@ _MUSL_GCC = {"x86_64": "x86_64-linux-musl-gcc", "arm64": "aarch64-linux-musl-gcc
 
 def _musl_compile(arch: str, src_q: str, out_q: str, extra_flags: tuple[str, ...] = ()) -> str:
     """The musl-static cross-compile command fragment (shared by repack + compile_exploit).
-    `extra_flags` are the user's [build] exploit_flags; they are quoted here and placed AFTER the
+    `extra_flags` are the user's [exploit] flags; they are quoted here and placed AFTER the
     source so libraries (-l...) resolve in link order (musl folds pthread/rt/dl into libc, so most
     are no-ops, but a challenge's verbatim build line still works). `src_q`/`out_q` arrive quoted.
 
@@ -386,7 +386,7 @@ def compile_exploit(
     container: Any, *, src: Path, arch: str, out: Path, image: str, extra_flags: tuple[str, ...] = ()
 ) -> Path:
     """Cross-compile a single `.c` to a static musl binary for `arch` in the like_musl container,
-    with the user's [build] exploit_flags. Raises ForeignError on an unknown arch or if no output is
+    with the user's [exploit] flags. Raises ForeignError on an unknown arch or if no output is
     produced.
 
     Paths are resolved to ABSOLUTE before mounting: a relative host path (e.g. `--run exploit/x.c`)
@@ -416,12 +416,12 @@ def compile_exploit(
 
 
 def exploit_flags_for(workspace: Path) -> tuple[str, ...]:
-    """The user's [build] exploit_flags, or () when the workspace has no project config -- the
+    """The user's [exploit] flags, or () when the workspace has no project config -- the
     --run/--upload paths are config-optional (they read only the run's host.json/run.json), so a
     missing config must not make them fail; a present-but-malformed config still errors via load_config."""
     if not (workspace / "configs" / "default.toml").exists():
         return ()
-    return load_config(workspace).settings.build.exploit_flags
+    return load_config(workspace).settings.exploit.flags
 
 
 def _repack_command(in_path: str, src_path: str, arch: str, out_path: str, extra_flags: tuple[str, ...] = ()) -> str:
@@ -471,7 +471,7 @@ def repack_initramfs(
     force: bool = False,
 ) -> Path:
     """Unpack the foreign initramfs, inject the exploit at /exploit (musl-static compile of a
-    .c with the user's [build] exploit_flags, else copy a prebuilt static binary), repack
+    .c with the user's [exploit] flags, else copy a prebuilt static binary), repack
     (newc [+gzip]) to `out` in the like_musl container. Compiling to the FOREIGN arch is why
     `arch` is threaded in.
 

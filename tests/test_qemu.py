@@ -18,7 +18,7 @@ def _host(arch_accel="hvf", mode="native-host", target_arch="arm64"):
 
 
 def _debuggee(**kw):
-    base = {"memory_mib": 1024, "smp": 1, "gdb": True, "kaslr": False}
+    base = {"memory_mib": 1024, "smp": 1, "gdbstub": True, "kaslr": False}
     base.update(kw)
     return DebuggeeCfg(**base)
 
@@ -36,7 +36,7 @@ def test_arm64_hvf_machine_and_accel():
 
 def test_gdbstub_flags_present_when_gdb_enabled():
     argv = build_qemu_argv(
-        _debuggee(gdb=True), _host(), target_arch="arm64", kernel_image=Path("/w/Image"), rootfs=None
+        _debuggee(gdbstub=True), _host(), target_arch="arm64", kernel_image=Path("/w/Image"), rootfs=None
     )
     assert "-S" in argv
     assert "-gdb" in argv and "tcp::1234" in argv
@@ -45,7 +45,7 @@ def test_gdbstub_flags_present_when_gdb_enabled():
 
 def test_no_gdbstub_when_disabled():
     argv = build_qemu_argv(
-        _debuggee(gdb=False), _host(), target_arch="arm64", kernel_image=Path("/w/Image"), rootfs=None
+        _debuggee(gdbstub=False), _host(), target_arch="arm64", kernel_image=Path("/w/Image"), rootfs=None
     )
     assert "-S" not in argv
 
@@ -82,9 +82,13 @@ def test_ext4_rootfs_uses_drive():
     assert "-drive" in s and "rootfs.img" in s
 
 
-def test_gdb_port_is_configurable():
+def test_gdbstub_port_is_configurable():
     argv = build_qemu_argv(
-        _debuggee(gdb=True, gdb_port=4444), _host(), target_arch="arm64", kernel_image=Path("/w/Image"), rootfs=None
+        _debuggee(gdbstub=True, gdbstub_port=4444),
+        _host(),
+        target_arch="arm64",
+        kernel_image=Path("/w/Image"),
+        rootfs=None,
     )
     assert "tcp::4444" in argv
 
@@ -255,7 +259,7 @@ def test_foreign_cmdline_layers_extra_boot_args():
 
 def test_foreign_initramfs_uses_initrd_and_gdbstub():
     argv = build_qemu_argv(
-        _debuggee(gdb=True),
+        _debuggee(gdbstub=True),
         _host(target_arch="x86_64"),
         target_arch="x86_64",
         kernel_image=Path("/w/bzImage"),

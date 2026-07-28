@@ -50,7 +50,7 @@ def _make_project(tmp_path: Path) -> None:
     cfgs = tmp_path / "configs"
     (cfgs / "fragments" / "profiles").mkdir(parents=True)
     (cfgs / "profiles").mkdir(parents=True)
-    (cfgs / "default.toml").write_text('[source]\nkind="mmp"\nvalue="6.6.30"\n')
+    (cfgs / "default.toml").write_text('[source]\nkind="version"\nvalue="6.6.30"\n')
     (cfgs / "fragments" / "generic.config").write_text("CONFIG_X=y\n")
     (cfgs / "profiles" / "exploit-dev.toml").write_text(
         'name="exploit-dev"\nkind="base"\ndescription="d"\nfragments=["configs/fragments/generic.config"]\n'
@@ -680,7 +680,7 @@ def _make_cmd_use_project(tmp_path: Path) -> None:
     (tmp_path / "configs").mkdir(parents=True, exist_ok=True)
     (tmp_path / "configs" / "profiles").mkdir(parents=True, exist_ok=True)
     (tmp_path / "configs" / "default.toml").write_text(
-        '[source]\nkind="mmp"\nvalue="6.6.30"\n[general]\narch="arm64"\n'
+        '[source]\nkind="version"\nvalue="6.6.30"\n[general]\narch="arm64"\n'
     )
     (tmp_path / "configs" / "profiles" / "exploit-dev.toml").write_text(
         'name="exploit-dev"\nkind="base"\ndescription="d"\n'
@@ -1375,7 +1375,7 @@ def _make_explain_project(tmp_path: Path) -> None:
     cfgs = tmp_path / "configs"
     (cfgs / "fragments").mkdir(parents=True)
     (cfgs / "profiles").mkdir(parents=True)
-    (cfgs / "default.toml").write_text('[source]\nkind="mmp"\nvalue="6.6.30"\n')
+    (cfgs / "default.toml").write_text('[source]\nkind="version"\nvalue="6.6.30"\n')
     (cfgs / "fragments" / "generic.config").write_text("")
     (cfgs / "profiles" / "exploit-dev.toml").write_text(
         'name="exploit-dev"\nkind="base"\ndescription="d"\nfragments=["configs/fragments/generic.config"]\n'
@@ -1423,7 +1423,7 @@ def test_explain_config_surfaces_extra_fragments_and_patch_dirs(tmp_path: Path, 
     """--explain-config must show the user's [build] extra_fragments + patch_dirs, not only profile fragments."""
     _make_explain_project(tmp_path)
     (tmp_path / "configs" / "default.toml").write_text(
-        '[source]\nkind="mmp"\nvalue="6.6.30"\n'
+        '[source]\nkind="version"\nvalue="6.6.30"\n'
         '[build]\nextra_fragments=["configs/fragments/my-feature.config"]\npatch_dirs=["patches/my-fix"]\n'
     )
     monkeypatch.chdir(tmp_path)
@@ -1580,7 +1580,7 @@ def _make_cmd_use_with_profile_project(tmp_path: Path) -> None:
     cfgs = tmp_path / "configs"
     (cfgs / "profiles").mkdir(parents=True, exist_ok=True)
     (cfgs / "fragments").mkdir(parents=True, exist_ok=True)
-    (cfgs / "default.toml").write_text('[source]\nkind="mmp"\nvalue="6.6.30"\n[general]\narch="arm64"\n')
+    (cfgs / "default.toml").write_text('[source]\nkind="version"\nvalue="6.6.30"\n[general]\narch="arm64"\n')
     (cfgs / "profiles" / "exploit-dev.toml").write_text('name="exploit-dev"\nkind="base"\ndescription="d"\n')
     (cfgs / "profiles" / "hardened.toml").write_text('name="hardened"\nkind="base"\ndescription="hardened"\n')
 

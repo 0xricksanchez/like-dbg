@@ -678,7 +678,7 @@ def test_cache_miss_on_image_change_regenerates(tmp_path: Path) -> None:
     assert _stamp(out)["state"] == "RECOVERED"
 
 
-# ---- [build] exploit_flags (extra compile/link flags for the exploit auto-compile) ----
+# ---- [exploit] flags (extra compile/link flags for the exploit auto-compile) ----
 
 
 def test_musl_compile_places_flags_after_source_for_link_order() -> None:
@@ -836,7 +836,7 @@ def test_stamp_verdict_corrupt_stamp_rebuilds(tmp_path: Path) -> None:
     [
         ("exploit_name", "exploit changed"),
         ("exploit_sha256", "source changed"),
-        ("exploit_flags", "exploit_flags changed"),
+        ("exploit_flags", "exploit flags changed"),
         ("initramfs_sha256", "base initramfs changed"),
         ("musl_image_sha", "like_musl toolchain image changed"),
         ("command_sha", "build recipe changed"),

@@ -30,9 +30,9 @@ def test_debugger_builds_and_runs_gdb_with_breakpoint():
     assert "set architecture aarch64" in s
 
 
-def test_debugger_threads_custom_gdb_port():
+def test_debugger_threads_custom_gdbstub_port():
     captured = {}
-    settings = Settings.model_validate({"general": {"arch": "arm64"}, "debuggee": {"gdb_port": 4444}})
+    settings = Settings.model_validate({"general": {"arch": "arm64"}, "debuggee": {"gdbstub_port": 4444}})
     host = HostProfile(
         os="linux",
         host_arch="arm64",

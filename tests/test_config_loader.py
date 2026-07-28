@@ -17,7 +17,7 @@ def _write(p: Path, text: str) -> None:
 
 
 def test_default_only(tmp_path: Path) -> None:
-    _write(tmp_path / "configs" / "default.toml", '[source]\nkind = "mmp"\nvalue = "6.6.30"\n')
+    _write(tmp_path / "configs" / "default.toml", '[source]\nkind = "version"\nvalue = "6.6.30"\n')
     cr = load_config(tmp_path)
     assert cr.settings.source.value == "6.6.30"
     assert cr.provenance[("source", "value")] == LAYER_DEFAULT
@@ -77,3 +77,21 @@ def test_foreign_section_loads_through_scenario(tmp_path: Path) -> None:
     cr = load_config(tmp_path, scenario=tmp_path / "configs" / "scenarios" / "lk01.toml")
     assert cr.settings.foreign.image == "ctf/lk01/bzImage"
     assert cr.settings.foreign.cmdline == "quiet"
+
+
+def test_unknown_key_error_names_the_offending_key(tmp_path: Path) -> None:
+    """A key that moved between releases (or a plain typo) must be identifiable from the error.
+    'Extra inputs are not permitted' alone turns a one-line fix into a hunt through the section."""
+    _write(tmp_path / "configs" / "default.toml", '[debugger]\next = "pwndbg"\nprofiles = ["exploit-dev"]\n')
+    with pytest.raises(ConfigError) as exc:
+        load_config(tmp_path)
+    assert "profiles" in str(exc.value)
+    assert "[debugger]" in str(exc.value)
+    assert exc.value.remedy and "profiles" in exc.value.remedy
+
+
+def test_bad_value_error_names_the_offending_key(tmp_path: Path) -> None:
+    _write(tmp_path / "configs" / "default.toml", '[source]\nkind = "mmp"\n')
+    with pytest.raises(ConfigError) as exc:
+        load_config(tmp_path)
+    assert "kind" in str(exc.value)

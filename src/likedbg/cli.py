@@ -143,7 +143,7 @@ def resolve_for_run(
     """
     cfg = load_config(workspace, scenario=scenario, cli_overrides=cli_overrides)
     host = HostProfile.detect(cfg.settings, workspace)
-    names = parse_profile_names(profile_arg) if profile_arg else cfg.settings.debugging.profiles
+    names = parse_profile_names(profile_arg) if profile_arg else cfg.settings.general.profiles
     rr = resolve_run(
         profile_names=names,
         config=cfg,
@@ -785,7 +785,7 @@ def cmd_foreign(
         debuginfod_enabled=debuginfod_enabled,
         debuginfod_urls=cfg.settings.debugger.debuginfod_urls,
         debuginfod_cache=debuginfod_cache,
-        exploit_flags=cfg.settings.build.exploit_flags,
+        exploit_flags=cfg.settings.exploit.flags,
         foreign_net=fcfg.net,
         foreign_net_iface=fcfg.net_iface,
         force_rebuild=force,

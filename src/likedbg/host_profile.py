@@ -148,7 +148,7 @@ class HostProfile:
     def _resolve_storage(settings: Settings, os_name: str, workspace: Path, probes: Probes) -> StorageMode:
         if os_name != "darwin":
             return "bind"
-        override = settings.general.mac_storage
+        override = settings.general.storage
         if override == "bind":
             return "bind"
         if override == "volume":

@@ -61,7 +61,7 @@ Rules:
   make conflicting build-time KASLR decisions. Requesting two base profiles is an error.
 - **Add-ons stack** on top of the base, and some pull in others (`kasan` and `ubsan` both imply
   `crash-debug`).
-- Select profiles with `--profile` (comma-separated, overrides the config) or the `[debugging]`
+- Select profiles with `--profile` (comma-separated, overrides the config) or the `[general] profiles`
   section:
 
   ```sh
@@ -84,7 +84,7 @@ Some axes are detected from the host rather than configured, and recorded in eac
 - **Acceleration** is native HVF on Apple Silicon debugging a same-architecture guest, KVM on a
   Linux host with `/dev/kvm`, and TCG otherwise. Override with `[debuggee] accel`.
 - **Storage mode** (whether the kernel source tree is host-visible) is bind on Linux and chosen
-  automatically on macOS. Override on macOS with `[general] mac_storage`.
+  automatically on macOS. Override with `[general] storage`.
 - **Network mode** (how the Debugger reaches the gdbstub) is host networking on Linux and
   published ports on macOS. Override with `[debuggee] network`.
 - **Debuggee mode** (whether QEMU runs as a host process or inside the debuggee container)
@@ -100,7 +100,8 @@ to cross-build and boot a foreign-architecture guest.
 | Key | Default | Values and meaning |
 |---|---|---|
 | `arch` | `native` | `native`, `x86_64`, `arm64`. `native` resolves to the host architecture. |
-| `mac_storage` | `auto` | `auto`, `bind`, `volume`. Storage mode on macOS. |
+| `storage` | `auto` | `auto`, `bind`, `volume`. Storage mode: where the kernel source tree lives. |
+| `profiles` | `["exploit-dev"]` | The active debug profiles (see above). `--profile` overrides. |
 | `workspace_dir` | unset | Override the workspace root. |
 
 ### `[source]`
@@ -123,7 +124,6 @@ to cross-build and boot a foreign-architecture guest.
 | `extra_fragments` | empty | Extra kconfig fragments (must live under `configs/fragments/`). |
 | `ccache` | `true` | Cache compilation via ccache (persistent, capped) for fast rebuilds. |
 | `ccache_max_size` | `5G` | Max ccache size (ccache size syntax, e.g. `5G`, `500M`). |
-| `exploit_flags` | empty | Extra flags for the exploit auto-compile, e.g. `["-lpthread", "-D_GNU_SOURCE"]`. |
 
 `extra_fragments` entries must live under `configs/fragments/` (a path outside that tree is a
 config error); they are merged over `make defconfig` after the active profiles' own fragments, so
@@ -134,13 +134,23 @@ workspace-root `patches/` directory, e.g. `patches/my-fix/0001-thing.patch`. A `
 produces a new cached source tree, since patches are part of the source cache key. Worked examples
 for both live in [build-your-own-kernel.md](build-your-own-kernel.md#customize-the-build).
 
-`exploit_flags` reach a single `zig cc` (gcc-driver) invocation for the one `.c`, so they take
+### `[exploit]`
+
+Settings for the exploit auto-compile, shared by `[foreign] exploit`, `--run` and `--upload`. This
+is about building *your exploit*, not the kernel — hence its own section rather than a key in
+`[build]`.
+
+| Key | Default | Values and meaning |
+|---|---|---|
+| `flags` | empty | Extra flags for the exploit auto-compile, e.g. `["-lpthread", "-D_GNU_SOURCE"]`. |
+
+`[exploit] flags` reach a single `zig cc` (gcc-driver) invocation for the one `.c`, so they take
 **both** compile-time flags (`-D...`, `-I...`, `-O2`, `-std=...`, `-g`) **and** linker flags
 (`-lpthread`, `-lm`, `-L...`, `-Wl,...`). Write each as the full flag with its prefix, one token per
 list element (`-lpthread`, not `pthread`; `-D_GNU_SOURCE`, not `_GNU_SOURCE`); a space-separated
 option must be two elements or joined, e.g. `["-I", "/path"]` or `["-I/path"]`, not `["-I /path"]`.
 LIKE-DBG appends them after the source
-(`{arch}-linux-musl-gcc -static <src> {exploit_flags} -o <out>`) so libraries resolve in link order;
+(`{arch}-linux-musl-gcc -static <src> {flags} -o <out>`) so libraries resolve in link order;
 `-D`/`-I` are position-independent, so they still apply. They are used only when LIKE-DBG compiles a
 flag-less single `.c` (via `[foreign] exploit`, `--run`, or `--upload`); a prebuilt binary is passed
 through unchanged. musl folds pthread/rt/dl into libc, so most `-l` flags are no-ops, but they are
@@ -175,8 +185,8 @@ sessions. `start_kgdb --clean-all` deletes that volume to force a cold rebuild.
 | `smp` | `1` | Guest CPU count. |
 | `accel` | `auto` | `auto`, `kvm`, `hvf`, `tcg`. Overrides host-detected acceleration. |
 | `network` | `auto` | `auto`, `host`, `published`. How the Debugger reaches the gdbstub. |
-| `gdb` | `true` | Expose the QEMU gdbstub. |
-| `gdb_port` | `1234` | gdbstub TCP port. |
+| `gdbstub` | `true` | Expose the QEMU gdbstub. |
+| `gdbstub_port` | `1234` | gdbstub TCP port. |
 | `kaslr` | `false` | Enable KASLR at runtime (only if the built kernel supports it). |
 | `smep` | `true` | Enable SMEP at runtime (x86_64 only). |
 | `smap` | `true` | Enable SMAP at runtime (x86_64 only). |
@@ -253,12 +263,6 @@ both built and foreign kernels.
 | `debuginfod` | `auto` | `auto`, `on`, `off`. Fetch debug info by build-id. `auto` is on for `[foreign]` runs and off for self-built kernels (which already carry their symtab). |
 | `debuginfod_urls` | elfutils server | Space-separated debuginfod server URLs. Default is the federated `https://debuginfod.elfutils.org`. |
 
-### `[debugging]`
-
-| Key | Default | Values and meaning |
-|---|---|---|
-| `profiles` | `["exploit-dev"]` | The active debug profiles (see above). |
-
 ### `[foreign]`
 
 Present only for a CTF or foreign kernel; its `image` key selects that path. See
@@ -272,6 +276,6 @@ Present only for a CTF or foreign kernel; its `image` key selects that path. See
 | `cmdline` | Boot command line, used verbatim. |
 | `arch` | Optional architecture override; else auto-detected from the `vmlinux` ELF. |
 | `qemu_extra` | Extra QEMU flags, for example a CPU baseline. |
-| `exploit` | Optional exploit source or binary, repack-injected at `/exploit`. Repacked only when it (or the initramfs, `[build] exploit_flags`, or the `like_musl` image) changed; `--force-rebuild` repacks regardless. |
+| `exploit` | Optional exploit source or binary, repack-injected at `/exploit`. Repacked only when it (or the initramfs, `[exploit] flags`, or the `like_musl` image) changed; `--force-rebuild` repacks regardless. |
 | `net` | Outbound guest networking, default `true`. Adds a user-mode (SLIRP) NIC so the guest reaches the network and the challenge initramfs's boot-time `ifup` wait succeeds instantly instead of stalling ~15s. `false` gives a faithful air-gapped boot (the wait returns). It is a device only, not an SSH control transport — `--run`/`--insmod` still refuse. |
 | `net_iface` | Interface name the guest expects, default `eth0`. `ethN` forces the name via `net.ifnames=0`; `enp0sN` pins the NIC's PCI slot so the challenge's kernel names it. Read it off the guest's `Waiting for interface XXX` console line. Other schemes: place the NIC via `qemu_extra` and set `net = false`. |
