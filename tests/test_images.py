@@ -214,3 +214,17 @@ def test_ensure_current_honors_specs_subset(tmp_path):
     c = _FakeContainer()
     images.ensure_current(c, tmp_path, (specs[0],))
     assert [tag for _, tag, _ in c.builds] == ["img_a:latest"]  # only the passed spec touched
+
+
+def test_dockerignore_excludes_the_guest_share() -> None:
+    """Regression, found on the live gate: the guest runs as root, so every --run leaves a
+    root-owned 0600 binary in the share (`exploit/`). docker build reads the whole context and
+    died with 'Can not read file in context', so the first --run broke --build-images."""
+    ignored = {
+        line.strip().rstrip("/")
+        for line in Path(".dockerignore").read_text().splitlines()
+        if line.strip() and not line.startswith("#")
+    }
+    assert "exploit" in ignored, ".dockerignore must exclude the Guest share"
+    assert "artifacts" in ignored
+    assert "ctf" in ignored, "challenge blobs are large, gitignored, and never part of an image"
