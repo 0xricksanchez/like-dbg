@@ -1853,3 +1853,34 @@ def test_ensure_images_outside_a_checkout_says_so(tmp_path: Path) -> None:
         cli._ensure_images(None, tmp_path, specs=images.foreign_prep_images())  # type: ignore[arg-type]  # noqa: SLF001
     assert "does not look like a LIKE-DBG workspace" in str(exc.value)
     assert exc.value.remedy and "checkout" in exc.value.remedy
+
+
+# ---- multi-session: --run must act on ITS session's guest, not the newest run anywhere ----
+
+
+def _stub_session(monkeypatch, active: str) -> None:
+    class _S:
+        def __init__(self, *a, **k):
+            pass
+
+        def get_option(self, name):
+            return active
+
+    monkeypatch.setattr(cli, "Session", _S)
+
+
+def test_session_run_id_prefers_the_active_run_of_this_session(monkeypatch, tmp_path: Path) -> None:
+    """Regression: 'latest' was a single global symlink, so with two sessions live an exploit
+    could be delivered to whichever guest happened to boot last."""
+    _stub_session(monkeypatch, str(tmp_path / "artifacts" / "runs" / "20260101T000000Z-foreign-lk01"))
+    assert cli._session_run_id("latest") == "20260101T000000Z-foreign-lk01"  # noqa: SLF001
+
+
+def test_session_run_id_falls_back_to_latest_outside_a_session(monkeypatch) -> None:
+    _stub_session(monkeypatch, "")
+    assert cli._session_run_id("latest") == "latest"  # noqa: SLF001
+
+
+def test_explicit_run_id_always_wins(monkeypatch) -> None:
+    _stub_session(monkeypatch, "/ws/artifacts/runs/other-run")
+    assert cli._session_run_id("20260101T000000Z-foreign-lk01") == "20260101T000000Z-foreign-lk01"  # noqa: SLF001

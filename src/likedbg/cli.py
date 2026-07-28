@@ -289,6 +289,21 @@ def explain_config(
     return "\n".join(lines)
 
 
+def _session_run_id(requested: str) -> str:
+    """Which run `--run`/`--insmod`/`--rmmod`/`--upload` should act on.
+
+    `latest` used to mean the newest run in the whole workspace -- a single global symlink. With
+    two sessions live that silently targets whichever guest booted last, so an exploit could be
+    delivered to the wrong one. It now means "the run belonging to the tmux session I am typing
+    in", which is also the more obviously-correct reading with a single session. An explicit
+    --run-id always wins, and outside a LIKE-DBG session it falls back to the global pointer.
+    """
+    if requested != "latest":
+        return requested
+    active = Session("LIKE-DBG").get_option(_ACTIVE_RUN_DIR_OPTION)
+    return Path(active).name if active else "latest"
+
+
 def _claim_ports(rr: RunResolution) -> RunResolution:
     """Bind-check this boot's host ports and re-point the ones nobody chose.
 
@@ -1530,15 +1545,21 @@ def main(argv: list[str] | None = None) -> int:
         if args.analyze_crash is not None:
             return cmd_analyze_crash(workspace, run_id=args.analyze_crash)
         if args.run:
-            return cmd_run(workspace, run_id=args.run_id, exploit=args.run, args=args.args)
+            return cmd_run(workspace, run_id=_session_run_id(args.run_id), exploit=args.run, args=args.args)
         if args.upload:
-            return cmd_upload(workspace, run_id=args.run_id, file=args.upload)
+            return cmd_upload(workspace, run_id=_session_run_id(args.run_id), file=args.upload)
         if args.insmod:
             return cmd_insmod(
-                workspace, run_id=args.run_id, path=args.insmod, args=args.args, force_unload=args.force_unload
+                workspace,
+                run_id=_session_run_id(args.run_id),
+                path=args.insmod,
+                args=args.args,
+                force_unload=args.force_unload,
             )
         if args.rmmod:
-            return cmd_rmmod(workspace, run_id=args.run_id, name=args.rmmod, force_unload=args.force_unload)
+            return cmd_rmmod(
+                workspace, run_id=_session_run_id(args.run_id), name=args.rmmod, force_unload=args.force_unload
+            )
         if args.re_run:
             if args.config or args.profile or args.use or args.rootfs:
                 parser.error("--re-run cannot be combined with launch selectors")
