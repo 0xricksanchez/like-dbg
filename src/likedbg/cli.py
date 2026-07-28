@@ -1310,6 +1310,25 @@ def cmd_restart_debuggee(session: Session) -> int:
         session.unset_option("@likedbg_restart_in_progress")
 
 
+def tmux_missing() -> int:
+    """Report the not-inside-tmux prerequisite and return its exit status.
+
+    Every launch path needs a tmux session to hang its panes on, so this guard is the second thing
+    a new user trips over after Docker. It used to be five copies of a bare "Start tmux first." --
+    the only failure in the tool that did not say *how*, when the how is a specific command nobody
+    guesses (the project runs its own tmux server, on its own socket, with its own config).
+
+    Kept as a status rather than a raised SessionError so a missing prerequisite keeps exit 2,
+    distinct from an operation that ran and failed (1).
+    """
+    logger.error(
+        "not running inside a tmux session\n"
+        "  -> fix: start the project's tmux server, then re-run from inside it:\n"
+        "          tmux -L likedbg -f .tmux.conf new -s LIKE-DBG"
+    )
+    return 2
+
+
 def cmd_analyze_crash(workspace: Path, *, run_id: str) -> int:
     """Pure-host crash analysis: resolve a run dir, run analyze_run, print a summary.
 
@@ -1320,7 +1339,8 @@ def cmd_analyze_crash(workspace: Path, *, run_id: str) -> int:
     run_dir = run_dir.resolve() if run_dir.is_symlink() else run_dir
     report = analyze_run(run_dir)
     if report is None:
-        logger.info("no crash detected")
+        # print, not logger: this is the command's result, and every other branch below prints.
+        # Doing both emitted the same line twice.
         print("no crash detected")
         return 0
     prim = report.events[report.primary] if report.primary is not None else report.events[0]
@@ -1696,8 +1716,7 @@ def main(argv: list[str] | None = None) -> int:
             if args.config or args.profile or args.use or args.rootfs:
                 parser.error("--re-run cannot be combined with launch selectors")
             if not os.getenv("TMUX"):
-                logger.error("Not running inside a TMUX session. Start tmux first.")
-                return 2
+                return tmux_missing()
             session = Session("LIKE-DBG")
             try:
                 return cmd_rerun(session, workspace, force_rebuild=args.force_rebuild)
@@ -1710,8 +1729,7 @@ def main(argv: list[str] | None = None) -> int:
                 return 1
         if args.restart_debuggee:
             if not os.getenv("TMUX"):
-                logger.error("Not running inside a TMUX session. Start tmux first.")
-                return 2
+                return tmux_missing()
             session = Session("LIKE-DBG")
             try:
                 return cmd_restart_debuggee(session)
@@ -1743,8 +1761,7 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_prune(container, workspace, size_arg=args.prune, max_size=cfg.settings.cache.max_size)
         if cfg.settings.foreign.image:
             if not os.getenv("TMUX"):
-                logger.error("Not running inside a TMUX session. Start tmux first.")
-                return 2
+                return tmux_missing()
             fscen = _scenario_path(workspace, args.config)
             session = _start_named_session(fscen.stem if fscen is not None else "foreign")
             return cmd_foreign(
@@ -1757,8 +1774,7 @@ def main(argv: list[str] | None = None) -> int:
             )
         if args.use:
             if not os.getenv("TMUX"):
-                logger.error("Not running inside a TMUX session. Start tmux first.")
-                return 2
+                return tmux_missing()
             # A --use boot is identified by the cached build it reuses, not by a scenario file.
             session = _start_named_session(use_boot_label(args.use))
             return cmd_use(
@@ -1791,8 +1807,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.force_rebuild:
             cache.manifest_path(workspace, "build", br.label).unlink(missing_ok=True)
         if not os.getenv("TMUX"):
-            logger.error("Not running inside a TMUX session. Start tmux first.")
-            return 2
+            return tmux_missing()
         run_res = _claim_ports(run_res)
         recorder = RunRecorder.start(
             workspace=workspace,

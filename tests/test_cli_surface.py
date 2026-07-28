@@ -69,3 +69,27 @@ def test_ctrl_c_exits_130_instead_of_dumping_a_traceback(monkeypatch: pytest.Mon
 
     monkeypatch.setattr(cli, "explain_config", _interrupt)
     assert cli.main(["--explain-config"]) == 130
+
+
+def test_missing_tmux_says_how_to_start_it(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
+    """The one prerequisite failure that used to give no remedy, in a tool where every other does.
+
+    The command matters: LIKE-DBG runs its own tmux server on its own socket with its own config,
+    so a plain `tmux` gets you a session the panes are never attached to.
+    """
+    monkeypatch.delenv("TMUX", raising=False)
+    assert cli.main(["--restart-debuggee"]) == 2
+    err = capsys.readouterr().err
+    assert "tmux -L likedbg -f .tmux.conf new -s LIKE-DBG" in err
+    assert "-> fix:" in err
+
+
+def test_reported_version_matches_the_package_metadata() -> None:
+    """`--version` reads likedbg.__version__; the wheel's version is built from the same line.
+
+    They were two independent literals, so a release bump could touch one and ship a binary that
+    disagreed with its own metadata. Guards against a static `version =` creeping back in.
+    """
+    import importlib.metadata
+
+    assert importlib.metadata.version("like-dbg") == __version__

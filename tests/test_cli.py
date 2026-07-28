@@ -1725,8 +1725,18 @@ def test_cmd_analyze_crash_no_crash(tmp_path, capsys):
     (run / "logs" / "console.raw").write_text("[ 0.1] booting\n")
     (run / "host.json").write_text(json.dumps({"target_arch": "x86_64"}))
     (run / "run.json").write_text(json.dumps({"status": "launched", "build_label": "linux-6.6.30-x"}))
-    assert cli.cmd_analyze_crash(tmp_path, run_id="r2") == 0
-    assert "no crash detected" in capsys.readouterr().out.lower()
+    # Once, not twice: this branch used to logger.info *and* print the same line, while every
+    # other branch of cmd_analyze_crash only prints. capsys cannot see loguru (it holds its own
+    # stderr reference), so the log has to be sunk explicitly for the duplicate to be visible.
+    logged: list[str] = []
+    handler_id = logger.add(logged.append, level="INFO", format="{message}")
+    try:
+        assert cli.cmd_analyze_crash(tmp_path, run_id="r2") == 0
+    finally:
+        logger.remove(handler_id)
+    out = capsys.readouterr().out
+    assert "no crash detected" in out.lower()
+    assert (out + "".join(logged)).lower().count("no crash detected") == 1
 
 
 # ---------------------------------------------------------------------------

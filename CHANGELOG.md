@@ -3,7 +3,7 @@
 <!--toc:start-->
 - [Changelog](#changelog)
   - [[Unreleased]](#unreleased)
-  - [[1.0.0] — unreleased](#100-unreleased)
+  - [[1.0.0] — 2026-07-28](#100-2026-07-28)
     - [Highlights](#highlights)
     - [Added](#added)
     - [Changed](#changed)
@@ -16,7 +16,7 @@ All notable changes to LIKE-DBG are recorded here. The format follows
 
 ## [Unreleased]
 
-## [1.0.0] — unreleased
+## [1.0.0] — 2026-07-28
 
 A ground-up rewrite. Nothing carries over from `v0.1.1`: the configuration format, the CLI, the
 module layout, and the Python floor all changed. The shape of the tool is the same — build or adopt
@@ -144,8 +144,9 @@ migrate; see [docs/configuration.md](docs/configuration.md) for the TOML equival
   inspecting, maintenance), and `--version` reports the release.
 - Failures carry remedies rather than tracebacks: malformed TOML names its own line and column, an
   unknown or misplaced config key is named, a half-written run artifact is reported as such,
-  running outside a LIKE-DBG checkout says so instead of naming a dockerfile, and an unreachable
-  Docker daemon names the endpoint it tried plus how to start an engine on this host.
+  running outside a LIKE-DBG checkout says so instead of naming a dockerfile, an unreachable
+  Docker daemon names the endpoint it tried plus how to start an engine on this host, and a launch
+  attempted outside tmux prints the exact command that starts the project's tmux server.
 - `Ctrl-C` out of a long build exits quietly with status 130 instead of a `KeyboardInterrupt`
   traceback; Stamps and Manifests are written only after their output verifies, so the interrupted
   stage is redone rather than reused.
@@ -172,4 +173,4 @@ migrate; see [docs/configuration.md](docs/configuration.md) for the TOML equival
 - The `fabric` SSH dependency, replaced by a small injectable ssh/scp seam.
 - The `.ini` loader (`cfg_setter`) and the legacy per-module configuration blocks.
 
-[1.0.0]: https://github.com/0xricksanchez/like-dbg/compare/v0.1.1...HEAD
+[1.0.0]: https://github.com/0xricksanchez/like-dbg/compare/v0.1.1...v1.0.0

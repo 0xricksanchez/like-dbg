@@ -28,6 +28,9 @@ ctf/vmlinux
 ctf/initramfs
 ctf/pawn*
 artifacts/
+# Scratch binaries built at the repo root while working a challenge.
+lab
+lab/
 
 # SDD controller scratch (briefs, reports, review packages, ledger)
 .superpowers/

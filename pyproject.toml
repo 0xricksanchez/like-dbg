@@ -1,6 +1,8 @@
 [project]
 name = "like-dbg"
-version = "1.0.0"
+# Single-sourced from likedbg.__version__, which is what `start_kgdb --version` reports. Kept in
+# one place so a release bump cannot ship a package whose --version disagrees with its metadata.
+dynamic = ["version"]
 description = "Fully containerized Linux kernel debugging environment"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -29,6 +31,9 @@ dev = [
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/likedbg/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/likedbg"]
