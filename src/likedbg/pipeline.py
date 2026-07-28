@@ -18,6 +18,7 @@ from likedbg.host_profile import HostProfile
 
 if TYPE_CHECKING:
     from likedbg.debug_profiles import RunResolution
+    from likedbg.run_artifacts import RunRecorder
 
 
 @dataclass
@@ -52,7 +53,7 @@ class PipelineContext:
     # retain their supplied command line byte-for-byte.
     foreign_mitigation_overrides: tuple[str, ...] = field(default_factory=tuple)
     qemu_extra: tuple[str, ...] = field(default_factory=tuple)
-    recorder: object | None = None  # TODO: type as RunRecorder once run_artifacts (Task 12) exists
+    recorder: RunRecorder | None = None
     kernel_release: str | None = None
     config_host: Path | None = None
 

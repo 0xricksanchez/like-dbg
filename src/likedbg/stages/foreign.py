@@ -47,7 +47,7 @@ class ForeignAdoptStage:
         ctx.foreign_net_iface = self._foreign_net_iface
         ctx.qemu_extra = self._qemu_extra
         if ctx.recorder is not None:
-            ctx.recorder.record_kernel_paths(  # type: ignore[attr-defined]
+            ctx.recorder.record_kernel_paths(
                 config=None,
                 system_map="",
                 vmlinux=str(fk.vmlinux),

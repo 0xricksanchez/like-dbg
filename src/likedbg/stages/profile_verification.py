@@ -100,8 +100,8 @@ class ProfileVerificationStage:
 
         recorder = ctx.recorder
         if recorder is not None:
-            recorder.record_profile_verification(verification)  # type: ignore[attr-defined]
-            recorder.record_kernel_paths(  # type: ignore[attr-defined]
+            recorder.record_profile_verification(verification)
+            recorder.record_kernel_paths(
                 config=manifest.paths.get("config_host", ""),
                 system_map=f"{manifest.paths['kernel_root']}/System.map",
                 vmlinux=manifest.paths.get("gdb_vmlinux", ""),
@@ -110,7 +110,7 @@ class ProfileVerificationStage:
 
         if verification.missing_hard:
             if recorder is not None:
-                recorder.set_status(  # type: ignore[attr-defined]
+                recorder.set_status(
                     "profile-verification-failed",
                     message="; ".join(f"{e.symbol}={e.value}" for e in verification.missing_hard),
                 )

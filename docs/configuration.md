@@ -100,6 +100,14 @@ Each boot takes over its tmux session under a name that says what it is debuggin
 base profile), `LIKE-DBG-6_6_30-a1b2c3d4` for `--use`. Booting the same thing twice adds `-2`. So a
 session you left running no longer blocks the next one, and two challenges can sit side by side.
 
+Because a suffixed name has the unsuffixed one as a prefix, reattach with tmux's exact-match form
+or you may land in the wrong session:
+
+```sh
+tmux attach -t =LIKE-DBG-pawnyable-lk01     # the '=' means exact; without it, -2 can win
+tmux ls                                      # what is actually running
+```
+
 Two guests cannot share a host port, so ports are checked before use:
 
 - A port **you never set** -- the shipped `configs/default.toml` value or the built-in default -- is

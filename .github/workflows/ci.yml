@@ -15,8 +15,14 @@ permissions:
 
 jobs:
   lint-type-test:
-    name: lint + type + test
+    name: lint + type + test (py${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # pyproject allows >=3.12; test the floor and the newest, since the container images
+        # track a bleeding-edge Python and the host venv here already runs 3.14.
+        python-version: ["3.12", "3.13", "3.14"]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -24,8 +30,8 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v6
         with:
-          # Provision the Python that pyproject requires (>=3.12) and cache the venv.
-          python-version: "3.12"
+          # pyproject declares >=3.12, so test the whole supported range rather than only its floor.
+          python-version: ${{ matrix.python-version }}
           enable-cache: true
 
       - name: Sync dependencies (locked)
@@ -44,6 +50,8 @@ jobs:
         run: uv run pytest -q --cov=src/likedbg --cov-report=xml --cov-report=term-missing
 
       - name: Upload coverage to Codecov
+        # One upload, not one per matrix leg: the legs cover identical source.
+        if: matrix.python-version == '3.12'
         uses: codecov/codecov-action@v5
         with:
           files: coverage.xml

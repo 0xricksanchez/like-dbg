@@ -948,12 +948,12 @@ class _RaisingContainer(_FakeContainer):
         raise RuntimeError("container died mid-repack")
 
 
-def _repack_fixture(tmp_path: Path, *, exploit_name: str = "exp.c") -> tuple[Path, Path, Path]:
+def _repack_fixture(tmp_path: Path) -> tuple[Path, Path, Path]:
     """(initramfs, exploit, out) laid out the way a CTF challenge ships them."""
     initramfs = tmp_path / "in" / "initramfs.cpio.gz"
     initramfs.parent.mkdir(parents=True, exist_ok=True)
     initramfs.write_bytes(b"\x1f\x8b")
-    exploit = tmp_path / "src" / exploit_name
+    exploit = tmp_path / "src" / "exp.c"
     exploit.parent.mkdir(parents=True, exist_ok=True)
     exploit.write_text("int main(void){return 0;}\n")
     out = tmp_path / "out" / "initramfs.repacked.cpio.gz"

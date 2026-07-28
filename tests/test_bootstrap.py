@@ -2,7 +2,7 @@ from likedbg.bootstrap import BootstrapProbes
 from likedbg.bootstrap import check_prerequisites
 
 
-def _probes(present=(), colima=False, binfmt=(), record=None):
+def _probes(present=(), docker_ready=True, binfmt=(), record=None):
     def binfmt_registered(handler: str) -> bool:
         if record is not None:
             record.append(handler)
@@ -10,30 +10,39 @@ def _probes(present=(), colima=False, binfmt=(), record=None):
 
     return BootstrapProbes(
         has=lambda cmd: cmd in present,
-        colima_running=lambda: colima,
+        docker_ready=lambda: docker_ready,
         binfmt_registered=binfmt_registered,
     )
 
 
 def test_macos_all_present_nothing_missing():
-    p = _probes(present={"colima", "qemu-system-aarch64", "uv"}, colima=True)
+    p = _probes(present={"docker", "qemu-system-aarch64", "uv"})
     results = check_prerequisites("darwin", p, machine="arm64")
     # binfmt is reported "unknown" on macOS, which is not a failure.
     assert all(r.status != "missing" for r in results)
 
 
 def test_macos_missing_qemu_reports_remedy():
-    p = _probes(present={"colima", "uv"}, colima=True)
+    p = _probes(present={"docker", "uv"})
     results = check_prerequisites("darwin", p, machine="arm64")
     qemu = next(r for r in results if "qemu-system" in r.name)
     assert qemu.ok is False and qemu.remedy and "brew" in qemu.remedy
 
 
-def test_macos_colima_installed_but_not_running_is_not_ok():
-    p = _probes(present={"colima", "qemu-system-aarch64", "uv"}, colima=False)
+def test_macos_accepts_any_docker_engine_not_just_colima():
+    """LIKE-DBG talks to the active Docker CLI context, so Docker Desktop and OrbStack are as
+    valid as colima. Demanding colima specifically was a false failure for everyone else."""
+    p = _probes(present={"docker", "qemu-system-aarch64", "uv"})
     results = check_prerequisites("darwin", p, machine="arm64")
-    colima = next(r for r in results if r.name == "colima")
-    assert colima.ok is False and colima.remedy and "colima start" in colima.remedy
+    assert "colima" not in {r.name for r in results}
+    assert next(r for r in results if r.name == "docker").ok is True
+
+
+def test_docker_cli_without_a_running_daemon_is_missing():
+    p = _probes(present={"docker", "qemu-system-aarch64", "uv"}, docker_ready=False)
+    results = check_prerequisites("darwin", p, machine="arm64")
+    docker = next(r for r in results if r.name == "docker")
+    assert docker.ok is False and docker.remedy and "no daemon answers" in docker.remedy
 
 
 def test_linux_requires_docker_not_colima():
@@ -78,7 +87,7 @@ def test_binfmt_is_unknown_on_macos_and_the_host_is_never_probed():
     """The handler lives in the Docker VM's kernel, which the host cannot see, so claiming
     either a pass or a failure would be a guess."""
     seen: list[str] = []
-    p = _probes(present={"colima", "qemu-system-aarch64", "uv"}, colima=True, record=seen)
+    p = _probes(present={"docker", "qemu-system-aarch64", "uv"}, record=seen)
     results = check_prerequisites("darwin", p, machine="arm64")
     binfmt = next(r for r in results if r.name.startswith("binfmt"))
     assert seen == []  # probing the host's /proc would be meaningless
@@ -103,7 +112,7 @@ def test_main_exits_zero_when_only_unknowns_remain(capsys, monkeypatch):
     monkeypatch.setattr(
         bootstrap,
         "_real_probes",
-        lambda: _probes(present={"colima", "qemu-system-aarch64", "uv"}, colima=True),
+        lambda: _probes(present={"docker", "qemu-system-aarch64", "uv"}),
     )
     rc = bootstrap.main(["--check"])
     out = capsys.readouterr().out

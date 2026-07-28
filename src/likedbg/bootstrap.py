@@ -34,7 +34,7 @@ class Prereq:
 @dataclass(frozen=True)
 class BootstrapProbes:
     has: Callable[[str], bool]
-    colima_running: Callable[[], bool]
+    docker_ready: Callable[[], bool]  # a daemon actually answers, whichever engine provides it
     binfmt_registered: Callable[[str], bool]  # qemu handler name -> registered in this kernel
 
 
@@ -42,6 +42,20 @@ def _foreign_qemu_arch(machine: str) -> str:
     """The QEMU arch a rootfs build would have to emulate on this host -- i.e. the one it does
     NOT run natively. io/scripts/rootfs.sh only takes its binfmt path when ARCH != `uname -m`."""
     return "x86_64" if machine in _ARM64_MACHINES else "aarch64"
+
+
+def _docker_prereq(os_name: str, probes: BootstrapProbes) -> Prereq:
+    if not probes.has("docker"):
+        remedy = (
+            "install a Docker engine (Docker Desktop, colima, or OrbStack)"
+            if os_name == "darwin"
+            else "install the Docker engine"
+        )
+        return Prereq("docker", "missing", remedy)
+    if not probes.docker_ready():
+        remedy = "start it (e.g. `colima start`, or launch Docker Desktop)" if os_name == "darwin" else "start dockerd"
+        return Prereq("docker", "missing", f"the docker CLI is installed but no daemon answers -- {remedy}")
+    return Prereq("docker", "ok", None)
 
 
 def check_prerequisites(os_name: str, probes: BootstrapProbes, *, machine: str = "x86_64") -> list[Prereq]:
@@ -53,25 +67,15 @@ def check_prerequisites(os_name: str, probes: BootstrapProbes, *, machine: str =
             None if probes.has("uv") else "install uv: https://docs.astral.sh/uv/",
         )
     )
+    # LIKE-DBG talks to whatever the active Docker CLI context points at (docker_env.resolve_docker_host),
+    # so the question is never "is colima installed" -- it is "does a daemon answer". Docker Desktop,
+    # colima, OrbStack and a remote context are all equally fine.
+    results.append(_docker_prereq(os_name, probes))
     if os_name == "darwin":
-        colima_ok = probes.has("colima") and probes.colima_running()
-        results.append(
-            Prereq(
-                "colima",
-                "ok" if colima_ok else "missing",
-                None
-                if colima_ok
-                else ("brew install colima && colima start" if not probes.has("colima") else "colima start"),
-            )
-        )
+        # QEMU runs as a host process here for a same-arch guest (ADR-0001), so it must be installed.
         qemu_ok = probes.has("qemu-system-aarch64")
         results.append(
             Prereq("qemu-system-aarch64", "ok" if qemu_ok else "missing", None if qemu_ok else "brew install qemu")
-        )
-    else:
-        docker_ok = probes.has("docker")
-        results.append(
-            Prereq("docker", "ok" if docker_ok else "missing", None if docker_ok else "install Docker engine")
         )
 
     qemu_arch = _foreign_qemu_arch(machine)
@@ -96,11 +100,12 @@ def _real_probes() -> BootstrapProbes:
     import shutil
     import subprocess
 
-    def colima_running() -> bool:
-        if shutil.which("colima") is None:
+    def docker_ready() -> bool:
+        """Whether a daemon answers on the active context -- engine-agnostic, exactly like the
+        client LIKE-DBG builds at runtime."""
+        if shutil.which("docker") is None:
             return False
-        out = subprocess.run(["colima", "status"], capture_output=True, text=True, check=False)
-        return "running" in (out.stdout + out.stderr).lower()
+        return subprocess.run(["docker", "info"], capture_output=True, text=True, check=False).returncode == 0
 
     def binfmt_registered(handler: str) -> bool:
         # Same registry io/scripts/rootfs.sh reads before a foreign-arch debootstrap. binfmt_misc
@@ -109,7 +114,7 @@ def _real_probes() -> BootstrapProbes:
 
     return BootstrapProbes(
         has=lambda cmd: shutil.which(cmd) is not None,
-        colima_running=colima_running,
+        docker_ready=docker_ready,
         binfmt_registered=binfmt_registered,
     )
 

@@ -30,7 +30,7 @@ class DebuggeeStage:
         eff = ctx.effective_debuggee or ctx.settings.debuggee
         console_log = None
         if eff.capture_console and ctx.recorder is not None:
-            console_log = ctx.recorder.console_raw  # type: ignore[attr-defined]
+            console_log = ctx.recorder.console_raw
         share_host_dir = None
         if eff.share:
             share_host_dir = self._workspace / eff.share_dir
@@ -73,12 +73,12 @@ class DebuggeeStage:
         else:
             cmd = qemu_pane_command(argv)
         if ctx.recorder is not None:
-            ctx.recorder.set_status("launching")  # type: ignore[attr-defined]
-            ctx.recorder.record_command("qemu", shell=cmd, argv=argv)  # type: ignore[attr-defined]
+            ctx.recorder.set_status("launching")
+            ctx.recorder.record_command("qemu", shell=cmd, argv=argv)
         try:
             self._launch(cmd)
         except Exception:
             if ctx.recorder is not None:
-                ctx.recorder.set_status("launch-failed", message="debuggee launch failed")  # type: ignore[attr-defined]
+                ctx.recorder.set_status("launch-failed", message="debuggee launch failed")
             raise
         return ctx

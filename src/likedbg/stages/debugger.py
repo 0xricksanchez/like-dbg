@@ -59,13 +59,13 @@ class DebuggerStage:
             crash_display_path=str(crash_dir) if crash_dir is not None else None,
         )
         if ctx.recorder is not None:
-            ctx.recorder.record_command("gdb", shell=" ".join(args), argv=args)  # type: ignore[attr-defined]
+            ctx.recorder.record_command("gdb", shell=" ".join(args), argv=args)
         try:
             self._run_gdb(args)
         except Exception:
             if ctx.recorder is not None:
-                ctx.recorder.set_status("launch-failed", message="debugger launch failed")  # type: ignore[attr-defined]
+                ctx.recorder.set_status("launch-failed", message="debugger launch failed")
             raise
         if ctx.recorder is not None:
-            ctx.recorder.set_status("launched")  # type: ignore[attr-defined]
+            ctx.recorder.set_status("launched")
         return ctx
