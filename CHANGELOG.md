@@ -81,7 +81,6 @@ migrate; see [docs/configuration.md](docs/configuration.md) for the TOML equival
 - Out-of-tree per-config builds (`O=`) with a persistent, capped ccache volume.
 - Opt-in LRU eviction with a size cap (`[cache] max_size`), `--prune [SIZE]`, and an auto-sweep at
   a 90% low-water mark; the latest run's build is protected (ADR-0014).
-- `--adopt` migrates a legacy unkeyed build into the cache.
 - `--list` shows builds, rootfs images, and shared sources with sizes and last-used times.
 - Kconfig fragment library plus `[build] extra_fragments` and ordered `patch_dirs`.
 - Toolchain registry: clang/LLVM as the universal cross-compiler default, gcc opt-in per arch.

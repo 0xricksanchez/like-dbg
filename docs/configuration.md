@@ -39,6 +39,10 @@ uv run ./start_kgdb --explain-config
 uv run ./start_kgdb --profile kasan --explain-config json
 ```
 
+`-v` / `--verbose` raises the console log level to DEBUG on any command, which adds the exact
+container commands LIKE-DBG runs and their streamed output. A run's full log is kept regardless,
+at `artifacts/runs/<run-id>/logs/likedbg.log`.
+
 ## Debug profiles
 
 A debug profile is a named debugging intent. It resolves to kernel config fragments, expected

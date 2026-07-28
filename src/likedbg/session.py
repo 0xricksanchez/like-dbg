@@ -144,10 +144,6 @@ class Session:
     def kill_pane(self, pane: str) -> None:
         self._tmux("kill-pane", "-t", pane)
 
-    def kill(self) -> None:
-        # TODO(plan-3): target panes/session by self.name; name is unused scaffolding for now
-        self._tmux("kill-pane", "-a", "-t", str(self.pane_base_index()))
-
 
 # '.' and ':' are tmux's own target syntax (session:window.pane). Whether a session name may
 # contain them is version-dependent -- tmux 3.6 rewrites '.' to '_', 3.7 stores it verbatim -- so
