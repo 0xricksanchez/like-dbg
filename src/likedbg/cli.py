@@ -316,16 +316,37 @@ def _claim_ports(rr: RunResolution) -> RunResolution:
     return dataclasses.replace(rr, effective_debuggee=plan.debuggee) if plan.notes else rr
 
 
-def _start_named_session(scenario: Path | None, *, label: str = "") -> Session:
+# A `[source] kind = "commit"` value is a full sha; truncated so one boot cannot fill the
+# tmux status bar with a name nobody reads to the end anyway.
+_NAME_PART_MAX = 12
+
+
+def default_boot_label(version: str, profile_base: str) -> str:
+    """Name a scenario-less boot after what actually varies between them: kernel and profile.
+
+    `start_kgdb` with no -c is the commonest invocation, so it must not be the least informative
+    name: two of them side by side are `6.6.30-exploit-dev` and `6.6.30-kasan`, not `default` and
+    `default-2`.
+    """
+    v = version[:_NAME_PART_MAX]
+    return f"{v}-{profile_base}" if profile_base else v
+
+
+def use_boot_label(build_label: str) -> str:
+    """`linux-6.6.30-a1b2c3d4` -> `6.6.30-a1b2c3d4`; every build carries the same prefix, so it
+    distinguishes nothing and only costs status-bar room."""
+    return build_label.removeprefix("linux-") or build_label
+
+
+def _start_named_session(label: str) -> Session:
     """Take over the current tmux session under a name that says what it is debugging.
 
     Named per boot rather than a single global "LIKE-DBG" so a second scenario can be booted
     while the first is still live: `rename-session` to a name tmux already holds fails outright,
     which is how a leftover session used to block every later run.
     """
-    stem = label or (scenario.stem if scenario is not None else "default")
     session = Session("LIKE-DBG")
-    name = unique_session_name(f"LIKE-DBG-{slug(stem)}", session.list_sessions())
+    name = unique_session_name(f"LIKE-DBG-{slug(label)}", session.list_sessions())
     session.start(name)
     session.name = name
     logger.info(f"tmux session: {name}")
@@ -1613,7 +1634,8 @@ def main(argv: list[str] | None = None) -> int:
             if not os.getenv("TMUX"):
                 logger.error("Not running inside a TMUX session. Start tmux first.")
                 return 2
-            session = _start_named_session(_scenario_path(workspace, args.config))
+            fscen = _scenario_path(workspace, args.config)
+            session = _start_named_session(fscen.stem if fscen is not None else "foreign")
             return cmd_foreign(
                 container,
                 session,
@@ -1627,7 +1649,7 @@ def main(argv: list[str] | None = None) -> int:
                 logger.error("Not running inside a TMUX session. Start tmux first.")
                 return 2
             # A --use boot is identified by the cached build it reuses, not by a scenario file.
-            session = _start_named_session(None, label=args.use)
+            session = _start_named_session(use_boot_label(args.use))
             return cmd_use(
                 container,
                 session,
@@ -1673,7 +1695,9 @@ def main(argv: list[str] | None = None) -> int:
         logsetup.add_run_logfile(workspace, path=recorder.likedbg_log)
         _ensure_images(container, workspace, specs=images.required_for(host))
         chown_to = (os.getuid(), os.getgid()) if host.os == "linux" and host.storage_mode == "bind" else None
-        session = _start_named_session(scenario)
+        session = _start_named_session(
+            scenario.stem if scenario is not None else default_boot_label(version, run_res.profiles.base or "")
+        )
         ctx = PipelineContext(
             settings=cfg.settings,
             host=host,

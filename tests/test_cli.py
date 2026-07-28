@@ -1884,3 +1884,32 @@ def test_session_run_id_falls_back_to_latest_outside_a_session(monkeypatch) -> N
 def test_explicit_run_id_always_wins(monkeypatch) -> None:
     _stub_session(monkeypatch, "/ws/artifacts/runs/other-run")
     assert cli._session_run_id("20260101T000000Z-foreign-lk01") == "20260101T000000Z-foreign-lk01"  # noqa: SLF001
+
+
+# ---- session naming: the name must say which boot it is ----
+
+
+def test_default_boot_label_names_kernel_and_profile() -> None:
+    """Plain `start_kgdb` is the commonest invocation, so it must not get the least useful name:
+    two side by side should read 6.6.30-exploit-dev and 6.6.30-kasan, not default and default-2."""
+    assert cli.default_boot_label("6.6.30", "exploit-dev") == "6.6.30-exploit-dev"
+    assert cli.default_boot_label("6.6.30", "kasan") == "6.6.30-kasan"
+
+
+def test_default_boot_label_truncates_a_commit_source() -> None:
+    """[source] kind = "commit" is a full sha; it must not fill the tmux status bar."""
+    label = cli.default_boot_label("a" * 40, "kasan")
+    assert label == "a" * 12 + "-kasan"
+
+
+def test_default_boot_label_without_a_base_profile() -> None:
+    assert cli.default_boot_label("6.6.30", "") == "6.6.30"
+
+
+def test_use_boot_label_drops_the_prefix_every_build_shares() -> None:
+    assert cli.use_boot_label("linux-6.6.30-a1b2c3d4") == "6.6.30-a1b2c3d4"
+
+
+def test_use_boot_label_leaves_other_labels_alone() -> None:
+    assert cli.use_boot_label("custom-build-7") == "custom-build-7"
+    assert cli.use_boot_label("linux-") == "linux-"  # never degrade to an empty name
