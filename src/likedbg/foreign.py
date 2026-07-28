@@ -342,18 +342,21 @@ def resolve_foreign(
             remedy="check the path (absolute or workspace-relative)",
         )
 
+    # Every cheap existence check runs BEFORE the vmlinux extraction below, which starts a
+    # container and can spend real time recovering kallsyms. A path typo should cost a stat, not
+    # a kernel-symbol recovery that is then thrown away.
+    initramfs: Path | None = None
+    if cfg.initramfs:
+        initramfs = resolve_input_path(workspace, cfg.initramfs)
+        if not initramfs.is_file():
+            raise ForeignError(f"[foreign].initramfs not found: {initramfs}", remedy="check the path")
+
     if cfg.vmlinux:
         vmlinux = resolve_input_path(workspace, cfg.vmlinux)
         if not vmlinux.is_file():
             raise ForeignError(f"[foreign].vmlinux not found: {vmlinux}", remedy="check the path")
     else:
         vmlinux = extract_vmlinux(container, image_path, out_dir / "vmlinux", image=image, force=force)
-
-    initramfs: Path | None = None
-    if cfg.initramfs:
-        initramfs = resolve_input_path(workspace, cfg.initramfs)
-        if not initramfs.is_file():
-            raise ForeignError(f"[foreign].initramfs not found: {initramfs}", remedy="check the path")
 
     arch = cfg.arch or detect_arch(vmlinux)
     if arch not in ("x86_64", "arm64"):

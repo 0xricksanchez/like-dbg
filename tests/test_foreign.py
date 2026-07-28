@@ -1245,3 +1245,17 @@ def test_extract_vmlinux_force_ignores_a_valid_stamp(tmp_path: Path, monkeypatch
     assert calls == []  # cached
     extract_vmlinux(_FakeContainer(), img, out, image="m", force=True)
     assert calls == ["recover"]
+
+
+def test_resolve_foreign_checks_initramfs_before_extracting_vmlinux(tmp_path: Path) -> None:
+    """Regression: a typo'd initramfs path used to be reported only AFTER a container-based
+    kallsyms recovery had already run and been thrown away."""
+    from likedbg.foreign import resolve_foreign
+
+    (tmp_path / "bzImage").write_bytes(b"MZ")
+    cfg = _mk_cfg(image="bzImage", initramfs="nope.cpio", arch="x86_64", cmdline="")
+    c = _FakeContainer(make_out=None)
+
+    with pytest.raises(ForeignError, match="initramfs not found"):
+        resolve_foreign(c, cfg, tmp_path, out_dir=tmp_path / "stage", image="like_musl:latest")
+    assert c.execs == []  # no container work was done before the cheap check failed

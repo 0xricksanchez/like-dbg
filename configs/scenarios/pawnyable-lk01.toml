@@ -20,7 +20,7 @@ kpti = true
 
 [foreign]
 image = "ctf/pawnyable-lk01/bzImage"           # presence selects the foreign path
-initramfs = "initramfs.cpio"   # the challenge's own busybox rootfs (raw cpio)
+initramfs = "ctf/pawnyable-lk01/rootfs.cpio"   # the challenge's own busybox rootfs (raw cpio)
 cmdline = "console=ttyS0 loglevel=3 oops=panic panic=-1"  # used verbatim
 arch = "x86_64"
 # Kernel symbols (kmod, crash breakpoints, add-symbol-file) are recovered automatically from the
@@ -28,5 +28,7 @@ arch = "x86_64"
 # a real vmlinux for source-level kernel debugging:
 # vmlinux = "ctf/pawnyable-lk01/vmlinux"
 
-# 
-exploit = "ctf/pawnyable-lk01/exploit2.c"
+# Your exploit, auto-compiled static-musl and injected at /exploit by the initramfs repack.
+# Commented out so the scenario boots with only the two challenge files above; point it at your
+# own source (or a prebuilt static binary) when you have one. Run it from the guest console.
+# exploit = "ctf/pawnyable-lk01/exploit.c"
