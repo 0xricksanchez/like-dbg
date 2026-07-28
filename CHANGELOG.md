@@ -64,7 +64,9 @@ migrate; see [docs/configuration.md](docs/configuration.md) for the TOML equival
 - **Debug two things at once.** Each boot takes its own tmux session, named after what it is
   debugging (`LIKE-DBG-pawnyable-lk01`, `LIKE-DBG-6_6_30-kasan`), picks host ports nobody else is
   holding, and answers `--run`/`--insmod`/`--rmmod` for *its* guest rather than whichever booted
-  most recently.
+  most recently. Each session's guest writes to its own copy-on-write overlay, so guest state
+  survives `--re-run` while the shared rootfs image stays pristine -- a guest can no longer
+  degrade the cached image for every later run.
 - **macOS and Linux are both first-class.** QEMU runs as a host process where hardware acceleration
   is available and in-container otherwise; the kernel tree lives in a named volume or a host bind
   depending on the filesystem's case sensitivity. Both are detected, not configured (ADR-0001,
@@ -107,6 +109,8 @@ migrate; see [docs/configuration.md](docs/configuration.md) for the TOML equival
 - Host ports are checked before use. A port you never set (the shipped default) moves out of the
   way and says so; one you set in a scenario, `local.toml`, a profile or on the CLI is honoured
   exactly or reported busy -- never changed underneath you.
+- Each session boots a qcow2 overlay over the shared rootfs image, so concurrent guests no longer
+  contend for QEMU's write lock on it.
 
 **Exploit development**
 
