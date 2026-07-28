@@ -270,3 +270,19 @@ def test_collision_is_detected_against_the_name_tmux_reports():
 
     got = unique_session_name("LIKE-DBG-6.6.30-exploit-dev", ["LIKE-DBG-6_6_30-exploit-dev"])
     assert got == "LIKE-DBG-6_6_30-exploit-dev-2"
+
+
+def test_a_session_is_not_a_collision_with_itself():
+    """Regression: --re-run re-enters the normal dispatch from inside the session it is
+    restarting. Counting that session as taken made every restart climb -2, -3, -4."""
+    from likedbg.session import unique_session_name
+
+    got = unique_session_name("LIKE-DBG-lk01", ["LIKE-DBG-lk01"], current="LIKE-DBG-lk01")
+    assert got == "LIKE-DBG-lk01"
+
+
+def test_another_live_session_still_collides_when_current_is_set():
+    from likedbg.session import unique_session_name
+
+    got = unique_session_name("LIKE-DBG-lk01", ["LIKE-DBG-lk01", "LIKE-DBG-other"], current="LIKE-DBG-other")
+    assert got == "LIKE-DBG-lk01-2"

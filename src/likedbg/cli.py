@@ -346,7 +346,9 @@ def _start_named_session(label: str) -> Session:
     which is how a leftover session used to block every later run.
     """
     session = Session("LIKE-DBG")
-    name = unique_session_name(f"LIKE-DBG-{slug(label)}", session.list_sessions())
+    name = unique_session_name(
+        f"LIKE-DBG-{slug(label)}", session.list_sessions(), current=session.current_session_name()
+    )
     session.start(name)
     session.name = name
     logger.info(f"tmux session: {name}")

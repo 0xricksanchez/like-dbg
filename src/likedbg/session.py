@@ -64,6 +64,10 @@ class Session:
             args.append("Enter")
         self._tmux(*args)
 
+    def current_session_name(self) -> str:
+        """The session this process is running inside, or "" outside tmux."""
+        return self._query(["tmux", "display-message", "-p", "#{session_name}"])
+
     def list_sessions(self) -> list[str]:
         """Every tmux session name on this server, or [] when there is no server at all.
 
@@ -158,15 +162,20 @@ def tmux_safe_name(name: str) -> str:
     return name.translate(_TMUX_UNSAFE)
 
 
-def unique_session_name(base: str, taken: Iterable[str]) -> str:
+def unique_session_name(base: str, taken: Iterable[str], *, current: str = "") -> str:
     """`base`, or the first `base-N` (N>=2) no live session already holds.
 
     A LIKE-DBG session is named after what it is debugging, not after a hash: the name's only
     job is to be readable in `tmux ls` and the status bar, and tmux enforces uniqueness anyway.
     The suffix appears only when the same scenario is genuinely booted twice.
+
+    `current` is the caller's own session, excluded because renaming a session to the name it
+    already has is a no-op rather than a collision. Without it `--re-run` -- which re-enters the
+    normal dispatch from inside the session it is restarting -- would see itself as taken and
+    climb -2, -3, -4 on every restart.
     """
     base = tmux_safe_name(base)
-    live = {tmux_safe_name(t) for t in taken}
+    live = {tmux_safe_name(t) for t in taken} - {tmux_safe_name(current)}
     if base not in live:
         return base
     n = 2
