@@ -1,6 +1,7 @@
 import pytest
 
 from likedbg.cache import cache_key
+from likedbg.cache import format_size
 from likedbg.cache import parse_size
 from likedbg.cache import short_hash
 from likedbg.cache import slug
@@ -91,3 +92,34 @@ def test_parse_size_invalid_unit():
 def test_parse_size_invalid_number():
     with pytest.raises(ValueError, match="invalid size"):
         parse_size("notanumber")
+
+
+# ---------------------------------------------------------------------------
+# format_size tests: --list used to print raw byte counts against a config that
+# speaks "50G", leaving the arithmetic to the reader.
+# ---------------------------------------------------------------------------
+
+
+def test_format_size_uses_the_same_units_the_config_accepts():
+    assert format_size(3 * 1024**3) == "3.0G"
+    assert format_size(500 * 1024**2) == "500.0M"
+    assert format_size(4096) == "4.0K"
+    assert format_size(2 * 1024**4) == "2.0T"
+
+
+def test_format_size_keeps_sub_kilobyte_counts_exact():
+    # Rounding a small file to "0.0K" would hide the difference between empty and nearly-empty.
+    assert format_size(0) == "0B"
+    assert format_size(900) == "900B"
+    assert format_size(1023) == "1023B"
+
+
+def test_format_size_does_not_stop_scaling_at_terabytes():
+    # A cache bigger than 1024T is absurd, but it must not fall out of the loop unformatted.
+    assert format_size(5 * 1024**5) == "5120.0T"
+
+
+@pytest.mark.parametrize("n", [1024, 4096, 3 * 1024**3, 50 * 1024**3, 2 * 1024**4])
+def test_format_size_round_trips_through_parse_size(n):
+    """The two are a pair: what --list prints must be something --prune/[cache] max_size accepts."""
+    assert parse_size(format_size(n)) == n

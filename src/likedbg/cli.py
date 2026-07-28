@@ -17,6 +17,7 @@ from typing import Any
 
 from loguru import logger
 
+from likedbg import __version__
 from likedbg import cache
 from likedbg import docker_env
 from likedbg import guest
@@ -1021,6 +1022,19 @@ def _source_size_stamped(workspace: Path, manifest: Manifest, *, container: Cont
     return _source_size(workspace, manifest, container=container)
 
 
+def _render_size(size: str) -> str:
+    """Humanize a size for display. The `_*_size` helpers are best-effort and return a decimal byte
+    count or the "-" sentinel when nothing could be measured, so pass anything non-numeric through."""
+    return cache.format_size(int(size)) if size.isdigit() else size
+
+
+def _aligned(rows: list[list[str]]) -> list[str]:
+    """Pad every column to its widest cell. Labels are hashed and vary in length, so a fixed-width
+    header only lines up by accident -- and `--list` exists to be scanned down a column."""
+    widths = [max(len(row[i]) for row in rows) for i in range(len(rows[0]))]
+    return [" ".join(cell.ljust(w) for cell, w in zip(row, widths, strict=True)).rstrip() for row in rows]
+
+
 def summarize_cache(workspace: Path, *, container: ContainerService | None = None) -> list[str]:
     builds = cache.list_manifests(workspace, "build")
     rootfs = cache.list_manifests(workspace, "rootfs")
@@ -1029,20 +1043,21 @@ def summarize_cache(workspace: Path, *, container: ContainerService | None = Non
         return ["(cache empty)"]
     lines: list[str] = []
     if builds or rootfs:
-        lines.append("kind    label  version  arch  size  created  last_used")
+        rows = [["kind", "label", "version", "arch", "size", "created", "last_used"]]
         for m in [*builds, *rootfs]:
             mp = cache.manifest_path(workspace, m.kind, m.label)
             created = datetime.fromtimestamp(mp.stat().st_mtime, tz=UTC).date().isoformat()
             size = _build_size(workspace, m, container=container)
             # Only show last_used for builds (rootfs doesn't have it)
             last_used_val = m.last_used if m.kind == "build" else "-"
-            lines.append(f"{m.kind}  {m.label}  {m.version or '-'}  {m.arch}  {size}  {created}  {last_used_val}")
+            rows.append([m.kind, m.label, m.version or "-", m.arch, _render_size(size), created, str(last_used_val)])
+        lines.extend(_aligned(rows))
     if sources:
         lines.append("shared sources:")
         for s in sources:
             refcount = cache.source_refcount(workspace, s.key)
             size = _source_size_stamped(workspace, s, container=container)
-            lines.append(f"{s.label}  {s.version or '-'}  refcount={refcount}  size={size}")
+            lines.append(f"  {s.label}  {s.version or '-'}  refcount={refcount}  size={_render_size(size)}")
     return lines
 
 
@@ -1531,30 +1546,120 @@ def cmd_rmmod(workspace: Path, *, run_id: str, name: str, force_unload: bool) ->
     return 0
 
 
+def build_parser() -> argparse.ArgumentParser:
+    """The CLI surface, grouped the way the tool is used rather than alphabetically.
+
+    Flag-only by design: `start_kgdb` with no arguments is the whole happy path, and everything
+    else modifies or inspects that one run.
+    """
+    parser = argparse.ArgumentParser(
+        prog="start_kgdb",
+        description=(
+            "LIKE-DBG: build or adopt a Linux kernel, boot it under QEMU, and attach GDB, "
+            "with each piece in its own tmux pane. Run with no arguments for the default "
+            "kernel and profile."
+        ),
+        epilog=(
+            "Run inside tmux (see the Quickstart in README.md). Each boot renames its session "
+            "after what it debugs, so two challenges can be debugged side by side; `tmux ls` "
+            "shows them. Full docs live in docs/."
+        ),
+    )
+    parser.add_argument("--version", action="version", version=f"LIKE-DBG {__version__}")
+    parser.add_argument(
+        "--verbose", "-v", action="store_true", help="log every stage in detail, including container commands"
+    )
+
+    launch = parser.add_argument_group("launching a session")
+    launch.add_argument(
+        "--config",
+        "-c",
+        default="",
+        help="scenario to boot: a name under configs/scenarios/ (without .toml) or a path to one",
+    )
+    launch.add_argument(
+        "--profile",
+        default="",
+        help="debug profile(s) to build and boot, comma-separated (e.g. kasan, hardened); overrides [general] profiles",
+    )
+    launch.add_argument(
+        "--use", default="", metavar="LABEL", help="boot a cached kernel build by its --list label, skipping the build"
+    )
+    launch.add_argument(
+        "--rootfs", default="", metavar="LABEL", help="pair a specific cached rootfs with --use (default: the newest)"
+    )
+    launch.add_argument(
+        "--force-rebuild",
+        action="store_true",
+        help="rebuild this launch's cached artifacts even if nothing changed; applies only to the command it is typed on",
+    )
+
+    live = parser.add_argument_group(
+        "driving a live session", "Run these from the host pane of a booted session; they act on that session's guest."
+    )
+    live.add_argument(
+        "--run",
+        default="",
+        metavar="EXPLOIT-PATH",
+        help="deliver an exploit to the guest and run it; a flag-less .c is auto-compiled static-musl",
+    )
+    live.add_argument(
+        "--upload", default="", metavar="EXPLOIT-PATH", help="deliver a file to the guest without running it"
+    )
+    live.add_argument("--args", default="", help="argument string to pass to --run or --insmod")
+    live.add_argument(
+        "--insmod", default="", metavar="MODULE", help="build an out-of-tree module and load it, with GDB symbols"
+    )
+    live.add_argument("--rmmod", default="", metavar="MODULE", help="unload a module loaded with --insmod")
+    live.add_argument("--force-unload", action="store_true", help="let --insmod/--rmmod unload a module marked in-use")
+    live.add_argument(
+        "--run-id",
+        default="latest",
+        metavar="RUN-ID",
+        help="act on a specific artifacts/runs/ entry (default: the run belonging to this tmux session)",
+    )
+    live.add_argument("--re-run", action="store_true", help="relaunch this session's boot with the same selectors")
+    live.add_argument("--restart-debuggee", action="store_true", help="restart only the guest, leaving GDB attached")
+
+    inspect = parser.add_argument_group("inspecting")
+    inspect.add_argument(
+        "--explain-config",
+        nargs="?",
+        const="text",
+        default=None,
+        choices=["text", "json"],
+        metavar="FORMAT",
+        help="resolve the config stack and print what a run would do, without booting (text or json)",
+    )
+    inspect.add_argument(
+        "--analyze-crash",
+        nargs="?",
+        const="latest",
+        default=None,
+        metavar="RUN-ID",
+        help="regenerate the crash report for a finished run, offline (default: the latest run)",
+    )
+    inspect.add_argument("--list", action="store_true", help="list cached kernel builds, root filesystems, and sources")
+
+    maint = parser.add_argument_group("maintenance")
+    maint.add_argument("--build-images", action="store_true", help="rebuild the container images from the dockerfiles")
+    maint.add_argument(
+        "--clean", default="", metavar="LABEL", help="remove one cached build or rootfs by its --list label"
+    )
+    maint.add_argument("--clean-all", action="store_true", help="remove every cached build, rootfs, and source")
+    maint.add_argument(
+        "--prune",
+        nargs="?",
+        const="",
+        default=None,
+        metavar="SIZE",
+        help="evict least-recently-used builds down to SIZE (e.g. 30G); bare --prune uses [cache] max_size",
+    )
+    return parser
+
+
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="start_kgdb")
-    parser.add_argument("--config", "-c", default="")
-    parser.add_argument("--profile", default="")
-    parser.add_argument("--verbose", "-v", action="store_true")
-    parser.add_argument("--force-rebuild", action="store_true")
-    parser.add_argument("--list", action="store_true")
-    parser.add_argument("--clean", default="")
-    parser.add_argument("--clean-all", action="store_true")
-    parser.add_argument("--prune", nargs="?", const="", default=None, metavar="SIZE")
-    parser.add_argument("--use", default="")
-    parser.add_argument("--rootfs", default="")
-    parser.add_argument("--build-images", action="store_true")
-    parser.add_argument("--restart-debuggee", action="store_true")
-    parser.add_argument("--re-run", action="store_true")
-    parser.add_argument("--explain-config", nargs="?", const="text", default=None, choices=["text", "json"])
-    parser.add_argument("--analyze-crash", nargs="?", const="latest", default=None, metavar="RUN-ID")
-    parser.add_argument("--run", default="", metavar="EXPLOIT-PATH")
-    parser.add_argument("--upload", default="", metavar="EXPLOIT-PATH")
-    parser.add_argument("--args", default="")
-    parser.add_argument("--run-id", default="latest")
-    parser.add_argument("--insmod", default="", metavar="MODULE")
-    parser.add_argument("--rmmod", default="")
-    parser.add_argument("--force-unload", action="store_true")
+    parser = build_parser()
     args = parser.parse_args(argv)
     logsetup.configure_stderr(verbose=args.verbose)
     try:
@@ -1761,6 +1866,12 @@ def main(argv: list[str] | None = None) -> int:
     except LikeDbgError as exc:
         logger.error(str(exc))
         return 1
+    except KeyboardInterrupt:
+        # A kernel build is tens of minutes long, so Ctrl-C is a normal way to leave one; it should
+        # not read like a crash. Cached artifacts are Stamp/Manifest-guarded (written only after the
+        # output verifies), so an interrupted stage is re-done rather than reused.
+        logger.warning("interrupted")
+        return 130
 
 
 if __name__ == "__main__":

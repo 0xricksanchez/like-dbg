@@ -63,6 +63,9 @@ There are two ways to get a kernel:
 - **Crash intelligence.** A byte-exact serial console sink, a panic/oops/KASAN/UBSAN parser, and
   an auto-break that traps GDB at the fault with a symbolized backtrace. `--analyze-crash`
   regenerates a report offline.
+- **Concurrent sessions.** Each boot gets its own tmux session named for what it debugs, its own
+  host ports, and its own copy-on-write rootfs overlay, so two challenges can be debugged side by
+  side and `--run`/`--insmod` always land in the guest whose pane you typed them from.
 - **Run artifacts.** Every session writes a timestamped `artifacts/runs/<id>/` with resolved
   settings, host profile, command records, logs, and pane transcripts.
 
@@ -90,8 +93,16 @@ uv run ./start_kgdb
 ```
 
 The first run builds the container images and a kernel, so it takes a while; later runs reuse
-the cache and start in seconds. Detach with `C-b d` and reattach with
-`tmux -L likedbg attach -t LIKE-DBG`.
+the cache and start in seconds.
+
+Each boot renames its session after what it is debugging (`LIKE-DBG-pawnyable-lk01`,
+`LIKE-DBG-6_6_30-exploit-dev`), so a session you left running never blocks the next one and two
+challenges can be debugged side by side. Detach with `C-b d`; `tmux -L likedbg ls` shows what is
+running, and the `=` below is tmux's exact-match form (without it, a `-2` session can win):
+
+```sh
+tmux -L likedbg attach -t =LIKE-DBG-6_6_30-exploit-dev
+```
 
 From here, read [docs/build-your-own-kernel.md](docs/build-your-own-kernel.md) for the full
 workflow, or [docs/ctf-foreign-kernel.md](docs/ctf-foreign-kernel.md) if you have a challenge to

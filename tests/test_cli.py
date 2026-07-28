@@ -322,6 +322,20 @@ def test_summarize_cache_lists_build_and_rootfs(tmp_path):
     assert "build" in joined and "rootfs" in joined
 
 
+def test_summarize_cache_aligns_every_column(tmp_path):
+    """Labels carry a hash and so vary in length; a fixed-width header only lined up by accident,
+    and `--list` is read by scanning a column down."""
+    for label, arch in (("linux-6.6.30-a", "arm64"), ("linux-6.12.1-verylongsuffix", "x86_64")):
+        write_manifest(
+            tmp_path,
+            Manifest(kind="build", label=label, key="k", version="6.6.30", arch=arch, storage_mode="volume"),
+        )
+    lines = summarize_cache(tmp_path)
+    starts = [line.index("arm64" if "arm64" in line else "x86_64") for line in lines[1:]]
+    assert len(set(starts)) == 1, "arch column is ragged:\n" + "\n".join(lines)
+    assert lines[0].index("arch") == starts[0]
+
+
 def test_summarize_cache_uses_bind_build_image_host_size(tmp_path):
     image = tmp_path / "artifacts" / "ksrc" / "linux-6.6.30-bind" / "arch" / "arm64" / "boot" / "Image"
     image.parent.mkdir(parents=True)
@@ -338,7 +352,7 @@ def test_summarize_cache_uses_bind_build_image_host_size(tmp_path):
             paths={"image_host": str(image)},
         ),
     )
-    assert "4096" in "\n".join(summarize_cache(tmp_path))
+    assert "4.0K" in "\n".join(summarize_cache(tmp_path))  # 4096 bytes, rendered
 
 
 def test_summarize_cache_preserves_legacy_volume_image_size_fallback(tmp_path):
@@ -350,7 +364,7 @@ def test_summarize_cache_preserves_legacy_volume_image_size_fallback(tmp_path):
         tmp_path,
         Manifest(kind="build", label=label, key="k", version="6.6.30", arch="arm64", storage_mode="volume"),
     )
-    assert "1024" in "\n".join(summarize_cache(tmp_path))
+    assert "1.0K" in "\n".join(summarize_cache(tmp_path))  # 1024 bytes, rendered
 
 
 def test_summarize_cache_uses_volume_tree_du_when_container_available(tmp_path):
@@ -372,8 +386,8 @@ def test_summarize_cache_uses_volume_tree_du_when_container_available(tmp_path):
     )
     container = _DuContainer(output=f"8192\t/ksrc/{label}\n")
     joined = "\n".join(summarize_cache(tmp_path, container=container))
-    assert "8192" in joined
-    assert "1024" not in joined
+    assert "8.0K" in joined  # 8192 bytes from du, rendered
+    assert "1.0K" not in joined  # not the 1024-byte Image fallback
     assert container.runs[0]["volumes"]["likedbg_ksrc"]["bind"] == "/ksrc"
     assert container.runs[0]["volumes"]["likedbg_ksrc"]["mode"] == "ro"
     assert container.execs == [f"du -sb /ksrc/{label}"]
@@ -397,7 +411,7 @@ def test_summarize_cache_falls_back_when_volume_du_fails(tmp_path):
             paths={"kernel_root": f"/ksrc/{label}", "image_host": str(image)},
         ),
     )
-    assert "1024" in "\n".join(summarize_cache(tmp_path, container=_DuContainer(fail=True)))
+    assert "1.0K" in "\n".join(summarize_cache(tmp_path, container=_DuContainer(fail=True)))  # 1024 bytes
 
 
 def test_summarize_cache_shows_shared_source_refcount(tmp_path):
@@ -452,7 +466,7 @@ def test_summarize_cache_uses_stamped_size_bytes_and_shows_last_used(tmp_path):
     joined = "\n".join(summarize_cache(tmp_path, container=container))
 
     # Should show the stamped size (no du call)
-    assert "123456789" in joined
+    assert "117.7M" in joined  # the stamped 123456789 bytes, rendered
 
     # Should show last_used (at least the date part)
     assert "2026-07-10" in joined
@@ -481,7 +495,7 @@ def test_summarize_cache_fallback_on_legacy_zero_size_bytes(tmp_path):
 
     # With size_bytes==0, should fall back to _artifact_size (checking Image file)
     joined = "\n".join(summarize_cache(tmp_path, container=None))
-    assert "2048" in joined
+    assert "2.0K" in joined  # 2048 bytes, rendered
 
 
 def test_summarize_cache_source_uses_stamped_size_bytes(tmp_path):
@@ -520,7 +534,7 @@ def test_summarize_cache_source_uses_stamped_size_bytes(tmp_path):
     joined = "\n".join(summarize_cache(tmp_path, container=container))
 
     # Should show the stamped size without calling du
-    assert "987654321" in joined
+    assert "941.9M" in joined  # the stamped 987654321 bytes, rendered
     assert "shared sources:" in joined
 
 

@@ -80,7 +80,8 @@ migrate; see [docs/configuration.md](docs/configuration.md) for the TOML equival
 - Out-of-tree per-config builds (`O=`) with a persistent, capped ccache volume.
 - Opt-in LRU eviction with a size cap (`[cache] max_size`), `--prune [SIZE]`, and an auto-sweep at
   a 90% low-water mark; the latest run's build is protected.
-- `--list` shows builds, rootfs images, and shared sources with sizes and last-used times.
+- `--list` shows builds, rootfs images, and shared sources in an aligned table, with sizes in the
+  same units the config accepts (`3.0G`, not `3221225472`) and last-used times.
 - Kconfig fragment library plus `[build] extra_fragments` and ordered `patch_dirs`.
 - Toolchain registry: clang/LLVM as the universal cross-compiler default, gcc opt-in per arch.
 
@@ -139,9 +140,15 @@ migrate; see [docs/configuration.md](docs/configuration.md) for the TOML equival
   rebuilding.
 - `bootstrap --check` reports host prerequisites with remedies, and reports what it cannot verify
   as unknown rather than guessing.
+- `--help` describes every flag, grouped by what it is for (launching, driving a live session,
+  inspecting, maintenance), and `--version` reports the release.
 - Failures carry remedies rather than tracebacks: malformed TOML names its own line and column, an
-  unknown or misplaced config key is named, a half-written run artifact is reported as such, and
-  running outside a LIKE-DBG checkout says so instead of naming a dockerfile.
+  unknown or misplaced config key is named, a half-written run artifact is reported as such,
+  running outside a LIKE-DBG checkout says so instead of naming a dockerfile, and an unreachable
+  Docker daemon names the endpoint it tried plus how to start an engine on this host.
+- `Ctrl-C` out of a long build exits quietly with status 130 instead of a `KeyboardInterrupt`
+  traceback; Stamps and Manifests are written only after their output verifies, so the interrupted
+  stage is redone rather than reused.
 - `--explain-config` judges a `[foreign]` scenario the way the run does -- adopting the kernel's
   architecture and skipping build-time `.config` gates -- so the dry run and the real boot agree.
 

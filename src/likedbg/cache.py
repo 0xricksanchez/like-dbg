@@ -56,6 +56,23 @@ def parse_size(s: str) -> int:
         raise ValueError(f"invalid size {s!r}: use e.g. 50G, 500M") from exc
 
 
+def format_size(n: int) -> str:
+    """Bytes as the size strings the config already speaks ('3.0G', '512M', '4.0K', '900B').
+
+    The cap you set is written `max_size = "50G"`, so the sizes you set it against should read the
+    same way; `--list` used to print a bare `3221225472` and leave the arithmetic to you. Chosen so
+    `parse_size(format_size(n))` round-trips to within the printed precision.
+    """
+    if n < 1024:
+        return f"{n}B"
+    size = float(n)
+    for unit in ("K", "M", "G", "T"):
+        size /= 1024
+        if size < 1024 or unit == "T":
+            return f"{size:.1f}{unit}"
+    raise AssertionError("unreachable: the T branch always returns")
+
+
 def parse_du_bytes(out: str) -> int:
     """Parse `du -sb` output tolerantly; returns 0 on malformed/empty input.
 

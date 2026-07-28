@@ -11,17 +11,17 @@
 # The challenge's own initramfs loads vuln.ko, creates /dev/holstein, and drops to a uid-1337
 # shell; the goal is local privilege escalation to root.
 
+# KASLR and KPTI are left off the way the challenge does it, in the verbatim cmdline below, so no
+# [debuggee] toggle is set for them: setting one would make LIKE-DBG rewrite that cmdline instead.
 [debuggee]
 memory_mib = 64        # run.sh: -m 64M
-smep = true           # run.sh: -cpu qemu64 (bare) -> no +smep/+smap on the guest CPU
-smap = true
-kaslr = true
-kpti = true
+smep = false           # run.sh: -cpu qemu64 (bare) -> no +smep/+smap on the guest CPU
+smap = false
 
 [foreign]
 image = "ctf/pawnyable-lk01/bzImage"           # presence selects the foreign path
 initramfs = "ctf/pawnyable-lk01/rootfs.cpio"   # the challenge's own busybox rootfs (raw cpio)
-cmdline = "console=ttyS0 loglevel=3 oops=panic panic=-1"  # used verbatim
+cmdline = "console=ttyS0 loglevel=3 oops=panic panic=-1 nopti nokaslr"  # used verbatim
 arch = "x86_64"
 # Kernel symbols (kmod, crash breakpoints, add-symbol-file) are recovered automatically from the
 # bzImage's kallsyms (see docs/ctf-foreign-kernel.md#symbols). Only set vmlinux to override that with
