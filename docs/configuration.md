@@ -93,6 +93,29 @@ Some axes are detected from the host rather than configured, and recorded in eac
 `[general] arch = "native"` resolves to the host's architecture; set it to `x86_64` or `arm64`
 to cross-build and boot a foreign-architecture guest.
 
+## Running more than one session
+
+Each boot takes over its tmux session under a name that says what it is debugging:
+`LIKE-DBG-pawnyable-lk01` for a scenario, `LIKE-DBG-6_6_30-exploit-dev` for a plain run (kernel and
+base profile), `LIKE-DBG-6_6_30-a1b2c3d4` for `--use`. Booting the same thing twice adds `-2`. So a
+session you left running no longer blocks the next one, and two challenges can sit side by side.
+
+Two guests cannot share a host port, so ports are checked before use:
+
+- A port **you never set** -- the shipped `configs/default.toml` value or the built-in default -- is
+  a placeholder. If it is busy the boot takes the next free one and logs
+  `port: gdbstub_port 1234 was busy; using 1235`.
+- A port **you did set**, in a scenario, `local.toml`, a profile, or on the command line, is an
+  instruction: a fixed gdb target, a port-forward, a script. It is used exactly, or the boot stops
+  and tells you what is holding it. It is never moved for you.
+
+Only ports a boot actually binds are considered, so a `[foreign]` guest -- which has neither the
+gdbstub-side SSH transport nor a share -- contends for nothing.
+
+`--run`, `--upload`, `--insmod` and `--rmmod` act on the run belonging to **the tmux session you
+type them in**, so an exploit cannot land in the other guest. Pass `--run-id` to target a specific
+run, and outside a LIKE-DBG session they fall back to the most recent run in the workspace.
+
 ## Section reference
 
 ### `[general]`
@@ -186,7 +209,7 @@ sessions. `start_kgdb --clean-all` deletes that volume to force a cold rebuild.
 | `accel` | `auto` | `auto`, `kvm`, `hvf`, `tcg`. Overrides host-detected acceleration. |
 | `network` | `auto` | `auto`, `host`, `published`. How the Debugger reaches the gdbstub. |
 | `gdbstub` | `true` | Expose the QEMU gdbstub. |
-| `gdbstub_port` | `1234` | gdbstub TCP port. |
+| `gdbstub_port` | `1234` | gdbstub TCP port. Moved if busy *unless you set it* -- see [Running more than one session](#running-more-than-one-session). |
 | `kaslr` | `false` | Enable KASLR at runtime (only if the built kernel supports it). |
 | `smep` | `true` | Enable SMEP at runtime (x86_64 only). |
 | `smap` | `true` | Enable SMAP at runtime (x86_64 only). |
@@ -200,7 +223,7 @@ sessions. `start_kgdb --clean-all` deletes that volume to force a cold rebuild.
 | `hardened_usercopy` | unset | Tri-state `hardened_usercopy=on/off`; unset leaves the kernel default. |
 | `panic` | `halt` | `halt` (stay stopped), `reboot`, or another value for a timed reboot. |
 | `capture_console` | `true` | Tee the guest serial console to `logs/console.raw`. |
-| `ssh_port` | `2222` | Host-side SSH port forwarded into the guest. |
+| `ssh_port` | `2222` | Host-side SSH port forwarded into the guest. Same rule as `gdbstub_port`. |
 | `share_dir` | `exploit` | Host directory shared into the guest at `/mnt/exploit`. |
 | `guest_net` | `true` | Enable guest networking (the SSH transport for `--run` and `--insmod`). |
 | `share` | `true` | Enable the 9p live share. |
