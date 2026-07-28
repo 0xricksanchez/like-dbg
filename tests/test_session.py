@@ -210,3 +210,43 @@ def test_pipe_pane_command(tmp_path: Path) -> None:
     assert calls[0][:4] == ["tmux", "pipe-pane", "-o", "-t"]
     assert calls[0][4] == "%4"
     assert calls[0][5] == f"cat >> {shlex.quote(str(out))}"
+
+
+# ---- multi-session: a name per boot, so a live session never blocks the next one ----
+
+
+def test_unique_session_name_uses_the_base_when_free():
+    from likedbg.session import unique_session_name
+
+    assert unique_session_name("LIKE-DBG-lk01", []) == "LIKE-DBG-lk01"
+    assert unique_session_name("LIKE-DBG-lk01", ["LIKE-DBG-lk02", "other"]) == "LIKE-DBG-lk01"
+
+
+def test_unique_session_name_suffixes_past_a_live_session():
+    """Regression: rename-session onto a name tmux already holds fails with 'duplicate session',
+    which is how one leftover LIKE-DBG session blocked every subsequent run."""
+    from likedbg.session import unique_session_name
+
+    assert unique_session_name("LIKE-DBG-lk01", ["LIKE-DBG-lk01"]) == "LIKE-DBG-lk01-2"
+    assert unique_session_name("LIKE-DBG-lk01", ["LIKE-DBG-lk01", "LIKE-DBG-lk01-2"]) == "LIKE-DBG-lk01-3"
+
+
+def test_unique_session_name_skips_gaps_rather_than_reusing_them():
+    from likedbg.session import unique_session_name
+
+    taken = ["LIKE-DBG-x", "LIKE-DBG-x-2", "LIKE-DBG-x-3"]
+    assert unique_session_name("LIKE-DBG-x", taken) == "LIKE-DBG-x-4"
+
+
+def test_list_sessions_is_empty_without_a_tmux_server():
+    from likedbg.session import Session
+
+    s = Session("n", runner=lambda a: 0, query=lambda a: "", checked_query=lambda a: (1, ""))
+    assert s.list_sessions() == []
+
+
+def test_list_sessions_parses_one_name_per_line():
+    from likedbg.session import Session
+
+    s = Session("n", runner=lambda a: 0, query=lambda a: "alpha\nbeta\n", checked_query=lambda a: (0, ""))
+    assert s.list_sessions() == ["alpha", "beta"]

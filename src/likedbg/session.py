@@ -5,6 +5,7 @@ from __future__ import annotations
 import shlex
 import subprocess
 from collections.abc import Callable
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Literal
 
@@ -62,6 +63,16 @@ class Session:
         if enter:
             args.append("Enter")
         self._tmux(*args)
+
+    def list_sessions(self) -> list[str]:
+        """Every tmux session name on this server, or [] when there is no server at all.
+
+        Used to pick a name no live session already holds: `rename-session` to a taken name fails
+        with 'duplicate session', which used to surface as a bare tmux error blaming the caller
+        for not being inside tmux.
+        """
+        out = self._query(["tmux", "list-sessions", "-F", "#{session_name}"])
+        return [line for line in out.splitlines() if line]
 
     def start(self, name: str) -> None:
         self._tmux("rename-session", name)
@@ -132,3 +143,19 @@ class Session:
     def kill(self) -> None:
         # TODO(plan-3): target panes/session by self.name; name is unused scaffolding for now
         self._tmux("kill-pane", "-a", "-t", str(self.pane_base_index()))
+
+
+def unique_session_name(base: str, taken: Iterable[str]) -> str:
+    """`base`, or the first `base-N` (N>=2) no live session already holds.
+
+    A LIKE-DBG session is named after what it is debugging, not after a hash: the name's only
+    job is to be readable in `tmux ls` and the status bar, and tmux enforces uniqueness anyway.
+    The suffix appears only when the same scenario is genuinely booted twice.
+    """
+    live = set(taken)
+    if base not in live:
+        return base
+    n = 2
+    while f"{base}-{n}" in live:
+        n += 1
+    return f"{base}-{n}"

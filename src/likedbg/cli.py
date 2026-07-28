@@ -28,6 +28,7 @@ from likedbg.cache import Manifest
 from likedbg.cache import RootfsRecipe
 from likedbg.cache import build_recipe as make_build_recipe
 from likedbg.cache import rootfs_recipe as make_rootfs_recipe
+from likedbg.cache import slug
 from likedbg.config import LAYER_CLI
 from likedbg.config import LAYER_LOCAL
 from likedbg.config import LAYER_SCENARIO
@@ -73,6 +74,7 @@ from likedbg.run_artifacts import RunRecorder
 from likedbg.run_state import guest_endpoint
 from likedbg.run_state import read_run_state
 from likedbg.session import Session
+from likedbg.session import unique_session_name
 from likedbg.stages.build import BuildStage
 from likedbg.stages.cache_eviction import CacheEvictionStage
 from likedbg.stages.debuggee import DebuggeeStage
@@ -284,6 +286,22 @@ def explain_config(
         *[f"  {e['symbol']}={e['value']} [{e['severity']}]" for e in expected],
     ]
     return "\n".join(lines)
+
+
+def _start_named_session(scenario: Path | None, *, label: str = "") -> Session:
+    """Take over the current tmux session under a name that says what it is debugging.
+
+    Named per boot rather than a single global "LIKE-DBG" so a second scenario can be booted
+    while the first is still live: `rename-session` to a name tmux already holds fails outright,
+    which is how a leftover session used to block every later run.
+    """
+    stem = label or (scenario.stem if scenario is not None else "default")
+    session = Session("LIKE-DBG")
+    name = unique_session_name(f"LIKE-DBG-{slug(stem)}", session.list_sessions())
+    session.start(name)
+    session.name = name
+    logger.info(f"tmux session: {name}")
+    return session
 
 
 # tmux layout: the host CLI (top-left) and the Debuggee/QEMU console (bottom-left) share the left
@@ -1559,8 +1577,7 @@ def main(argv: list[str] | None = None) -> int:
             if not os.getenv("TMUX"):
                 logger.error("Not running inside a TMUX session. Start tmux first.")
                 return 2
-            session = Session("LIKE-DBG")
-            session.start("LIKE-DBG")
+            session = _start_named_session(_scenario_path(workspace, args.config))
             return cmd_foreign(
                 container,
                 session,
@@ -1573,8 +1590,8 @@ def main(argv: list[str] | None = None) -> int:
             if not os.getenv("TMUX"):
                 logger.error("Not running inside a TMUX session. Start tmux first.")
                 return 2
-            session = Session("LIKE-DBG")
-            session.start("LIKE-DBG")
+            # A --use boot is identified by the cached build it reuses, not by a scenario file.
+            session = _start_named_session(None, label=args.use)
             return cmd_use(
                 container,
                 session,
@@ -1619,8 +1636,7 @@ def main(argv: list[str] | None = None) -> int:
         logsetup.add_run_logfile(workspace, path=recorder.likedbg_log)
         _ensure_images(container, workspace, specs=images.required_for(host))
         chown_to = (os.getuid(), os.getgid()) if host.os == "linux" and host.storage_mode == "bind" else None
-        session = Session("LIKE-DBG")
-        session.start("LIKE-DBG")
+        session = _start_named_session(scenario)
         ctx = PipelineContext(
             settings=cfg.settings,
             host=host,
