@@ -92,7 +92,10 @@ def _rootfs_args(rootfs: Path | None) -> tuple[list[str], str]:
         return [], "root=/dev/ram"
     if ".cpio" in rootfs.name:
         return ["-initrd", str(rootfs)], "root=/dev/ram"
-    return ["-drive", f"file={rootfs},format=raw,if=virtio"], "root=/dev/vda"
+    # A per-session overlay is qcow2; the shared image itself is raw. Naming the wrong format
+    # makes QEMU read a qcow2 header as a filesystem.
+    fmt = "qcow2" if rootfs.suffix == ".qcow2" else "raw"
+    return ["-drive", f"file={rootfs},format={fmt},if=virtio"], "root=/dev/vda"
 
 
 def _foreign_append(cmdline: str, console_dev: str, extra_boot_args: tuple[str, ...]) -> str:

@@ -31,6 +31,11 @@ class PipelineContext:
     objdir: Path | None = None
     kernel_status: str | None = None
     rootfs_image: Path | None = None
+    # The shared image an overlay is stacked on: QEMU opens a backing file read-only, so the
+    # in-container debuggee has to mount it too. None when booting the image directly.
+    rootfs_base: Path | None = None
+    # This boot's tmux session, the key its rootfs overlay is named for.
+    session_name: str = ""
     vmlinux: Path | None = None
     kernel_image: Path | None = None
     build_label: str | None = None

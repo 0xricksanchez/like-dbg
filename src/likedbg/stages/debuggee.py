@@ -53,13 +53,16 @@ class DebuggeeStage:
         if ctx.host.debuggee_mode == "in-container":
             # kernel Image read-only (QEMU only reads -kernel); rootfs disk read-write (QEMU's -drive).
             rw_mounts = [ctx.rootfs_image] if ctx.rootfs_image is not None else []
+            # An overlay's backing file must be visible at the same path, read-only: QEMU
+            # resolves the relative backing name against the overlay's own directory.
+            ro = [ctx.kernel_image] + ([ctx.rootfs_base] if ctx.rootfs_base is not None else [])
             extra_rw = tuple(
                 p for p in (console_log.parent if console_log is not None else None, share_host_dir) if p is not None
             )
             cmd = qemu_container_command(
                 argv,
                 image=self._debuggee_image,
-                ro_mounts=[ctx.kernel_image],
+                ro_mounts=ro,
                 rw_mounts=rw_mounts,
                 gdbstub_port=eff.gdbstub_port,
                 network_mode=ctx.host.network_mode,

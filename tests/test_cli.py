@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -66,6 +67,8 @@ def _config_resolution(tmp_path: Path) -> ConfigResolution:
 
 
 class _FakeSession:
+    name = "LIKE-DBG-test"
+
     def __init__(self):
         self.options: list[tuple[str, str]] = []
         self.unset_options: list[str] = []
@@ -163,6 +166,10 @@ class _FakeContainer(ContainerService):
         return SimpleNamespace(id="c1")
 
     def exec(self, container, cmd, *, workdir=None):
+        # Stand in for qemu-img: the rootfs-overlay stage checks its output really appeared.
+        m = re.search(r"cd (\S+) && qemu-img create .*? (\S+\.qcow2)$", cmd)
+        if m:
+            (Path(m.group(1).strip("'")) / m.group(2).strip("'")).write_bytes(b"QFI\xfb")
         return SimpleNamespace(exit_code=0, output="")
 
     def stop(self, container):
@@ -227,6 +234,7 @@ def test_build_pipeline_includes_all_stage_names(tmp_path):
         "cache-eviction",
         "profile-verification",
         "rootfs",
+        "rootfs-overlay",
         "export",
         "module-build",
         "debuggee",
@@ -668,6 +676,7 @@ def test_build_use_pipeline_includes_rootfs_before_launch(tmp_path):
     assert [s.name for s in pipe._stages] == [  # type: ignore[attr-defined]
         "profile-verification",
         "rootfs",
+        "rootfs-overlay",
         "export",
         "module-build",
         "debuggee",

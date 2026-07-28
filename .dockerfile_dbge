@@ -10,6 +10,7 @@ RUN apt-get update && \
     set -e && \
     apt-get install -yq --no-install-recommends \
         qemu-system \
+        qemu-utils \
         openssl \
         binfmt-support && \
     apt-get -y autoremove --purge && \

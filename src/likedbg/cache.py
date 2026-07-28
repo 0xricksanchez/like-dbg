@@ -23,6 +23,7 @@ from pathlib import Path
 
 from loguru import logger
 
+from likedbg import rootfs_overlay
 from likedbg.config import Arch
 from likedbg.config import Settings
 from likedbg.constants import BASE_IMAGE
@@ -353,6 +354,10 @@ def remove_cached(
                 shutil.rmtree(objdir)
     else:
         image = Path(manifest.paths.get("image_host", ""))
+        # Every session overlay is backed by this image; leaving them behind would strand qcow2
+        # files whose backing file no longer exists.
+        for overlay in rootfs_overlay.overlays_for(image):
+            overlay.unlink(missing_ok=True)
         if image.is_file():
             image.unlink()
     manifest_path(workspace, manifest.kind, manifest.label).unlink(missing_ok=True)

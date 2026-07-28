@@ -88,6 +88,7 @@ from likedbg.stages.foreign import ForeignRepackStage
 from likedbg.stages.module_build import ModuleBuildStage
 from likedbg.stages.profile_verification import ProfileVerificationStage
 from likedbg.stages.rootfs import RootfsStage
+from likedbg.stages.rootfs_overlay import RootfsOverlayStage
 from likedbg.stages.unpack import UnpackStage
 from likedbg.toolchain import resolve_toolchain
 
@@ -508,6 +509,7 @@ def build_pipeline(
                 rootfs_image=ROOTFS_IMAGE,
                 workspace=workspace,
             ),
+            RootfsOverlayStage(container, debuggee_image=debuggee_image),
             ArtifactExporter(container, kernel_volume=kernel_volume, workspace=workspace),
             ModuleBuildStage(
                 container,
@@ -576,6 +578,7 @@ def build_use_pipeline(
                 rootfs_image=ROOTFS_IMAGE,
                 workspace=workspace,
             ),
+            RootfsOverlayStage(container, debuggee_image=debuggee_image),
             ArtifactExporter(container, kernel_volume=kernel_volume, workspace=workspace),
             ModuleBuildStage(
                 container,
@@ -726,6 +729,7 @@ def cmd_use(
     ctx = PipelineContext(
         settings=use_settings,
         host=host,
+        session_name=session.name,
         kernel_root=Path(bm.paths["kernel_root"]),
         vmlinux=Path(bm.paths["gdb_vmlinux"]),
         kernel_image=Path(kernel_image_path),
@@ -1703,6 +1707,7 @@ def main(argv: list[str] | None = None) -> int:
         ctx = PipelineContext(
             settings=cfg.settings,
             host=host,
+            session_name=session.name,
             build_label=br.label,
             rootfs_label=rr_recipe.label,
             run_resolution=run_res,

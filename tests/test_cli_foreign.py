@@ -24,6 +24,8 @@ def _host(mode="in-container", target_arch="x86_64"):
 
 
 class _FakeSession:
+    name = "LIKE-DBG-test"
+
     def __init__(self):
         self.options = {}
         self._panes = iter(["%2", "%3"])
