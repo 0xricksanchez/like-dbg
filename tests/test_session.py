@@ -250,3 +250,23 @@ def test_list_sessions_parses_one_name_per_line():
 
     s = Session("n", runner=lambda a: 0, query=lambda a: "alpha\nbeta\n", checked_query=lambda a: (0, ""))
     assert s.list_sessions() == ["alpha", "beta"]
+
+
+def test_session_name_avoids_characters_tmux_may_rewrite():
+    """Regression, found on a real tmux: 3.6 rewrites '.' to '_' in session names while 3.7
+    stores it verbatim. We asked for LIKE-DBG-6.6.30-... , tmux reported LIKE-DBG-6_6_30-... ,
+    so the collision check never matched and 'duplicate session' came straight back."""
+    from likedbg.session import tmux_safe_name
+    from likedbg.session import unique_session_name
+
+    assert tmux_safe_name("LIKE-DBG-6.6.30-exploit-dev") == "LIKE-DBG-6_6_30-exploit-dev"
+    assert tmux_safe_name("a:b") == "a_b"
+    assert unique_session_name("LIKE-DBG-6.6.30-x", []) == "LIKE-DBG-6_6_30-x"
+
+
+def test_collision_is_detected_against_the_name_tmux_reports():
+    """The live session is reported underscored; asking for the dotted form must still collide."""
+    from likedbg.session import unique_session_name
+
+    got = unique_session_name("LIKE-DBG-6.6.30-exploit-dev", ["LIKE-DBG-6_6_30-exploit-dev"])
+    assert got == "LIKE-DBG-6_6_30-exploit-dev-2"

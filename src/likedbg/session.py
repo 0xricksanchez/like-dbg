@@ -145,6 +145,19 @@ class Session:
         self._tmux("kill-pane", "-a", "-t", str(self.pane_base_index()))
 
 
+# '.' and ':' are tmux's own target syntax (session:window.pane). Whether a session name may
+# contain them is version-dependent -- tmux 3.6 rewrites '.' to '_', 3.7 stores it verbatim -- so
+# we substitute before asking. Otherwise the name we ask for and the name tmux reports back differ,
+# every collision check compares a dotted name against an underscored one and never matches, and
+# the duplicate-session failure this whole mechanism exists to prevent comes straight back.
+_TMUX_UNSAFE = str.maketrans({".": "_", ":": "_"})
+
+
+def tmux_safe_name(name: str) -> str:
+    """`name` as tmux will actually store it, on every tmux version."""
+    return name.translate(_TMUX_UNSAFE)
+
+
 def unique_session_name(base: str, taken: Iterable[str]) -> str:
     """`base`, or the first `base-N` (N>=2) no live session already holds.
 
@@ -152,7 +165,8 @@ def unique_session_name(base: str, taken: Iterable[str]) -> str:
     job is to be readable in `tmux ls` and the status bar, and tmux enforces uniqueness anyway.
     The suffix appears only when the same scenario is genuinely booted twice.
     """
-    live = set(taken)
+    base = tmux_safe_name(base)
+    live = {tmux_safe_name(t) for t in taken}
     if base not in live:
         return base
     n = 2
