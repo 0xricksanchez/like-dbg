@@ -50,6 +50,7 @@ from likedbg.debug_profiles import RunResolution
 from likedbg.debug_profiles import parse_profile_names
 from likedbg.debug_profiles import resolve_run
 from likedbg.errors import CacheError
+from likedbg.errors import ConfigError
 from likedbg.errors import LikeDbgError
 from likedbg.errors import ModuleError
 from likedbg.errors import SessionError
@@ -69,6 +70,8 @@ from likedbg.modules import stage_module
 from likedbg.pipeline import Pipeline
 from likedbg.pipeline import PipelineContext
 from likedbg.run_artifacts import RunRecorder
+from likedbg.run_state import guest_endpoint
+from likedbg.run_state import read_run_state
 from likedbg.session import Session
 from likedbg.stages.build import BuildStage
 from likedbg.stages.cache_eviction import CacheEvictionStage
@@ -844,7 +847,16 @@ def _ensure_images(container: ContainerService, workspace: Path, *, specs: tuple
     """Build missing images, warn about stale ones (ADR-0004 keeps that warn-only), and return the
     stale tags so a caller whose derived artifacts are keyed by an image's BUILD INPUTS -- not by the
     built image -- can distrust them (see cmd_foreign)."""
-    stale = images.ensure_current(container, workspace, specs)
+    try:
+        stale = images.ensure_current(container, workspace, specs)
+    except OSError as exc:
+        # The specs' build inputs are the repo's own dockerfiles. Missing them means the workspace
+        # is not a LIKE-DBG checkout -- almost always `start_kgdb` run from the wrong directory,
+        # since the workspace is just the cwd. Say that, rather than a traceback about a dockerfile.
+        raise ConfigError(
+            f"{workspace} does not look like a LIKE-DBG workspace ({exc.filename} is missing)",
+            remedy="cd to your like-dbg checkout and run it from there",
+        ) from exc
     for tag in stale:
         logger.warning(f"image {tag} looks stale (build inputs changed); run `start_kgdb --build-images` to refresh")
     return stale
@@ -1238,7 +1250,7 @@ def cmd_run(workspace: Path, *, run_id: str, exploit: str, args: str) -> int:
 
 
 def _guest_endpoint(workspace: Path, run_dir: Path, g: dict[str, Any]) -> guest.GuestEndpoint:
-    rootfs_label = json.loads((run_dir / "run.json").read_text()).get("rootfs_label", "")
+    rootfs_label = read_run_state(run_dir, "run.json", error=ModuleError).get("rootfs_label", "")
     key = cache.load_manifest(workspace, "rootfs", rootfs_label).paths.get("ssh_key", "")
     if not key:
         raise ModuleError("rootfs has no recorded SSH key", remedy="rebuild the rootfs")
@@ -1278,17 +1290,22 @@ def cmd_insmod(workspace: Path, *, run_id: str, path: str, args: str, force_unlo
     from likedbg.exploit import _resolve_run
 
     run_dir = _resolve_run(workspace, run_id)
-    run_json = json.loads((run_dir / "run.json").read_text())
-    g = run_json.get("guest")
-    if not g:
-        raise ModuleError("this run has no guest endpoint", remedy="boot with guest_net enabled")
+    run_json = read_run_state(run_dir, "run.json", error=ModuleError)
+    g = guest_endpoint(
+        run_json,
+        error=ModuleError,
+        foreign_remedy=(
+            "custom modules need the SSH transport; a foreign guest loads its own modules from "
+            "its initramfs and is driven from the serial console"
+        ),
+    )
     ep = _guest_endpoint(workspace, run_dir, g)
     share_dir = (workspace / g["share_dir"]).resolve()
     out_dir = share_dir / "modules"
 
     # build context (kernel tree + toolchain env): reads the run's build label + host profile + config.
     build_label = run_json.get("build_label", "")
-    host_json = json.loads((run_dir / "host.json").read_text())
+    host_json = read_run_state(run_dir, "host.json", error=ModuleError)
     arch = host_json["target_arch"]
     storage_mode = host_json.get("storage_mode", "volume")
     compiler = load_config(workspace).settings.build.compiler
@@ -1392,7 +1409,7 @@ def cmd_upload(workspace: Path, *, run_id: str, file: str) -> int:
         )
     f = Path(file)
     if f.suffix == ".c":
-        host_json = json.loads((run_dir / "host.json").read_text())
+        host_json = read_run_state(run_dir, "host.json", error=ForeignError)
         container = ContainerService(docker_env.make_client(host=docker_env.resolve_docker_host(env=os.environ)))
         _ensure_images(container, workspace, specs=images.foreign_prep_images())
         f = compile_exploit(
@@ -1416,9 +1433,14 @@ def cmd_rmmod(workspace: Path, *, run_id: str, name: str, force_unload: bool) ->
     from likedbg.exploit import _resolve_run
 
     run_dir = _resolve_run(workspace, run_id)
-    g = json.loads((run_dir / "run.json").read_text()).get("guest")
-    if not g:
-        raise ModuleError("this run has no guest endpoint", remedy="boot with guest_net enabled")
+    g = guest_endpoint(
+        read_run_state(run_dir, "run.json", error=ModuleError),
+        error=ModuleError,
+        foreign_remedy=(
+            "custom modules need the SSH transport; a foreign guest loads its own modules from "
+            "its initramfs and is driven from the serial console"
+        ),
+    )
     ep = _guest_endpoint(workspace, run_dir, g)
     if not guest.wait_ready(ep):
         raise ModuleError(f"guest not reachable at {ep.host}:{ep.port}", remedy="boot + continue the session")

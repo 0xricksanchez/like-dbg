@@ -1839,3 +1839,17 @@ def test_explain_config_reads_the_arch_from_a_supplied_vmlinux(tmp_path: Path, m
 
     out = cli.explain_config(tmp_path, profile_arg="", scenario=scenario, fmt="text")
     assert "target arch: arm64" in out
+
+
+def test_ensure_images_outside_a_checkout_says_so(tmp_path: Path) -> None:
+    """Regression: the workspace is just the cwd, so a new user running start_kgdb from the wrong
+    directory got a raw FileNotFoundError naming a dockerfile they had never heard of."""
+    from likedbg import images
+    from likedbg.errors import ConfigError
+
+    # ensure_current hashes the spec's build inputs before it touches the container, so the
+    # missing dockerfile is reached without one.
+    with pytest.raises(ConfigError) as exc:
+        cli._ensure_images(None, tmp_path, specs=images.foreign_prep_images())  # type: ignore[arg-type]  # noqa: SLF001
+    assert "does not look like a LIKE-DBG workspace" in str(exc.value)
+    assert exc.value.remedy and "checkout" in exc.value.remedy

@@ -101,8 +101,11 @@ def load_profiles(workspace: Path) -> dict[str, ProfileDef]:
     pdir = workspace / "configs" / "profiles"
     registry: dict[str, ProfileDef] = {}
     for path in sorted(pdir.glob("*.toml")):
-        with path.open("rb") as fh:
-            data = tomllib.load(fh)
+        try:
+            with path.open("rb") as fh:
+                data = tomllib.load(fh)
+        except tomllib.TOMLDecodeError as exc:
+            raise ConfigError(f"invalid TOML in {path}: {exc}", remedy="fix the syntax at that position") from exc
         try:
             pdef = ProfileDef(**data)
         except ValidationError as exc:

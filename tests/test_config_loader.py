@@ -95,3 +95,25 @@ def test_bad_value_error_names_the_offending_key(tmp_path: Path) -> None:
     with pytest.raises(ConfigError) as exc:
         load_config(tmp_path)
     assert "kind" in str(exc.value)
+
+
+def test_malformed_toml_is_a_config_error_not_a_traceback(tmp_path: Path) -> None:
+    """Regression: a semantically wrong config got a ConfigError naming the key, but a
+    syntactically wrong one escaped as tomllib.TOMLDecodeError. Fumbling a bracket while
+    hand-editing a scenario is an everyday event."""
+    _write(tmp_path / "configs" / "default.toml", '[foreign\nimage = "x"\n')
+    with pytest.raises(ConfigError) as exc:
+        load_config(tmp_path)
+    assert "invalid TOML" in str(exc.value)
+    assert "line 1" in str(exc.value)  # tomllib's position is passed through, not paraphrased
+    assert exc.value.remedy
+
+
+def test_malformed_profile_toml_is_a_config_error(tmp_path: Path) -> None:
+    _write(tmp_path / "configs" / "default.toml", '[source]\nkind = "version"\nvalue = "6.6.30"\n')
+    _write(tmp_path / "configs" / "profiles" / "broken.toml", 'name = "broken"\nkind = ["base"\n')
+    from likedbg.debug_profiles import load_profiles
+
+    with pytest.raises(ConfigError) as exc:
+        load_profiles(tmp_path)
+    assert "invalid TOML" in str(exc.value)

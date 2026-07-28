@@ -242,8 +242,14 @@ _Layer = dict[str, dict[str, object]]
 
 
 def _read_toml(path: Path) -> _Layer:
-    with path.open("rb") as fh:
-        data = tomllib.load(fh)
+    try:
+        with path.open("rb") as fh:
+            data = tomllib.load(fh)
+    except tomllib.TOMLDecodeError as exc:
+        # A semantically wrong config already gets a ConfigError naming the key; a syntactically
+        # wrong one must not be the odd case that surfaces as a traceback. tomllib's message
+        # carries the line and column, so pass it through rather than paraphrasing it.
+        raise ConfigError(f"invalid TOML in {path}: {exc}", remedy="fix the syntax at that position") from exc
     # tomllib gives nested dicts already keyed by section.
     return {sec: dict(kv) for sec, kv in data.items() if isinstance(kv, dict)}
 
