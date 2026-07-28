@@ -1777,3 +1777,65 @@ def test_clean_all_removes_zig_cache_volume(tmp_path, monkeypatch):
     monkeypatch.setattr(cache, "list_manifests", lambda *a, **k: [])
     cmd_clean(_C(), tmp_path, label=None, clean_all=True)
     assert LIKEDBG_ZIG_CACHE_VOLUME in removed
+
+
+def test_explain_config_skips_build_gates_for_a_foreign_scenario(tmp_path: Path, monkeypatch) -> None:
+    """Regression: --explain-config applied build gates to an adopted kernel, so it declared a
+    foreign scenario impossible while `start_kgdb -c <same file>` booted it fine. cmd_foreign
+    passes validate_build_gates=False precisely because there is no .config we produced."""
+    _make_explain_project(tmp_path)
+    # A base profile that builds RANDOMIZE_BASE off, and a scenario asking for kaslr at runtime.
+    (tmp_path / "configs" / "profiles" / "exploit-dev.toml").write_text(
+        'name="exploit-dev"\nkind="base"\ndescription="d"\n'
+        'fragments=["configs/fragments/generic.config"]\n'
+        '[[expect]]\nsymbol="CONFIG_RANDOMIZE_BASE"\nvalue="n"\nseverity="hard"\n'
+    )
+    image = tmp_path / "bzImage"
+    image.write_bytes(b"MZ")
+    scenario = tmp_path / "configs" / "scenarios" / "ctf.toml"
+    scenario.parent.mkdir(parents=True, exist_ok=True)
+    scenario.write_text(f'[debuggee]\nkaslr = true\n\n[foreign]\nimage = "{image}"\narch = "x86_64"\n')
+    monkeypatch.chdir(tmp_path)
+
+    out = cli.explain_config(tmp_path, profile_arg="", scenario=scenario, fmt="text")
+
+    assert "adopted kernel" in out  # the skip is stated, not silent
+    # The adopted kernel's arch must win, or the arch gates (smep/smap/fgkaslr) judge the host
+    # instead of the guest and reject an x86-only toggle on an arm64 workstation.
+    assert "target arch: x86_64" in out
+
+
+def test_explain_config_still_gates_a_non_foreign_scenario(tmp_path: Path, monkeypatch) -> None:
+    """The exemption must be scoped to foreign scenarios; a self-built run keeps its gates."""
+    from likedbg.errors import ConfigError
+
+    _make_explain_project(tmp_path)
+    (tmp_path / "configs" / "profiles" / "exploit-dev.toml").write_text(
+        'name="exploit-dev"\nkind="base"\ndescription="d"\n'
+        'fragments=["configs/fragments/generic.config"]\n'
+        '[[expect]]\nsymbol="CONFIG_RANDOMIZE_BASE"\nvalue="n"\nseverity="hard"\n'
+    )
+    scenario = tmp_path / "configs" / "scenarios" / "own.toml"
+    scenario.parent.mkdir(parents=True, exist_ok=True)
+    scenario.write_text("[debuggee]\nkaslr = true\n")
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(ConfigError):
+        cli.explain_config(tmp_path, profile_arg="", scenario=scenario, fmt="text")
+
+
+def test_explain_config_reads_the_arch_from_a_supplied_vmlinux(tmp_path: Path, monkeypatch) -> None:
+    """With no [foreign] arch, fall back to the ELF header of a supplied vmlinux -- a pure read,
+    so explain stays Docker-free."""
+    _make_explain_project(tmp_path)
+    (tmp_path / "bzImage").write_bytes(b"MZ")
+    vmlinux = tmp_path / "vmlinux"
+    # ELF64 LE, e_machine = EM_AARCH64 (183) at offset 18.
+    vmlinux.write_bytes(b"\x7fELF\x02\x01\x01" + b"\x00" * 11 + (183).to_bytes(2, "little"))
+    scenario = tmp_path / "configs" / "scenarios" / "ctf.toml"
+    scenario.parent.mkdir(parents=True, exist_ok=True)
+    scenario.write_text(f'[foreign]\nimage = "{tmp_path / "bzImage"}"\nvmlinux = "{vmlinux}"\n')
+    monkeypatch.chdir(tmp_path)
+
+    out = cli.explain_config(tmp_path, profile_arg="", scenario=scenario, fmt="text")
+    assert "target arch: arm64" in out

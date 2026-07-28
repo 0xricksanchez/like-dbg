@@ -32,6 +32,7 @@ from likedbg.config import LAYER_CLI
 from likedbg.config import LAYER_LOCAL
 from likedbg.config import LAYER_SCENARIO
 from likedbg.config import ConfigResolution
+from likedbg.config import ForeignCfg
 from likedbg.config import load_config
 from likedbg.constants import BASE_IMAGE
 from likedbg.constants import DEBUGGEE_IMAGE
@@ -57,6 +58,7 @@ from likedbg.foreign import ForeignError
 from likedbg.foreign import ForeignKernel
 from likedbg.foreign import compile_exploit
 from likedbg.foreign import console_upload
+from likedbg.foreign import detect_arch
 from likedbg.foreign import exploit_flags_for
 from likedbg.foreign import resolve_foreign
 from likedbg.foreign import resolve_input_path
@@ -178,10 +180,40 @@ def explain_config(
     fmt: str,
 ) -> str:
     """Dry-run inspection: resolve profiles and render config summary without touching Docker/tmux/run-dirs."""
-    cfg, _host, rr = resolve_for_run(workspace, profile_arg=profile_arg, scenario=scenario, cli_overrides=None)
+
+    def _adopted_arch(ws: Path, f: ForeignCfg) -> str:
+        if f.arch:
+            return f.arch
+        if f.vmlinux:
+            vmlinux = resolve_input_path(ws, f.vmlinux)
+            if vmlinux.is_file():
+                try:
+                    return detect_arch(vmlinux)
+                except ForeignError:
+                    pass
+        return "native"
+
+    # Build-time .config gates describe kernels LIKE-DBG built. A [foreign] scenario adopts one, so
+    # cmd_foreign resolves with validate_build_gates=False; explain must agree or it reports a run
+    # impossible that would in fact boot. Detected the same way cmd_foreign does: [foreign].image.
+    fcfg = load_config(workspace, scenario=scenario).settings.foreign
+    adopted = bool(fcfg.image)
+    # cmd_foreign injects the adopted kernel's arch so the arch gates (smep/smap/fgkaslr) judge the
+    # guest, not the host. Mirror it, but stay Docker-free: take [foreign].arch, else read the ELF
+    # of a supplied vmlinux. With neither, explain falls back to the host arch -- the honest limit,
+    # since detecting it would mean extracting a vmlinux in a container.
+    overrides = {"general": {"arch": _adopted_arch(workspace, fcfg)}} if adopted else None
+    cfg, _host, rr = resolve_for_run(
+        workspace,
+        profile_arg=profile_arg,
+        scenario=scenario,
+        cli_overrides=overrides,
+        validate_build_gates=not adopted,
+    )
     eff = rr.effective_debuggee
     payload: dict[str, object] = {
         "target_arch": rr.target_arch,
+        "build_gates": "skipped" if adopted else "applied",
         "profiles": {
             "requested": list(rr.profiles.names),
             "base": rr.profiles.base,
@@ -231,6 +263,12 @@ def explain_config(
     lines = [
         f"target arch: {payload['target_arch']}",
         f"profiles:    {', '.join(str(p) for p in resolved)} (base {base})",
+        # Only stated when it applies: a skipped gate is worth a line, an applied one is the norm.
+        *(
+            ["build gates: skipped (adopted kernel: a [foreign] scenario has no .config we built)"]
+            if payload["build_gates"] == "skipped"
+            else []
+        ),
         "fragments (from profiles):",
         *[f"  {f}" for f in fragments],
         "extra fragments (from [build] extra_fragments):",
