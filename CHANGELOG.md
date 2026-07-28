@@ -61,6 +61,10 @@ migrate; see [docs/configuration.md](docs/configuration.md) for the TOML equival
 - **Every run leaves an artifact.** `artifacts/runs/<run-id>/` holds the requested and effective
   settings, profile resolution, the exact QEMU and GDB commands, the console log, pane transcripts,
   `.config` snapshots, and a status — including for runs that failed verification before boot.
+- **Debug two things at once.** Each boot takes its own tmux session, named after what it is
+  debugging (`LIKE-DBG-pawnyable-lk01`, `LIKE-DBG-6_6_30-kasan`), picks host ports nobody else is
+  holding, and answers `--run`/`--insmod`/`--rmmod` for *its* guest rather than whichever booted
+  most recently.
 - **macOS and Linux are both first-class.** QEMU runs as a host process where hardware acceleration
   is available and in-container otherwise; the kernel tree lives in a named volume or a host bind
   depending on the filesystem's case sensitivity. Both are detected, not configured (ADR-0001,
@@ -98,6 +102,11 @@ migrate; see [docs/configuration.md](docs/configuration.md) for the TOML equival
   `sanitizer_breakpoints` armed behind a one-shot userspace breakpoint.
 - GDB-native debuginfod, resolved automatically per run type (ADR-0012).
 - `--restart-debuggee` and `--re-run` rebuild the session without losing the host pane.
+- One tmux session per boot, named for the scenario, the cached build, or the kernel and profile,
+  so a still-running session no longer blocks the next one.
+- Host ports are checked before use. A port you never set (the shipped default) moves out of the
+  way and says so; one you set in a scenario, `local.toml`, a profile or on the CLI is honoured
+  exactly or reported busy -- never changed underneath you.
 
 **Exploit development**
 
@@ -128,6 +137,11 @@ migrate; see [docs/configuration.md](docs/configuration.md) for the TOML equival
   rebuilding (ADR-0004).
 - `bootstrap --check` reports host prerequisites with remedies, and reports what it cannot verify
   as unknown rather than guessing.
+- Failures carry remedies rather than tracebacks: malformed TOML names its own line and column, an
+  unknown or misplaced config key is named, a half-written run artifact is reported as such, and
+  running outside a LIKE-DBG checkout says so instead of naming a dockerfile.
+- `--explain-config` judges a `[foreign]` scenario the way the run does -- adopting the kernel's
+  architecture and skipping build-time `.config` gates -- so the dry run and the real boot agree.
 
 ### Changed
 
@@ -137,6 +151,9 @@ migrate; see [docs/configuration.md](docs/configuration.md) for the TOML equival
 - **Breaking: Python 3.12 or newer** is required (was 3.10).
 - **Breaking: the package is `src/likedbg/`**, replacing the flat `src/*.py` modules. Anything
   importing `src.debuggee`, `src.kernel_builder`, and friends will not work.
+- `--force-rebuild` applies to the command you type it on, not the session: it no longer sticks to
+  every later `--re-run`, and `--re-run --force-rebuild` now works (it used to be ignored). On a
+  `[foreign]` scenario it reaches both the extracted vmlinux and the repacked initramfs.
 - Dependency management moved from poetry to uv, with a locked `uv.lock`.
 - Tooling moved from black and flake8 to ruff (lint plus format) and mypy, all enforced in CI
   alongside pytest with coverage.
