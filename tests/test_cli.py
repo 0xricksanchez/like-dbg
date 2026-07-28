@@ -1013,7 +1013,7 @@ def test_build_foreign_pipeline_never_mounts_exploit_share(tmp_path):
     dbge._launch("qemu-cmd")  # type: ignore[attr-defined]
     dbg._run_gdb(["gdb"])  # type: ignore[attr-defined]
     assert ":/exploit:ro" not in session.pane_launches[1]["cmd"]
-    assert dbg._modules_gdb is None  # type: ignore[attr-defined]  # ADR-0010: no share, no hook
+    assert dbg._modules_gdb is None  # type: ignore[attr-defined]  # a foreign guest has no share, so no hook
 
 
 # ---------------------------------------------------------------------------

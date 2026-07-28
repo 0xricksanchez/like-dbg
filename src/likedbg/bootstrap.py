@@ -72,7 +72,7 @@ def check_prerequisites(os_name: str, probes: BootstrapProbes, *, machine: str =
     # colima, OrbStack and a remote context are all equally fine.
     results.append(_docker_prereq(os_name, probes))
     if os_name == "darwin":
-        # QEMU runs as a host process here for a same-arch guest (ADR-0001), so it must be installed.
+        # QEMU runs as a host process here for a same-arch guest, so it must be installed.
         qemu_ok = probes.has("qemu-system-aarch64")
         results.append(
             Prereq("qemu-system-aarch64", "ok" if qemu_ok else "missing", None if qemu_ok else "brew install qemu")

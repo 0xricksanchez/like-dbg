@@ -147,7 +147,7 @@ def test_copy_sources_strict_rejects_glob_and_dir():
 
 def test_build_inputs_cover_every_copy_source():
     # The staleness guard's guard: build_inputs must declare every file a dockerfile bakes in,
-    # or input_sha goes blind to it (ADR-0004). Strict: copy_sources raises on unhandled patterns.
+    # or input_sha goes blind to it. Strict: copy_sources raises on unhandled patterns.
     for s in images.IMAGES:
         srcs = images.copy_sources((REPO / s.dockerfile).read_text())
         missing = [c for c in srcs if c not in s.build_inputs]
@@ -206,7 +206,7 @@ def test_ensure_current_flags_stale_without_rebuilding(tmp_path):
     )
     stale = images.ensure_current(c, tmp_path, specs)
     assert stale == ["img_a:latest"]  # a is stale, b is current
-    assert c.builds == []  # stale images are NOT rebuilt (warn-only, ADR-0004)
+    assert c.builds == []  # stale images are NOT rebuilt (warn-only)
 
 
 def test_ensure_current_honors_specs_subset(tmp_path):

@@ -1,6 +1,6 @@
 """Out-of-tree kernel module build + guest load/unload seam. The build runs `make -C <kernel_root>
 M=/mod modules` in the kbuilder container (kernel tree RO at /ksrc, module source RW at /mod) with the
-kernel's toolchain env so vermagic matches; loading rides 2a's guest.py (ssh insmod/rmmod). See ADR-0009.
+kernel's toolchain env so vermagic matches; loading rides guest.py's ssh transport (insmod/rmmod).
 
 `kernel_root` is `cache.locations().objdir`, i.e. the per-config objdir (obj/<label>), not the
 source tree. For an `O=`-built kernel the objdir is the canonical KBUILD dir: it carries a `source`

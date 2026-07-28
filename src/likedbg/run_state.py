@@ -61,7 +61,7 @@ def guest_endpoint(
     """The run's SSH/9p control endpoint, or a refusal that fits how the run was actually booted.
 
     A foreign run has no control transport *by design*: cmd_foreign forces `guest_net=False`
-    because an adopted challenge ships no sshd and no key (ADR-0010). Telling that operator to
+    because an adopted challenge ships no sshd and no key. Telling that operator to
     "boot with guest_net enabled" sends them after something the design will not give them, so
     the caller supplies the remedy that is true for its own command.
     """

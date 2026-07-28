@@ -1,5 +1,5 @@
 """Boot-time stage: build each build.custom_modules entry out-of-tree against the built kernel tree and
-stage the .ko into the Guest share (exploit/modules/), so --insmod can load it live. See ADR-0009."""
+stage the .ko into the Guest share (exploit/modules/), so --insmod can load it live."""
 
 from __future__ import annotations
 

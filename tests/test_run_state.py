@@ -59,7 +59,7 @@ def test_guest_endpoint_returns_the_block_when_present() -> None:
 
 def test_foreign_run_refuses_without_suggesting_guest_net() -> None:
     """Regression: every no-guest refusal said 'boot with guest_net enabled', but cmd_foreign
-    forces guest_net=False by design (ADR-0010) -- an adopted challenge ships no sshd. That
+    forces guest_net=False by design -- an adopted challenge ships no sshd. That
     remedy sent the operator after something the design will never give them."""
     with pytest.raises(ModuleError) as exc:
         guest_endpoint(

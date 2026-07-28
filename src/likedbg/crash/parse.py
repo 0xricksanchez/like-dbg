@@ -1,6 +1,6 @@
 """Parse a raw serial Console log into CrashEvents. Arch-shared scaffold + thin
 arch-specific register/fault-line handling. Frames are taken as the kernel symbolized
-them (CONFIG_KALLSYMS); raw-hex frames are kept raw. No System.map (ADR-0007).
+them (CONFIG_KALLSYMS); raw-hex frames are kept raw. No System.map.
 
 A single fault prints an onset line (``BUG: kernel NULL pointer...`` /
 ``Unable to handle kernel...``) followed a few lines later by an ``Oops: ... [#1]``
@@ -74,7 +74,7 @@ def _is_terminator(body: str) -> bool:
 
 
 def normalize(text: str) -> str:
-    """CRLF/lone-CR -> LF (tty capture carries \\r\\n; see the B1 .config CRLF fix)."""
+    """CRLF/lone-CR -> LF: a tty-backed capture carries \\r\\n."""
     return text.replace("\r\n", "\n").replace("\r", "\n")
 
 

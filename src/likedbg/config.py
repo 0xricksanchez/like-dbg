@@ -70,7 +70,7 @@ class _Base(BaseModel):
 class GeneralCfg(_Base):
     arch: RequestedArch = "native"
     workspace_dir: str | None = None
-    # Storage mode (ADR-0002): where the kernel source tree lives. Auto-detected from the
+    # Storage mode: where the kernel source tree lives. Auto-detected from the
     # filesystem's case sensitivity, not from the platform -- hence `storage`, not `mac_storage`.
     storage: MacStorage = "auto"
     # The Debug profiles this run builds and boots for. A run-level intent, like `arch`.
@@ -128,7 +128,7 @@ class ForeignCfg(_Base):
     # transport). Default on: the NIC makes the challenge initramfs's ifup wait succeed and
     # gives the guest outbound network. `net_iface` is the interface name the challenge waits
     # for (read off the guest's "Waiting for interface XXX" console line): ethN uses
-    # net.ifnames=0; enp0sN pins the NIC's PCI slot. Never edits the initramfs. See ADR-0017.
+    # net.ifnames=0; enp0sN pins the NIC's PCI slot. Never edits the initramfs.
     net: bool = True
     net_iface: str = "eth0"
 
@@ -193,7 +193,7 @@ class DebuggerCfg(_Base):
     # gdb-native debuginfod: fetch debug info by build-id for stripped/distro/foreign vmlinux.
     # auto = ON for [foreign] runs, OFF for self-built (which always carries its own symtab).
     # Emitted as `set debuginfod enabled on` before the vmlinux load; never `ask` (would block the
-    # non-interactive session). See docs/adr/0012-*.
+    # non-interactive session).
     debuginfod: Debuginfod = "auto"
     debuginfod_urls: str = "https://debuginfod.elfutils.org"
 

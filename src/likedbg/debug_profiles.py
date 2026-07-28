@@ -366,7 +366,7 @@ def resolve_run(
         for ba in d.boot_arg:
             if ba.kernel_min is not None or ba.kernel_max is not None:
                 runtime_notes.append(
-                    f"deferred version-gated boot arg {ba.value!r} (B1 does not evaluate kernel_min/max)"
+                    f"skipped version-gated boot arg {ba.value!r}: kernel_min/max are not evaluated yet"
                 )
                 continue
             if _selectors_match(arch=ba.arch, profiles=ba.profiles, active=active, host=host):

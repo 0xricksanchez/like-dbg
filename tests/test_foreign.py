@@ -518,7 +518,7 @@ def test_extract_vmlinux_quotes_filename_with_space(tmp_path: Path) -> None:
     assert "'/in/my image.bzImage'" in cmd
 
 
-# ---- kallsyms symbol recovery (ADR-0015) ----
+# ---- kallsyms symbol recovery ----
 
 
 def _write_bzimage(path: Path) -> None:
@@ -735,7 +735,7 @@ def test_repack_threads_exploit_flags(tmp_path: Path) -> None:
     assert "-lm" in " ".join(c.execs)
 
 
-# ---- persistent zig cache for warm musl compiles (Part A, 2026-07; ADR-0016) ----
+# ---- persistent zig cache for warm musl compiles ----
 
 
 def test_musl_compile_sets_persistent_zig_cache_env():

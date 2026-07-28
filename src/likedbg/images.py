@@ -1,4 +1,4 @@
-"""Container-image manifest + content-hash currency (ADR-0004; CONTEXT.md -> Container image).
+"""Container-image manifest + content-hash currency.
 
 Each Container image is checked for staleness by a content hash (`input_sha`) over its declared
 build inputs (the dockerfile plus any local files it bakes in via COPY/ADD) stamped onto the
@@ -78,7 +78,7 @@ def copy_sources(dockerfile_text: str) -> list[str]:
     """Local source paths a dockerfile bakes in via COPY/ADD (for the build_inputs completeness test).
 
     Strict: raises ValueError on patterns we cannot statically resolve (globs, directory copies, the
-    JSON-array form) so a future dockerfile change forces a conscious build_inputs update (ADR-0004).
+    JSON-array form) so a future dockerfile change forces a conscious build_inputs update.
     Skips URL sources and `--from=` multi-stage copies (not local build inputs).
     """
     out: list[str] = []
@@ -115,7 +115,7 @@ def ensure_current(container: ContainerService, workspace: Path, specs: tuple[Im
     """Auto-build MISSING images (in order); return the tags of present-but-STALE images.
 
     Stale = the live image's `likedbg.input_sha` label != the freshly computed input_sha. The caller
-    warns about stale tags; ensure_current never rebuilds them (warn-only, ADR-0004).
+    warns about stale tags; ensure_current never rebuilds them (warn-only).
     """
     stale: list[str] = []
     for s in specs:

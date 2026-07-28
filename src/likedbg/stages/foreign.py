@@ -1,5 +1,5 @@
 """Foreign-kernel pipeline stages: adopt a provided kernel (Manifest-free) and optionally
-repack its initramfs with an exploit. See ADR-0010."""
+repack its initramfs with an exploit."""
 
 from __future__ import annotations
 

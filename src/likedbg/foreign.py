@@ -1,5 +1,5 @@
 """Foreign-kernel (CTF adopt) host-side logic: arch detection, vmlinux extraction,
-initramfs repack, and live console upload. See ADR-0010."""
+initramfs repack, and live console upload."""
 
 from __future__ import annotations
 
@@ -115,7 +115,7 @@ def _elf_magic(path: Path) -> bool:
 def _is_x86_bzimage(image_path: Path) -> bool:
     """True if the boot image is an x86 bzImage (the boot-protocol 'HdrS' magic at offset 0x202).
     Kallsyms recovery is x86-only this round; an arm64 Image has no such header, so it falls through
-    to the decompress-only carve / today's behavior (arm64 recovery is a follow-up, see ADR-0015)."""
+    to the decompress-only carve / today's behavior (arm64 recovery is a follow-up)."""
     try:
         with image_path.open("rb") as f:
             f.seek(0x202)
@@ -214,7 +214,7 @@ def _read_stamp(stamp: Path) -> dict[str, str] | None:
         return None
 
 
-# A Stamp records the inputs one derived artifact was last built from (CONTEXT.md -> Stamp).
+# A Stamp records the inputs one derived artifact was last built from.
 # Keys are checked in THIS order so the reported reason names the most salient change: identity
 # first, then content, then the surrounding build inputs. `command_sha` is deliberately last --
 # it is the catch-all that fires when like-dbg's own build command changed, and its message is
@@ -282,7 +282,7 @@ def extract_vmlinux(container: Any, image_path: Path, out: Path, *, image: str, 
     recover kernel symbols from the bzImage's kallsyms (x86, vmlinux-to-elf in like_musl), else fall
     back to a decompress-only carve (arch-detect only). The outcome is cached under out.stamp
     (keyed by image hash + pinned vmlinux-to-elf version) and logged. Raises ForeignError only when
-    nothing produces an ELF (arm64 Image / exotic packing). See ADR-0015.
+    nothing produces an ELF (arm64 Image / exotic packing).
 
     `force` (from --force-rebuild) ignores the cached result."""
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -376,12 +376,12 @@ def _musl_compile(arch: str, src_q: str, out_q: str, extra_flags: tuple[str, ...
 
     Reliable on native Linux; on Docker Desktop for macOS the LinuxKit VM's virtualized filesystem
     intermittently fails zig's from-source musl-build cache check ('CacheCheckFailed') for libc-heavy
-    programs (e.g. pthread) - a Mac-only quirk, see docs/ctf-foreign-kernel.md and ADR-0016."""
+    programs (e.g. pthread) - a Mac-only quirk, see docs/ctf-foreign-kernel.md."""
     if arch not in _MUSL_GCC:
         raise ForeignError(f"unsupported arch {arch!r}", remedy="use x86_64 or arm64")
     flags = "".join(f" {shlex.quote(f)}" for f in extra_flags)
     # ZIG_GLOBAL_CACHE_DIR points zig at the persistent named volume so the from-source musl
-    # libc.a is built once and reused (cold ~20s, warm ~1-2s). See ADR-0016 / the Part A gate.
+    # libc.a is built once and reused (cold ~20s, warm ~1-2s).
     return f"ZIG_GLOBAL_CACHE_DIR={ZIG_CACHE_MOUNT} {_MUSL_GCC[arch]} -static {src_q}{flags} -o {out_q}"
 
 
@@ -478,7 +478,7 @@ def repack_initramfs(
     (newc [+gzip]) to `out` in the like_musl container. Compiling to the FOREIGN arch is why
     `arch` is threaded in.
 
-    Stamp-guarded (CONTEXT.md -> Stamp): a call whose exploit, base initramfs, flags, toolchain
+    Stamp-guarded: a call whose exploit, base initramfs, flags, toolchain
     image and build command all match the previous one returns `out` without starting a
     container, so rebooting only to change a runtime mitigation costs nothing. `force` (from
     --force-rebuild) ignores the Stamp.

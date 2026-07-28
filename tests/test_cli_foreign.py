@@ -229,7 +229,7 @@ def test_cmd_foreign_forces_both_stamps_when_the_musl_image_is_stale(tmp_path, m
 
 
 def test_cmd_foreign_threads_force_rebuild_to_both_foreign_stamps(tmp_path, monkeypatch):
-    """--force-rebuild reaches BOTH Stamps on a foreign run (ADR-0018): the repack's, and the
+    """--force-rebuild reaches BOTH Stamps on a foreign run: the repack's, and the
     auto-extracted vmlinux's via resolve_foreign. Dropping either hop is silent -- the run still
     boots, on the artifacts the user just asked to discard."""
     seen = _run_cmd_foreign_capturing_force(tmp_path, monkeypatch, stale=[], force_rebuild=True)
@@ -246,7 +246,7 @@ def test_cmd_foreign_does_not_force_for_an_unrelated_stale_image(tmp_path, monke
 
 
 def test_cmd_foreign_forces_serial_only_no_guest_net_or_share(tmp_path, monkeypatch):
-    """ADR-0010: a foreign guest exposes only the serial console. Regression test for the
+    """A foreign guest exposes only the serial console. Regression test for the
     finding that cmd_foreign left guest_net/share at their (True) defaults, which both
     perturbed the QEMU device model (unsolicited -netdev/-virtfs) and made RunRecorder.start
     write a run.json `guest` block that --run/--insmod/--rmmod would then try (and fail) to
@@ -307,7 +307,7 @@ def test_main_dispatches_to_cmd_foreign_when_image_set(tmp_path, monkeypatch):
 
 def test_main_passes_force_rebuild_through_to_cmd_foreign(tmp_path, monkeypatch):
     """The typed --force-rebuild must REACH cmd_foreign: it is the only way to invalidate the
-    foreign path's Stamps (ADR-0018), and dropping the kwarg here fails silently -- the run still
+    foreign path's Stamps, and dropping the kwarg here fails silently -- the run still
     boots, it just quietly reuses the artifacts the user asked to rebuild."""
     seen: dict = {}
     _stub_main_foreign_dispatch(tmp_path, monkeypatch, seen)

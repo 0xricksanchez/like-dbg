@@ -1,5 +1,5 @@
 """Boot-time stage: point the Debuggee at this session's copy-on-write overlay rather than the
-shared rootfs image, so concurrent sessions do not fight over QEMU's write lock. See ADR-0019."""
+shared rootfs image, so concurrent sessions do not fight over QEMU's write lock."""
 
 from __future__ import annotations
 

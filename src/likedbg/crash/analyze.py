@@ -1,5 +1,5 @@
 """The single impure crash module: read a run dir, produce crash.json + crash.md,
-flip run.json to `crashed`. Pure-host, Docker/tmux-free (ADR-0007)."""
+flip run.json to `crashed`. Pure-host, Docker/tmux-free."""
 
 from __future__ import annotations
 

@@ -631,7 +631,7 @@ def build_foreign_pipeline(
     foreign_net_iface: str = "eth0",
     force_rebuild: bool = False,
 ) -> Pipeline:
-    # ADR-0010: a foreign guest has no exploit share (no guest-side delivery path): never mount one,
+    # A foreign guest has no exploit share (no guest-side delivery path): never mount one,
     # and DebuggerStage below is left at its modules_gdb=None default (no modules.gdb to watch).
     launch_debuggee, run_gdb = _make_pane_launchers(
         session,
@@ -800,7 +800,7 @@ def cmd_foreign(
     out_dir = workspace / "artifacts" / "foreign" / name
     # musl (+ base) must exist before we can extract vmlinux / repack.
     stale = _ensure_images(container, workspace, specs=images.foreign_prep_images())
-    # A stale like_musl is the one way a Stamp can lie (ADR-0018). `ensure_current` only WARNS, so
+    # A stale like_musl is the one way a Stamp can lie. `ensure_current` only WARNS, so
     # this boot's repack runs in the OLD image while its Stamp records the NEW musl_image_sha -- a
     # hash of the image's build files, not of the built image. The user then runs `--build-images`
     # as told, the sha does not move, and every later boot reuses an initramfs holding a binary the
@@ -822,7 +822,7 @@ def cmd_foreign(
         # runtime flag even when the selected local profile would build its Kconfig dependency off.
         validate_build_gates=False,
     )
-    # ADR-0010/0017: a foreign guest has no SSH/9p *control* transport. Forcing guest_net=False
+    # A foreign guest has no SSH/9p *control* transport. Forcing guest_net=False
     # (and share=False) drops the SSH hostfwd + the run.json `guest` block, so --run/--insmod/--rmmod
     # refuse cleanly instead of trying to SSH to a nonexistent sshd. The outbound NIC that unblocks
     # the challenge initramfs's ifup wait is a separate axis ([foreign] net -> foreign_net, never
@@ -919,7 +919,7 @@ def cmd_foreign(
 
 
 def _ensure_images(container: ContainerService, workspace: Path, *, specs: tuple[images.ImageSpec, ...]) -> list[str]:
-    """Build missing images, warn about stale ones (ADR-0004 keeps that warn-only), and return the
+    """Build missing images, warn about stale ones rather than rebuilding them, and return the
     stale tags so a caller whose derived artifacts are keyed by an image's BUILD INPUTS -- not by the
     built image -- can distrust them (see cmd_foreign)."""
     try:
