@@ -70,6 +70,7 @@ from likedbg.launchers import gdb_pane_command
 from likedbg.modules import stage_module
 from likedbg.pipeline import Pipeline
 from likedbg.pipeline import PipelineContext
+from likedbg.ports import resolve_ports
 from likedbg.run_artifacts import RunRecorder
 from likedbg.run_state import guest_endpoint
 from likedbg.run_state import read_run_state
@@ -286,6 +287,18 @@ def explain_config(
         *[f"  {e['symbol']}={e['value']} [{e['severity']}]" for e in expected],
     ]
     return "\n".join(lines)
+
+
+def _claim_ports(rr: RunResolution) -> RunResolution:
+    """Bind-check this boot's host ports and re-point the ones nobody chose.
+
+    Runs before RunRecorder.start so run.json records the port `--run` will actually reach, and
+    before the pipeline so QEMU, the published container port and gdb all agree.
+    """
+    plan = resolve_ports(rr.effective_debuggee, rr.provenance)
+    for note in plan.notes:
+        logger.info(f"port: {note}")
+    return dataclasses.replace(rr, effective_debuggee=plan.debuggee) if plan.notes else rr
 
 
 def _start_named_session(scenario: Path | None, *, label: str = "") -> Session:
@@ -660,6 +673,7 @@ def cmd_use(
             f"no cached rootfs labelled {rlabel!r}",
             remedy="omit --rootfs to build the active rootfs, or run `start_kgdb --list`",
         )
+    rr = _claim_ports(rr)
     recorder = RunRecorder.start(
         workspace=workspace,
         requested_settings=use_settings,
@@ -798,6 +812,7 @@ def cmd_foreign(
     if exploit is not None and not exploit.is_file():
         raise ForeignError(f"[foreign].exploit not found: {exploit}", remedy="check the path")
 
+    rr = _claim_ports(rr)
     recorder = RunRecorder.start(
         workspace=workspace,
         requested_settings=cfg.settings,
@@ -1624,6 +1639,7 @@ def main(argv: list[str] | None = None) -> int:
         if not os.getenv("TMUX"):
             logger.error("Not running inside a TMUX session. Start tmux first.")
             return 2
+        run_res = _claim_ports(run_res)
         recorder = RunRecorder.start(
             workspace=workspace,
             requested_settings=cfg.settings,
