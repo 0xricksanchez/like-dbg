@@ -168,6 +168,7 @@ sudo rm -rf "$MNT" >/dev/null
 sudo mkdir -p "$MNT" >/dev/null
 sudo chmod 0755 "$MNT" >/dev/null
 
+# shellcheck disable=SC2054  # the commas are literal --components argument content, not array separators
 DEBOOTSTRAP_PARAMS=(--arch="$DEBARCH" --include="$PKGS" --components=main,contrib,non-free "$DIST" "$MNT")
 if [ $FOREIGN = "true" ]; then
   DEBOOTSTRAP_PARAMS=(--foreign "${DEBOOTSTRAP_PARAMS[@]}")

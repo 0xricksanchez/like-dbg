@@ -20,6 +20,7 @@ error_handling() {
 # Function to check command success
 check_success() {
   local message="$1"
+  # shellcheck disable=SC2181  # $? is the value this reusable check helper exists to inspect
   if [ $? -eq 0 ]; then
     log "$message succeeded"
   else
@@ -45,7 +46,7 @@ if git clone --depth=1 https://github.com/pwndbg/pwndbg; then
   pushd pwndbg >/dev/null || error_handling "Failed to change directory to Pwndbg"
   chmod +x setup.sh
   echo 'y' | ./setup.sh || error_handling "Failed to setup Pwndbg"
-  popd >/dev/null
+  popd >/dev/null || error_handling "Failed to leave Pwndbg directory"
   rm -rf pwndbg
 else
   error_handling "Failed to clone Pwndbg"

@@ -10,6 +10,7 @@
 #
 # ----------------------------------------------------------------------
 
+# shellcheck disable=SC2086,SC2064  # vendored verbatim from the Linux kernel (scripts/extract-vmlinux); do not relint upstream style
 me=${0##*/}
 
 check_vmlinux() {
