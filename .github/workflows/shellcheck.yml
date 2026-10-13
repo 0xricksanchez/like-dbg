@@ -1,22 +1,35 @@
 name: shellcheck
+
 on:
   push:
+    branches: [main, dev]
     paths:
-      - io/scipts/*.sh
-      - ctf/misc/*.sh
-      - .github/workflows/shellcheck.yml
+      - "io/scripts/*.sh"
+      - "ctf/misc/*.sh"
+      - "scripts/*.sh"
+      - ".github/workflows/shellcheck.yml"
   pull_request:
     paths:
-      - io/scipts/*.sh
-      - ctf/misc/*.sh
-      - .github/workflows/shellcheck.yml
+      - "io/scripts/*.sh"
+      - "ctf/misc/*.sh"
+      - "scripts/*.sh"
+      - ".github/workflows/shellcheck.yml"
+
+permissions:
+  contents: read
+
 jobs:
   shellcheck:
-    name: Shellcheck
+    name: shellcheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Run ShellCheck
-        uses: ludeeus/action-shellcheck@master
+        uses: ludeeus/action-shellcheck@2.0.0
+        with:
+          # Scan the repo's shell scripts, skipping vendored/generated trees.
+          ignore_paths: .claude .venv artifacts
         env:
           SHELLCHECK_OPTS: -e SC2002,SC2016,SC1009,SC1073,SC1072

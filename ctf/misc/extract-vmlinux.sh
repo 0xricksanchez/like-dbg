@@ -10,42 +10,46 @@
 #
 # ----------------------------------------------------------------------
 
+# shellcheck disable=SC2086,SC2064  # vendored verbatim from the Linux kernel (scripts/extract-vmlinux); do not relint upstream style
+me=${0##*/}
+
 check_vmlinux() {
-	# Use readelf to check if it's a valid ELF
-	readelf -h "$1" >/dev/null 2>&1 || return 1
-	res=$(readlink -fn "$2")
-	cat "$1" >"$res"
-	exit 0
+  if file "$1" | grep -q 'Linux kernel.*boot executable' ||
+    readelf -h "$1" >/dev/null 2>&1; then
+    cat "$1"
+    echo "$me: Extracted vmlinux using '$2' from offset $3" >&2
+    exit 0
+  fi
 }
 
 try_decompress() {
-	# The obscure use of the "tr" filter is to work around older versions of
-	# "grep" that report the byte offset of the line instead of the pattern.
+  # The obscure use of the "tr" filter is to work around older versions of
+  # "grep" that report the byte offset of the line instead of the pattern.
 
-	# Try to find the header ($1) and decompress from here
-	for pos in $(LC_CTYPE=C tr "$1\n$2" "\n$2=" <"$img" | grep -abo "^$2"); do
-		pos=${pos%%:*}
-		tail -c+"$pos" "$img" | $3 >"$tmp" 2>/dev/null
-		check_vmlinux "$tmp" "$res"
-	done
+  # Try to find the header ($1) and decompress from here
+  for pos in $(tr "$1\n$2" "\n$2=" <"$img" | grep -abo "^$2"); do
+    pos=${pos%%:*}
+    tail -c+$pos "$img" | $3 >$tmp 2>/dev/null
+    check_vmlinux $tmp "$3" $pos
+  done
 }
 
 # Check invocation:
 me=${0##*/}
 img=$1
 if [ $# -lt 1 ] || [ ! -s "$img" ]; then
-	echo "Usage: $me <kernel-image> <ouput_file>" >&2
-	exit 2
+  echo "Usage: $me <kernel-image> <ouput_file>" >&2
+  exit 2
 fi
 
 res="vmlinux"
 if [ $# -eq 2 ]; then
-	res="$2"
+  res="$2"
 fi
 
 # Prepare temp files:
 tmp=$(mktemp /tmp/vmlinux-XXX)
-trap 'rm -f $tmp' 0
+trap "rm -f $tmp" 0
 
 # That didn't work, so retry after decompression.
 echo "[>] Attempting to write output into \"$res\""
@@ -58,7 +62,7 @@ try_decompress '\002!L\030' xxx 'lz4 -d'
 try_decompress '(\265/\375' xxx unzstd
 
 # Finally check for uncompressed images or objects:
-check_vmlinux "$img" "$res"
+check_vmlinux "$img" cat 0
 
 # Bail out:
 echo "$me: Cannot find vmlinux." >&2

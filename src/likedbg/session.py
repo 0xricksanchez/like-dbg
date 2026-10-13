@@ -1,0 +1,180 @@
+"""tmux session/pane orchestration behind a single, testable object."""
+
+from __future__ import annotations
+
+import shlex
+import subprocess
+from collections.abc import Callable
+from collections.abc import Iterable
+from pathlib import Path
+from typing import Literal
+
+from likedbg.errors import SessionError
+
+
+def _real_runner(args: list[str]) -> int:
+    return subprocess.run(args, check=False).returncode
+
+
+def _real_query(args: list[str]) -> str:
+    return subprocess.run(args, check=False, capture_output=True, text=True).stdout.strip()
+
+
+def _real_checked_query(args: list[str]) -> tuple[int, str]:
+    proc = subprocess.run(args, check=False, capture_output=True, text=True)
+    return proc.returncode, proc.stdout.strip()
+
+
+class Session:
+    def __init__(
+        self,
+        name: str,
+        runner: Callable[[list[str]], int] = _real_runner,
+        query: Callable[[list[str]], str] = _real_query,
+        checked_query: Callable[[list[str]], tuple[int, str]] = _real_checked_query,
+    ) -> None:
+        self.name = name
+        self._runner = runner
+        self._query = query
+        self._checked_query = checked_query
+
+    def _tmux(self, *args: str) -> None:
+        rc = self._runner(["tmux", *args])
+        if rc != 0:
+            raise SessionError(
+                f"tmux command failed (exit {rc}): {' '.join(args)}",
+                remedy="ensure you are running inside a tmux session",
+            )
+
+    def _tmux_query(self, *args: str) -> str:
+        rc, out = self._checked_query(["tmux", *args])
+        if rc != 0:
+            raise SessionError(
+                f"tmux command failed (exit {rc}): {' '.join(args)}",
+                remedy="ensure you are running inside a tmux session",
+            )
+        return out
+
+    def select_pane(self, target: int | str) -> None:
+        self._tmux("selectp", "-t", str(target))
+
+    def send_keys(self, pane: str, keys: str, *, enter: bool = True) -> None:
+        args = ["send-keys", "-t", pane, keys]
+        if enter:
+            args.append("Enter")
+        self._tmux(*args)
+
+    def current_session_name(self) -> str:
+        """The session this process is running inside, or "" outside tmux."""
+        return self._query(["tmux", "display-message", "-p", "#{session_name}"])
+
+    def list_sessions(self) -> list[str]:
+        """Every tmux session name on this server, or [] when there is no server at all.
+
+        Used to pick a name no live session already holds: `rename-session` to a taken name fails
+        with 'duplicate session', which used to surface as a bare tmux error blaming the caller
+        for not being inside tmux.
+        """
+        out = self._query(["tmux", "list-sessions", "-F", "#{session_name}"])
+        return [line for line in out.splitlines() if line]
+
+    def start(self, name: str) -> None:
+        self._tmux("rename-session", name)
+        self._tmux("rename-window", name)
+
+    def current_pane_id(self) -> str:
+        return self._query(["tmux", "display-message", "-p", "#{pane_id}"])
+
+    def pane_base_index(self) -> int:
+        # tmux pane indices honor the user's `pane-base-index` (commonly 1, not 0).
+        # Never assume 0: query it, falling back to 0 if tmux is unavailable.
+        out = self._query(["tmux", "display-message", "-p", "#{pane-base-index}"])
+        try:
+            return int(out)
+        except (TypeError, ValueError):
+            return 0
+
+    def run_in_new_pane(
+        self,
+        *,
+        target: int | str,
+        direction: Literal["h", "v"],
+        percent: int,
+        cmd: str,
+        full: bool = False,
+    ) -> str:
+        # full (-f): split the whole window rather than just `target`, so the new pane spans the full
+        # window height (with -h). Lets the Debugger take the full-height right column even though the
+        # left column is already split into the host CLI and the Debuggee.
+        wrapped_cmd = f"tmux set-option -p remain-on-exit on; exec {cmd}"
+        split_args = ["split-window", "-d", "-P", "-F", "#{pane_id}"]
+        if full:
+            split_args.append("-f")
+        split_args += [f"-{direction}", "-p", str(percent), "-t", str(target), wrapped_cmd]
+        pane = self._tmux_query(*split_args)
+        return pane
+
+    def respawn_pane(self, *, pane: str, cmd: str) -> None:
+        self.set_remain_on_exit(pane)
+        self._tmux("respawn-pane", "-k", "-t", pane, cmd)
+
+    def pane_exists(self, pane: str) -> bool:
+        rc, _ = self._checked_query(["tmux", "display-message", "-p", "-t", pane, "#{pane_id}"])
+        return rc == 0
+
+    def get_option(self, name: str) -> str:
+        return self._query(["tmux", "show-option", "-qv", name])
+
+    def set_option(self, name: str, value: str) -> None:
+        self._tmux("set-option", name, value)
+
+    def unset_option(self, name: str) -> None:
+        self._tmux("set-option", "-u", name)
+
+    def display_message(self, message: str) -> None:
+        self._tmux("display-message", message)
+
+    def set_remain_on_exit(self, pane: str) -> None:
+        self._tmux("set-option", "-p", "-t", pane, "remain-on-exit", "on")
+
+    def pipe_pane(self, *, pane: str, output: Path) -> None:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        self._tmux("pipe-pane", "-o", "-t", pane, f"cat >> {shlex.quote(str(output))}")
+
+    def kill_pane(self, pane: str) -> None:
+        self._tmux("kill-pane", "-t", pane)
+
+
+# '.' and ':' are tmux's own target syntax (session:window.pane). Whether a session name may
+# contain them is version-dependent -- tmux 3.6 rewrites '.' to '_', 3.7 stores it verbatim -- so
+# we substitute before asking. Otherwise the name we ask for and the name tmux reports back differ,
+# every collision check compares a dotted name against an underscored one and never matches, and
+# the duplicate-session failure this whole mechanism exists to prevent comes straight back.
+_TMUX_UNSAFE = str.maketrans({".": "_", ":": "_"})
+
+
+def tmux_safe_name(name: str) -> str:
+    """`name` as tmux will actually store it, on every tmux version."""
+    return name.translate(_TMUX_UNSAFE)
+
+
+def unique_session_name(base: str, taken: Iterable[str], *, current: str = "") -> str:
+    """`base`, or the first `base-N` (N>=2) no live session already holds.
+
+    A LIKE-DBG session is named after what it is debugging, not after a hash: the name's only
+    job is to be readable in `tmux ls` and the status bar, and tmux enforces uniqueness anyway.
+    The suffix appears only when the same scenario is genuinely booted twice.
+
+    `current` is the caller's own session, excluded because renaming a session to the name it
+    already has is a no-op rather than a collision. Without it `--re-run` -- which re-enters the
+    normal dispatch from inside the session it is restarting -- would see itself as taken and
+    climb -2, -3, -4 on every restart.
+    """
+    base = tmux_safe_name(base)
+    live = {tmux_safe_name(t) for t in taken} - {tmux_safe_name(current)}
+    if base not in live:
+        return base
+    n = 2
+    while f"{base}-{n}" in live:
+        n += 1
+    return f"{base}-{n}"

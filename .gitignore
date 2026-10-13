@@ -8,15 +8,18 @@
 .zshrc
 .gdb_history
 tags
+__pycache__/
 src/__pycache__
 src/tests/__pycache__/*
 linux-*
+kernels/
 kernel_root
 io/rootfs*
 io/filesystem*
-examples/c_kmod/compile_commands.json
+examples/legacy-intree/compile_commands.json
 patches/*
 configs/kernel_configs/*.conf*
+configs/local.toml
 Dockerfile*
 android*
 ctf/bzImage
@@ -24,3 +27,27 @@ ctf/root*
 ctf/vmlinux
 ctf/initramfs
 ctf/pawn*
+artifacts/
+# Scratch binaries built at the repo root while working a challenge.
+lab
+lab/
+
+# SDD controller scratch (briefs, reports, review packages, ledger)
+.superpowers/
+
+# Internal design docs (glossary + ADRs + superpowers specs/plans/notes): kept local, not shipped
+CONTEXT.md
+docs/adr/
+docs/superpowers/
+
+exploit/*
+!exploit/README.md
+
+# out-of-tree module build litter (keep sources + READMEs)
+modules/**/*.ko
+modules/**/*.o
+modules/**/*.mod
+modules/**/*.mod.c
+modules/**/.*.cmd
+modules/**/Module.symvers
+modules/**/modules.order

@@ -1,0 +1,14 @@
+name = "crash-debug"
+kind = "addon"
+description = "Readable oops/panic triage while preserving a normal-ish kernel."
+fragments = ["configs/fragments/profiles/crash-debug.config"]
+
+[[expect]]
+symbol = "CONFIG_DEBUG_INFO"
+value = "y"
+severity = "soft"
+
+[[expect]]
+symbol = "CONFIG_KALLSYMS"
+value = "y"
+severity = "soft"

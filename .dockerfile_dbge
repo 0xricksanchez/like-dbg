@@ -1,5 +1,5 @@
 FROM like_dbg_base:latest
-LABEL maintainer="Christopher Krah <admin@0x434b.dev>"
+LABEL maintainer="Christopher Krah <mail@0x434b.dev>"
 
 ENV DEBIAN_FRONTEND noninteractive
 ENV LC_ALL=en_US.UTF-8
@@ -10,6 +10,7 @@ RUN apt-get update && \
     set -e && \
     apt-get install -yq --no-install-recommends \
         qemu-system \
+        qemu-utils \
         openssl \
         binfmt-support && \
     apt-get -y autoremove --purge && \

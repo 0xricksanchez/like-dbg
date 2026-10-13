@@ -1,0 +1,34 @@
+# Pawnyable LK01 - "Holstein v1" (by ptr-yudai): a stack buffer overflow in a char driver with
+# every mitigation off. See docs/ctf-foreign-kernel.md#worked-example-pawnyable-lk01.
+#
+# Supply the challenge artifacts yourself (never committed; ctf/ is gitignored):
+#   mkdir -p ctf/pawnyable-lk01
+#   cp <pawnyable>/learn/linux-kernel/LK01/qemu/{bzImage,rootfs.cpio} ctf/pawnyable-lk01/
+#   uv run ./start_kgdb -c pawnyable-lk01
+#
+# Reproduces the challenge's run.sh exactly: a 5.10.7 bzImage, -m 64M, a bare -cpu qemu64
+# (no SMEP/SMAP), and the verbatim "nopti nokaslr" command line -> KASLR/KPTI/SMEP/SMAP all off.
+# The challenge's own initramfs loads vuln.ko, creates /dev/holstein, and drops to a uid-1337
+# shell; the goal is local privilege escalation to root.
+
+# KASLR and KPTI are left off the way the challenge does it, in the verbatim cmdline below, so no
+# [debuggee] toggle is set for them: setting one would make LIKE-DBG rewrite that cmdline instead.
+[debuggee]
+memory_mib = 64        # run.sh: -m 64M
+smep = false           # run.sh: -cpu qemu64 (bare) -> no +smep/+smap on the guest CPU
+smap = false
+
+[foreign]
+image = "ctf/pawnyable-lk01/bzImage"           # presence selects the foreign path
+initramfs = "ctf/pawnyable-lk01/rootfs.cpio"   # the challenge's own busybox rootfs (raw cpio)
+cmdline = "console=ttyS0 loglevel=3 oops=panic panic=-1 nopti nokaslr"  # used verbatim
+arch = "x86_64"
+# Kernel symbols (kmod, crash breakpoints, add-symbol-file) are recovered automatically from the
+# bzImage's kallsyms (see docs/ctf-foreign-kernel.md#symbols). Only set vmlinux to override that with
+# a real vmlinux for source-level kernel debugging:
+# vmlinux = "ctf/pawnyable-lk01/vmlinux"
+
+# Your exploit, auto-compiled static-musl and injected at /exploit by the initramfs repack.
+# Commented out so the scenario boots with only the two challenge files above; point it at your
+# own source (or a prebuilt static binary) when you have one. Run it from the guest console.
+# exploit = "ctf/pawnyable-lk01/exploit.c"

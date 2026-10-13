@@ -1,19 +1,42 @@
 name: hadolint
+
 on:
   push:
+    branches: [main, dev]
     paths:
-      - .dockerfile*
-      - .github/workflows/hadolint.yml
+      - ".dockerfile*"
+      - ".github/workflows/hadolint.yml"
   pull_request:
     paths:
-      - .dockerfile*
-      - .github/workflows/hadolint.yml
+      - ".dockerfile*"
+      - ".github/workflows/hadolint.yml"
+
+permissions:
+  contents: read
+
 jobs:
   hadolint:
-    runs-on: ubuntu-22.04
-    name: "Hadolint"
+    name: hadolint
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: jbergstroem/hadolint-gh-action@v1
-        with:
-          dockerfile: ".dockerfile*"
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # The dockerfiles are named `.dockerfile_*` (not `Dockerfile`), so the recursive
+      # hadolint action can't find them; lint each one explicitly with the pinned binary.
+      - name: Install hadolint
+        run: |
+          sudo curl -fsSL -o /usr/local/bin/hadolint \
+            https://github.com/hadolint/hadolint/releases/download/v2.12.0/hadolint-Linux-x86_64
+          sudo chmod +x /usr/local/bin/hadolint
+
+      - name: Lint dockerfiles
+        run: |
+          rc=0
+          for f in .dockerfile*; do
+            echo "::group::hadolint $f"
+            # Only ERROR-level findings fail CI; warnings/info are surfaced but non-blocking.
+            hadolint --failure-threshold error "$f" || rc=1
+            echo "::endgroup::"
+          done
+          exit $rc

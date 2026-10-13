@@ -1,45 +1,13 @@
 FROM like_dbg_base:latest
-LABEL maintainer="Christopher Krah <admin@0x434b.dev>"
+LABEL maintainer="Christopher Krah <mail@0x434b.dev>"
+ENV DEBIAN_FRONTEND=noninteractive
 
-ENV DEBIAN_FRONTEND noninteractive
+RUN apt-get update && apt-get install -yq --no-install-recommends \
+        clang lld llvm \
+        libncurses-dev libssl-dev libelf-dev bc flex bison cpio rsync ccache kmod && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
-ARG TOOLCHAIN_ARCH
-ARG CC
-ARG LLVM
-ARG ARCH
-ARG USER
-ARG CROSS_COMPILE
-
-RUN apt-get update && \
-    set -e && \
-    apt-get install -yq --no-install-recommends \
-        libncurses-dev \
-        libssl-dev \
-        xz-utils \
-        ccache \
-        bc \
-        gcc-$TOOLCHAIN_ARCH-linux-gnu \
-        binutils-$TOOLCHAIN_ARCH-linux-gnu \
-        flex \
-        bison \
-        cpio \
-        rsync \
-        llvm \
-        clang \
-        lld \
-        lldb \
-        libelf-dev && \
-    apt-get -y autoremove --purge && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
-
-WORKDIR /home/$USER
-
-RUN echo "CROSS_COMPILE=$CANADIAN_CROSS" >> /etc/environment && \
-    echo "CC=$CC" >> /etc/environment && \
-    echo "LLVM=$LLVM" >> /etc/environment && \
-    echo "ARCH=$ARCH" >> /etc/environment
+# Rust toolchain present but unused unless a build enables CONFIG_RUST.
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal || true
 
 WORKDIR /io
-HEALTHCHECK --interval=30s --timeout=3s --retries=3 --start-period=2s CMD ps aux | grep "sshd -D" | grep -v grep || exit 1
-CMD ["/usr/sbin/sshd", "-D"]

@@ -1,0 +1,12 @@
+[   12.345678] BUG: kernel NULL pointer dereference, address: 0000000000000000
+[   12.345680] #PF: supervisor read access in kernel mode
+[   12.345681] Oops: 0000 [#1] PREEMPT SMP NOPTI
+[   12.345683] CPU: 0 PID: 141 Comm: poc Not tainted 6.6.30 #1
+[   12.345685] RIP: 0010:vuln_read+0x1a/0x40
+[   12.345687] RSP: 0018:ffffc90000abfe10 EFLAGS: 00010246
+[   12.345689] RAX: 0000000000000000 RBX: ffff8880069b8000 RCX: 0000000000000000
+[   12.345693] Call Trace:
+[   12.345694]  <TASK>
+[   12.345695]  vuln_ioctl+0x33/0x60
+[   12.345697]  __x64_sys_ioctl+0x90/0xd0
+[   12.345699]  do_syscall_64+0x5c/0x90

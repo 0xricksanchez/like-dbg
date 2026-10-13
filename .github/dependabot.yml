@@ -1,10 +1,32 @@
 version: 2
 updates:
+  # Python dependencies. This block predates the poetry -> uv migration and has only ever run
+  # against a poetry.lock. CI runs `uv sync --frozen`, so a bump that edits pyproject.toml without
+  # also updating uv.lock fails the build loudly rather than merging a desynced lock -- verify the
+  # first PR after the 1.0 merge actually touches uv.lock before trusting this unattended.
   - package-ecosystem: "pip"
     directory: "/"
     schedule:
-      interval: "daily"
-    open-pull-requests-limit: 10
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    target-branch: "main"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    labels:
+      - dependency-update
+    assignees:
+      - "0xricksanchez"
+    reviewers:
+      - "0xricksanchez"
+
+  # The workflows pin every action by major (checkout@v4, setup-uv@v6, codecov-action@v5,
+  # action-shellcheck@2.0.0); without this they never move, including for security fixes.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
     target-branch: "main"
     commit-message:
       prefix: "chore"

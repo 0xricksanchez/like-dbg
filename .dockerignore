@@ -1,6 +1,18 @@
 android/
 android-kernel/
 android54/
+artifacts/
+# The Guest share: the guest runs as root, so anything it writes here is root-owned and often
+# unreadable to the build context -- `docker build` then dies with "Can not read file in context".
+# Every --run leaves a binary here, so without this the first --run breaks --build-images.
+exploit/
+# Challenge blobs and scratch: large, gitignored, and never part of an image. `lab` is listed
+# without a trailing slash because it is usually a statically linked binary, not a directory --
+# the `lab/` pattern alone matched nothing and shipped a ~16M file into every build context.
+ctf/
+lab
+lab/
+.venv/
 kernel_root/
 src/
 io/rootfs/

@@ -1,0 +1,10 @@
+# Example CTF/foreign-kernel scenario. Copy to configs/scenarios/<name>.toml and run:
+#   start_kgdb -c <name>
+[foreign]
+image = "ctf/lk01/bzImage"            # boot image (abs or workspace-relative); presence selects foreign
+vmlinux = "ctf/lk01/vmlinux"          # optional; provides gdb symbols. Omit (x86) to auto-extract (stripped)
+initramfs = "ctf/lk01/initramfs.cpio.gz"
+cmdline = "console=ttyS0 kaslr quiet panic=-1"   # used VERBATIM; only console=/gdbstub added
+# arch = "x86_64"                     # optional override; else auto-detected from the vmlinux ELF
+# qemu_extra = ["-cpu", "qemu64,+smep,+smap"]     # mirror the challenge's extra QEMU flags
+# exploit = "ctf/lk01/exploit.c"      # optional: repack-inject at /exploit (musl-static .c or prebuilt binary)

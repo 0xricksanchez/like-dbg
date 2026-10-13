@@ -1,0 +1,63 @@
+[general]
+arch = "native"
+# storage: where the kernel source tree lives. "auto" picks a host bind on a case-sensitive
+# filesystem and a named volume otherwise; "bind"/"volume" force it.
+storage = "auto"
+# The Debug profiles this run builds and boots for (configs/profiles/*.toml). --profile overrides.
+profiles = ["exploit-dev"]
+
+[source]
+kind = "version"
+value = "6.6.30"
+
+[build]
+compiler = "clang"
+toolchain = "auto"
+rust = false
+# ccache: compiler cache for cheap rebuilds (persisted in the likedbg_ccache volume, capped at ccache_max_size).
+ccache = true
+ccache_max_size = "5G"
+
+[exploit]
+# Extra flags for the exploit auto-compile, appended after the source so libraries resolve in
+# link order, e.g. flags = ["-lpthread", "-D_GNU_SOURCE"]. Used by [foreign] exploit, --run and --upload.
+flags = []
+
+[cache]
+# max_size: cache size cap for auto-eviction (unset = no limit). Supports K/M/G/T suffixes, e.g. "50G".
+# max_size = "50G"
+
+[rootfs]
+distribution = "bookworm"
+hostname = "LIKE-DBG"
+
+[debuggee]
+memory_mib = 1024
+smp = 1
+accel = "auto"
+network = "auto"
+# gdbstub: the guest-side stub QEMU exposes. The client that attaches to it is [debugger].
+gdbstub = true
+gdbstub_port = 1234
+kaslr = false
+smep = true
+smap = true
+kpti = true
+panic = "halt"
+capture_console = true
+ssh_port = 2222
+share_dir = "exploit"
+guest_net = true
+share = true
+
+[debugger]
+ext = "pwndbg"
+break_on_crash = true
+crash_breakpoints = ["panic", "die", "oops_enter"]
+# Opt-in, empty by default. Set e.g. ["kasan_report"] to halt gdb at KASAN reports (armed only after
+# userspace via the gate). On a KASAN kernel with the text_poke false positive it floods, so prefer a
+# manual `break kasan_report` right before the exploit. KASAN is captured into crash.md regardless.
+sanitizer_breakpoints = []
+# debuginfod: fetch debug info by build-id (auto = on for foreign kernels, off for self-built).
+debuginfod = "auto"
+debuginfod_urls = "https://debuginfod.elfutils.org"

@@ -1,50 +1,30 @@
 FROM like_dbg_base:latest
-LABEL maintainer="Christopher Krah <admin@0x434b.dev>"
+LABEL maintainer="Christopher Krah <mail@0x434b.dev>"
+ENV DEBIAN_FRONTEND=noninteractive
+# UTF-8 locale so GEF/pwndbg can print their non-ASCII glyphs (e.g. ➤) without a
+# UnicodeEncodeError under the container's default ascii stdout encoding.
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+# Don't let pwndbg phone home / re-resolve its deps on every gdb launch (offline + fast).
+ENV PWNDBG_NO_AUTOUPDATE=1
+ARG USER=user
 
-ENV DEBIAN_FRONTEND noninteractive
+RUN apt-get update && apt-get install -yq --no-install-recommends \
+        gdb-multiarch python3 python3-pip python3-venv git curl wget sudo ca-certificates procps && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
-ARG USER
+# Both GDB extensions are installed; the gdb invocation (likedbg/gdbcmd.py) sources
+# exactly one per run via `-iex source <path>` (gef and pwndbg conflict if both load),
+# so ~/.gdbinit deliberately auto-loads NEITHER.
 
-WORKDIR /home/$USER
+# GEF: single-file, robust, kernel-friendly.
+RUN mkdir -p /opt/gef && \
+    wget -q -O /opt/gef/gef.py https://raw.githubusercontent.com/hugsy/gef/main/gef.py
 
-COPY io/scripts/.gdbinit .
-COPY io/scripts/debugger.sh .
-COPY io/scripts/gdb_script .
+# pwndbg: git clone + setup.sh, loaded into the existing gdb-multiarch via
+# /opt/pwndbg/gdbinit.py (https://pwndbg.re/stable/setup/).
+RUN git clone --depth 1 https://github.com/pwndbg/pwndbg /opt/pwndbg && \
+    cd /opt/pwndbg && ./setup.sh && \
+    rm -f /root/.gdbinit   # setup.sh auto-adds a pwndbg source line; we select per-run instead
 
-RUN apt-get update && \
-    set -e && \
-    apt-get install -yq --no-install-recommends \
-        libc-dev \
-        binutils \
-        libssl-dev \ 
-        libffi-dev \
-        gdb-multiarch \
-        ltrace \
-        strace \
-        ca-certificates \
-        procps \
-        libc6-dev && \
-    python3 -m pip install --upgrade --no-cache-dir pwntools && \
-    apt-get -y autoremove --purge && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/* && \
-    chown $USER:$USER .gdbinit debugger.sh
-
-ENV LC_ALL=en_US.UTF-8
-
-
-USER $USER
-SHELL ["/bin/bash", "-o", "pipefail", "-c"]
-COPY io/scripts/like_debugger_tool_install.sh .
-RUN ./like_debugger_tool_install.sh
-
-# Set Zsh as the default shell for the user
-USER root
-RUN chsh -s $(which zsh) $USER
-USER $USER
-
-# Copy necessary scripts
-COPY io/scripts/gdb_script .
-
-# Set working directory
 WORKDIR /io

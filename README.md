@@ -1,173 +1,140 @@
+<p align="center">
+  <img src="img/logo.png" alt="LIKE-DBG" width="280">
+</p>
+
 # LIKE-DBG
 
-[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
-[![Build Status: flake8](https://github.com/PyCQA/flake8/workflows/main/badge.svg)](https://github.com/0xricksanchez/like-dbg/actions?query=workflow%3Aflake8)
-[![Build Status: shellcheck](https://github.com/koalaman/shellcheck/actions/workflows/build.yml/badge.svg)](https://github.com/0xricksanchez/like-dbg/actions?query=workflow%3Ashellcheck)
-[![Build Status: hadolint](https://img.shields.io/badge/hadolint-passing-brightgreen)](https://github.com/0xricksanchez/like-dbg/actions?query=workflow%3Ahadolint)
-[![codecov](https://codecov.io/gh/0xricksanchez/like-dbg/branch/main/graph/badge.svg?token=SXF37MH4X6)](https://codecov.io/gh/0xricksanchez/like-dbg)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://tldrlegal.com/license/mit-license)
-[![GitHub Release](https://img.shields.io/github/release/0xricksanchez/like-dbg.svg)](https://github.com/0xricksanchez/like-dbg/releases/)
+[![Python: 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/)
+[![Linting: ruff](https://img.shields.io/badge/lint-ruff-261230.svg)](https://github.com/astral-sh/ruff)
+[![Types: mypy](https://img.shields.io/badge/types-mypy-blue.svg)](https://mypy-lang.org/)
 
-LIKE-DBG (*LI*nux-*KE*rnel-*D*e*B*u*G*ger) aims at automating the boring steps when trying to set up a Linux kernel debugging environment.
-I set out to dive into kernel exploitation research and found existing solutions not usable enough.
-Hence, this is an attempt at making all necessary pre-steps before one can even think about diving into research as painless and fun as possible.
-All steps from building a kernel, running it inside an emulated environment, and attaching a debugger are transparently done inside docker containers to keep system requirements minimal.
-Currently, there's a dedicated docker container for every of the following steps:
+LIKE-DBG (**LI**nux-**KE**rnel-**D**e**B**u**G**ger) is a fully containerized Linux kernel
+debugging and exploitation lab. It builds or adopts a kernel and root filesystem, boots them
+under QEMU, and drops you into an interactive GDB session (pwndbg or GEF), wiring every piece
+into a single tmux window.
 
-- Building the kernel
-- Creating a root file system to use with the kernel
-- Launching the kernel + file system as the _debuggee_
-- Attaching to the kernel as a _debugger_
+The point is to remove the boring setup so your time goes to the kernel, not the scaffolding.
+Every step runs inside Docker, so the only things you install on the host are Docker, tmux,
+Python, and [uv](https://docs.astral.sh/uv/). Pick a kernel version (or hand it a CTF
+challenge), run one command, and land at `start_kernel` with full symbols.
 
-## Caveats
+## What it does
 
-As this project is in its early stages, I expect things to change rapidly, while also introducing breaking changes along the way.
-Major points to improve on are:
+One command resolves your config, builds or reuses a kernel and rootfs, boots the guest, and
+attaches the debugger:
 
-- Getting towards true multi-architecture support beyond `x86_64` and `arm64`
-- Extend kernel builder to not only succeed in building recent™ kernels
-- Add android kernel support
-- Add (integration) tests
-- Elevate the debugging experience even more
+```sh
+uv run ./start_kgdb
+```
 
-## Features
+The run is a loop you stay inside: build or adopt a kernel and rootfs, boot it under QEMU (the
+Debuggee), attach GDB (the Debugger), then edit, deliver, run, crash, root-cause, and repeat.
 
-On the upside, despite its early stages, a couple of useful features are already present:
+There are two ways to get a kernel:
 
-- General:
-  - Minimal host system requirements due to dockerization of every step
-  - An easy to grasp `configs/user.ini` config that allows highly customizable sessions
-    - Or provide different configurations for different debugging setups via the command-line!
-  - CTF runner that's specifically designed to handle Linux kernel exploitation challenges
-    - `ctf/misc` that houses some nifty scripts to aid in CTFs
-  - Code quality measures:
-    - [black](https://github.com/psf/black) formatter for python code
-    - [flake8](https://github.com/PyCQA/flake8) linter for all python code
-    - [shellcheck](https://github.com/koalaman/shellcheck) linter for shell scripts
-    - [hadolint](https://github.com/hadolint/hadolint) linter for the Dockerfiles
-  - Operating system agnostic, meaning it should run just fine on:
-    - Debian/Ubuntu
-    - Arch Linux/Manjaro
-    - Fedora
-- Kernel builder:
-  - Multi-arch: `x86_64`, `arm64`
-  - Choose between `gcc` and `clang` to build the kernel
-  - Configuration modes:
-    - generic-mode,
-    - syzkaller-mode,
-    - custom-mode, or
-    - provide a usable kernel config
-  - Fine-granular version control to build from:
-    - Commit hash
-    - Release tag (e.g.: 5.10-rc)
-    - Major-Minor-Patch (e.g.: 5.10.77)
-  - Ability to automatically apply patch files
-  - Basic ability to add custom kernel modules
-- Root file system builder:
-  - Powered by [debootstrap](https://wiki.debian.org/Debootstrap)
-  - Automatic generation of file system that matches the kernels architecture
-  - Ability to customize:
-    - wanted packages in the file system
-    - the Debian release version to base everything on
-- Debuggee:
-  - Powered by [QEMU](https://github.com/qemu/qemu)
-  - Customization of QEMU runtime options from within the `configs/*.ini` files.
-- Debugger:
-  - Powered by [GDB (multiarch)](https://sourceware.org/gdb/) with either
-    - [GEF](https://github.com/hugsy/gef) and [GEF-extras](https://github.com/hugsy/gef-extras), or
-    - [pwndbg](https://github.com/pwndbg/pwndbg)
-  - Allow users to specify GDB script in `io/scripts/gdb_script` to allow a scenario-tailored debugging experience
+- **Build your own.** Choose a version, a debug profile, and a compiler; LIKE-DBG downloads,
+  configures, and builds it once, then caches it. This is the daily driver for kernel study and
+  exploit development. See [docs/build-your-own-kernel.md](docs/build-your-own-kernel.md).
+- **Bring a CTF or foreign kernel.** Hand it a challenge's `bzImage`/`Image` (plus `vmlinux`
+  and `initramfs` if you have them) and it boots that verbatim under GDB. See
+  [docs/ctf-foreign-kernel.md](docs/ctf-foreign-kernel.md).
+
+## Highlights
+
+- **Runs on macOS and Linux, host auto-detected.** Apple Silicon boots arm64 guests with native
+  HVF acceleration; x86_64-on-Mac and Linux without KVM fall back to in-container TCG; Linux with
+  KVM uses it. Storage, acceleration, and networking are chosen per host and recorded per run.
+- **Architectures: x86_64 and arm64.**
+- **TOML config with debug profiles.** A layered TOML stack (project defaults, personal local
+  overrides, named scenarios, CLI) plus named profiles (`exploit-dev`, `hardened`, `kasan`,
+  `ubsan`, `lockdep`, and more) that resolve to kernel config fragments and runtime defaults.
+  Post-build `.config` verification catches a profile that did not take. Note that `exploit-dev`
+  (the default) only turns KASLR off; SMEP, SMAP, and KPTI stay on unless you switch profiles or
+  toggle them yourself (see [docs/configuration.md](docs/configuration.md#debuggee)).
+- **Modern debugger.** Kernel runs default to pwndbg for its kernel command set (KASLR base,
+  slab, `current`, task and module walking, symbol lookup); GEF is a one-line switch.
+- **Exploit-dev inner loop.** `--run` and `--upload` deliver an exploit to the live guest over a
+  9p share or SSH. A single flag-less `.c` is auto-compiled static-musl to the target arch;
+  anything else is delivered as-is. See [exploit/README.md](exploit/README.md).
+- **Custom modules.** Build out-of-tree modules against the running kernel and load them on
+  command with `--insmod` and `--rmmod`; their symbols auto-load in GDB. See
+  [modules/README.md](modules/README.md).
+- **Crash intelligence.** A byte-exact serial console sink, a panic/oops/KASAN/UBSAN parser, and
+  an auto-break that traps GDB at the fault with a symbolized backtrace. `--analyze-crash`
+  regenerates a report offline.
+- **Concurrent sessions.** Each boot gets its own tmux session named for what it debugs, its own
+  host ports, and its own copy-on-write rootfs overlay, so two challenges can be debugged side by
+  side and `--run`/`--insmod` always land in the guest whose pane you typed them from.
+- **Run artifacts.** Every session writes a timestamped `artifacts/runs/<id>/` with resolved
+  settings, host profile, command records, logs, and pane transcripts.
 
 ## Requirements
 
-To get started, you have to ensure to have the following requirements set up in your system:
+- Docker
+- tmux
+- Python 3.12 or newer
+- [uv](https://docs.astral.sh/uv/)
 
-- `docker`
-- `tmux`
-- `python>=3.11`
-- `poetry` # <https://python-poetry.org/docs/>
+Run as a non-root user in the `docker` group. Cross-compilation and initramfs work happen inside
+containers (a `zig cc` musl toolchain), so no host cross-toolchain is needed.
 
-It is recommended to not run this as the `root` user, e.g. for testing purposes on a VPS.
-It may work fine but in general I highly encourage creating a dedicated non-root user to put in the `docker` and `sudo` group!
-
-**Note**: If you're using a custom TMUX config, make sure that your first pane starts at `0`!
-
-### Optional
-
-This section covers tools that are _not_ required to run LIKE-DBG but are nice to have and assist heavily when debugging or writing an exploit.
-
-- [musl-gcc](https://www.musl-libc.org/how.html)
-- [ctags](https://github.com/universal-ctags/ctags)
-- [ropr](https://github.com/Ben-Lichtman/ropr)
-
-## Setup
-
-Inside `like-dbg` run `poetry install`
-
-## Configuration
-
-Fine-tuning the kernel debugging experience is one of the goals of this project.
-Currently, all tunable options are exposed in the two configuration files: `configs/system.ini` and `configs/user.ini`.
-Some fields are recommended to not be altered as they're mainly for development reasons.
-However, all the ones to customize the environment to your needs should be self-explanatory as all of them are labeled with a brief comment.
-
-## Usage
-
-**Note:** On first time usage run `poetry install`.
-
-Once you're set with writing/adapting a configuration, the usage depends on your scenario.
-The easiest way to get started, which is based on the `configs/user.ini` configuration is the following:
+## Quickstart
 
 ```sh
-tmux -f .tmux.conf
-poetry shell
-# This checks out a kernel, builds it, creates a root file system and starts the debugger and debuggee eventually
-./start_kgdb.py
+# 1. Install dependencies
+uv sync
+
+# 2. Start the project tmux server (loads the shipped .tmux.conf)
+tmux -L likedbg -f .tmux.conf new -s LIKE-DBG
+
+# 3. Inside that tmux session: build-or-reuse a kernel, boot it, attach the debugger
+uv run ./start_kgdb
 ```
 
-There exist 2 users for the automatically created filesystems:
+The first run builds the container images and a kernel, so it takes a while; later runs reuse
+the cache and start in seconds.
 
-- `root` with no password
-- `user`:`user`
-
-This is intended so you can develop and exploit from either perspective easily.
-
-### Extended Usage
+Each boot renames its session after what it is debugging (`LIKE-DBG-pawnyable-lk01`,
+`LIKE-DBG-6_6_30-exploit-dev`), so a session you left running never blocks the next one and two
+challenges can be debugged side by side. Detach with `C-b d`; `tmux -L likedbg ls` shows what is
+running, and the `=` below is tmux's exact-match form (without it, a `-2` session can win):
 
 ```sh
-# If you want to try a CTF challenge where you were given a (compressed) Linux Image and a root filesystem try:
-./start_kgdb.py --ctf <Image> <RootFS>
-
-# If you want to kill the current debugging session
-./start_kgdb.py -k
-
-# If you want to provide a custom 'user.ini' for a specific debugging setup
-./start_kgdb.py -c <path_to_cfg> [other_args]
-
-# If you want to test some partial functionality of LIKE-DBG
-# Stage 1: Download Kernel
-# Stage 2: Stage 1 & unpack Kernel
-# Stage 3: Stage 2 & build Kernel
-# Stage 4: Only build a root file system
-# Stage 5: Stage 3+4 & start debuggee
-./start_kgdb.py -p <stage_nr>
-
-# Update all containers
-./start_kgdb.py -u
+tmux -L likedbg attach -t =LIKE-DBG-6_6_30-exploit-dev
 ```
 
-### Examples
+From here, read [docs/build-your-own-kernel.md](docs/build-your-own-kernel.md) for the full
+workflow, or [docs/ctf-foreign-kernel.md](docs/ctf-foreign-kernel.md) if you have a challenge to
+debug. For a hands-on tour of the whole loop against a bundled vulnerable driver, follow the
+[LK01 walkthrough](docs/walkthrough-lk01.md).
 
-The `examples` subdirectory houses samples on how `LIKE_DBG` may aid you in specific kernel debugging tasks.
-Each example contains a dedicated `README.md` as well that contains the necessary information to reproduce the examples.
+## Documentation
+
+| Document | Covers |
+|---|---|
+| [docs/walkthrough-lk01.md](docs/walkthrough-lk01.md) | Start here: a guided end-to-end example against a bundled vulnerable driver, from build to use-after-free to crash report. |
+| [docs/build-your-own-kernel.md](docs/build-your-own-kernel.md) | Build a kernel from source, boot it, then debug and iterate. |
+| [docs/ctf-foreign-kernel.md](docs/ctf-foreign-kernel.md) | Adopt a provided CTF or foreign kernel and deliver exploits to it. |
+| [docs/configuration.md](docs/configuration.md) | The TOML config stack, debug profiles, and every knob. |
+| [exploit/README.md](exploit/README.md) | The exploit-dev loop: the auto-compile boundary and the escape hatch. |
+| [modules/README.md](modules/README.md) | Out-of-tree custom modules and GDB symbol auto-load. |
+
+`modules/lk01/` ships a small, deliberately vulnerable training driver plus a crash PoC, wired
+for the full build, load, and exploit loop as a worked example.
 
 ## Showcase
 
-![img/example.png](img/example.png)
+![A LIKE-DBG session: disassembly and source view, thread list, and a symbolized backtrace](img/example.png)
 
-## Hacking
+## Contributing
 
-The python code should be quite readable, so feel free to extend the project with your own ideas. All PRs are very much welcome :)!
-Otherwise, feel free to create a feature-request issue or head over to the [discussions page](https://github.com/0xricksanchez/like-dbg/discussions) to brainstorm some cool new features!
+The Python lives in `src/likedbg/` and is meant to be readable. `just test` runs the suite,
+`just lint` runs ruff and mypy, and `just build-images` rebuilds the container images after a
+Dockerfile or baked-script change. Bug reports, feature requests, and PRs are welcome through the
+[issue tracker](https://github.com/0xricksanchez/like-dbg/issues) and the
+[discussions page](https://github.com/0xricksanchez/like-dbg/discussions).
 
-PS: If you want to provide a logo, feel free to do so.
+## License
+
+MIT. See [LICENSE](LICENSE).
