@@ -52,7 +52,7 @@ jobs:
       - name: Upload coverage to Codecov
         # One upload, not one per matrix leg: the legs cover identical source.
         if: matrix.python-version == '3.12'
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7
         with:
           files: coverage.xml
           # Public repos work without a token; supply one via secrets if the repo is private.
