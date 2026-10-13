@@ -8,24 +8,24 @@ readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
 dependencies = [
-    "loguru>=0.7",
-    "pydantic>=2.7",
-    "docker>=7.1",
-    "tqdm>=4.66",
-    "requests>=2.32",
-    "platformdirs>=4.2",
+  "loguru>=0.7",
+  "pydantic>=2.7",
+  "docker>=7.1",
+  "tqdm>=4.66",
+  "requests>=2.32",
+  "platformdirs>=4.2",
 ]
 
 [dependency-groups]
 dev = [
-    "pytest>=8.2",
-    "pytest-cov>=5.0",
-    "ruff>=0.5",
-    "mypy>=1.10",
-    "pre-commit>=3.7",
-    "types-requests",
-    "types-tqdm",
-    "types-docker",
+  "pytest>=8.2",
+  "pytest-cov>=5.0",
+  "ruff>=0.5",
+  "mypy>=1.10",
+  "pre-commit>=3.7",
+  "types-requests",
+  "types-tqdm",
+  "types-docker",
 ]
 
 [build-system]
@@ -43,10 +43,7 @@ line-length = 120
 target-version = "py312"
 src = ["src", "tests"]
 force-exclude = true
-extend-exclude = [
-    "ctf",
-    ".claude",
-]
+extend-exclude = ["ctf", ".claude"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "C4", "PTH", "TID", "PERF", "N", "UP", "B"]
