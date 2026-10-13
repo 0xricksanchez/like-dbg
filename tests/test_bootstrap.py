@@ -1,3 +1,12 @@
+import runpy
+import shutil
+import subprocess
+import sys
+from unittest.mock import Mock
+
+import pytest
+
+from likedbg import bootstrap
 from likedbg.bootstrap import BootstrapProbes
 from likedbg.bootstrap import check_prerequisites
 
@@ -130,3 +139,70 @@ def test_main_exits_one_when_something_is_missing(capsys, monkeypatch):
     out = capsys.readouterr().out
     assert rc == 1
     assert "[MISSING] docker" in out
+
+
+def test_real_has_probe_checks_the_requested_executable(monkeypatch):
+    which = Mock(side_effect=["/usr/bin/uv", None])
+    monkeypatch.setattr(shutil, "which", which)
+    probes = bootstrap._real_probes()
+
+    assert probes.has("uv") is True
+    assert probes.has("missing-command") is False
+    assert [call.args for call in which.call_args_list] == [("uv",), ("missing-command",)]
+
+
+@pytest.mark.parametrize(
+    ("docker_path", "returncode", "ready"),
+    [(None, 0, False), ("/usr/bin/docker", 0, True), ("/usr/bin/docker", 1, False)],
+)
+def test_real_docker_probe_requires_cli_and_answering_daemon(monkeypatch, docker_path, returncode, ready):
+    which = Mock(return_value=docker_path)
+    run = Mock(return_value=subprocess.CompletedProcess(["docker", "info"], returncode))
+    monkeypatch.setattr(shutil, "which", which)
+    monkeypatch.setattr(subprocess, "run", run)
+
+    assert bootstrap._real_probes().docker_ready() is ready
+    which.assert_called_once_with("docker")
+    if docker_path is None:
+        run.assert_not_called()
+    else:
+        run.assert_called_once_with(["docker", "info"], capture_output=True, text=True, check=False)
+
+
+@pytest.mark.parametrize("handler", ["qemu-aarch64", "qemu-x86_64"])
+def test_real_binfmt_probe_requires_a_handler_file(monkeypatch, tmp_path, handler):
+    monkeypatch.setattr(bootstrap, "_BINFMT_DIR", tmp_path)
+    probes = bootstrap._real_probes()
+
+    assert probes.binfmt_registered(handler) is False
+    (tmp_path / handler).mkdir()
+    assert probes.binfmt_registered(handler) is False
+    (tmp_path / handler).rmdir()
+    (tmp_path / handler).write_text("enabled\n")
+    assert probes.binfmt_registered(handler) is True
+    assert probes.binfmt_registered("qemu-other") is False
+
+
+def test_main_rejects_invalid_arguments_without_probing(capsys, monkeypatch):
+    probes = Mock()
+    monkeypatch.setattr(bootstrap, "_real_probes", probes)
+
+    assert bootstrap.main(["--invalid"]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == "usage: python -m likedbg.bootstrap [--check]\n"
+    probes.assert_not_called()
+
+
+def test_module_entrypoint_uses_argv_and_exits_with_usage_error(capsys, monkeypatch):
+    # Execute the module afresh, as `python -m` would, while retaining coverage tracking.
+    monkeypatch.delitem(sys.modules, "likedbg.bootstrap")
+    monkeypatch.setattr(sys, "argv", ["likedbg.bootstrap", "--invalid"])
+
+    with pytest.raises(SystemExit) as exc:
+        runpy.run_module("likedbg.bootstrap", run_name="__main__")
+
+    assert exc.value.code == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == "usage: python -m likedbg.bootstrap [--check]\n"
