@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # The dockerfiles are named `.dockerfile_*` (not `Dockerfile`), so the recursive
       # hadolint action can't find them; lint each one explicitly with the pinned binary.
